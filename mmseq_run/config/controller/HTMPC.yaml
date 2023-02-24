@@ -1,0 +1,70 @@
+controller:
+  # HT-MPC Solver Type, lex vs SQP
+  type: "SQP"
+
+  # MPC params
+  dt: 0.1
+  prediction_horizon: 1.
+  HT_MaxIntvl: 3
+  ST_MaxIntvl: 3
+
+  # weights for each cost function
+  cost_params:
+    EEPos3:
+      Qk: 10.
+      P: 10.
+    BasePos2:
+      Qk: 10.
+      P: 10.
+    Effort:
+      Qqa: 0.
+      Qqb: 0.
+      Qva: 1.e-4
+      Qvb: 2.e-4
+      Qua: 1.e-3
+      Qub: 1.e-3
+
+  # robot parameters
+  robot:
+    dims:
+      q: 9  # generalized position
+      v: 9  # generalized velocity
+      x: 18 # state
+      u: 9  # input
+    x0: [1, -1, 0, 0.5pi, -0.25pi, 0.5pi, -0.25pi, 0.5pi, 0.417pi]
+
+    limits:
+      input:
+        lower: [ -2.5, -2.5, -1pi, -2.16, -2.16, -3.15, -3.2, -3.2, -3.2 ]
+        upper: [ 2.5, 2.5, 1pi, 2.16, 2.16, 3.15, 3.2, 3.2, 3.2  ]
+      state:
+        lower: [ -10, -10, -1pi, -1pi, -1pi, -1pi, -1pi, -1pi, -1pi,
+                 -1.1, -1.1, -2, -2, -2, -3, -3, -3, -3]
+        upper: [ 10, 10, 1pi, 1pi, 1pi, 1pi, 1pi, 1pi, 1pi,
+                 1.1, 1.1, 2, 2, 2, 3, 3, 3, 3]
+
+    link_names:
+      - "base"
+      - "ur10_arm_base_link"
+      - "ur10_arm_shoulder_link"
+      - "ur10_arm_upper_arm_link"
+      - "ur10_arm_forearm_link"
+      - "ur10_arm_wrist_1_link"
+      - "ur10_arm_wrist_2_link"
+      - "ur10_arm_wrist_3_link"
+      - "thing_tool"
+    tool_link_name: "thing_tool"
+    base_type: omnidirectional
+
+    urdf:
+      package: "mmseq_assets"
+      path: "thing/urdf/mm_ocs2_fingers.urdf"
+    #      package: "upright_assets"
+    #      path: "thing/urdf/thing_ocs2.urdf"
+    #      includes:
+    #        - "$(find mobile_manipulation_central)/urdf/xacro/thing_no_wheels.urdf.xacro"
+    #        - "$$PROJECTMM3D_HOME/assets/thing/xacro/end_effectors/gripped_object.urdf.xacro"
+    #        - "$$PROJECTMM3D_HOME/assets/thing/xacro/collision_links.urdf.xacro"
+    #      args:
+    #        use_collision: "true"
+    #        transform_params: "$(find upright_cmd)/config/robots/calibration/tray_transforms_real.yaml"
