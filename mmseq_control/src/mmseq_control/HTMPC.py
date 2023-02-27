@@ -80,6 +80,7 @@ class HTMPC(MPC):
         self.MotionCst = MotionConstraint(self.dt, self.N, self.robot, "DI Motion Model")
 
     def control(self, t, robot_states, planners):
+        self.curr_control_time = t
         q, v = robot_states
         xo = np.hstack((q, v))
 
@@ -300,7 +301,7 @@ class HTMPC(MPC):
         self.cost_iter[ht_iter, task_id, 0] = self._eval_cost_functions(cost_fcn, xbar_i, ubar_i, cost_fcn_params)
 
         for i in range(self.params["ST_MaxIntvl"]):
-            # tp0 = time.perf_counter()
+            tp0 = time.perf_counter()
             # t0 = time.perf_counter()
             # Cost Function
             H = cs.DM.zeros((self.QPsize, self.QPsize))
@@ -335,52 +336,63 @@ class HTMPC(MPC):
                 C = cs.vertcat(C, Ci)
                 d = cs.vertcat(d, di)
 
-            # C_scaled, d_scaled = self.scaleConstraints(C.toarray(), d.toarray().flatten())
+            C_scaled, d_scaled = self.scaleConstraints(C.toarray(), d.toarray().flatten())
 
             # State Bound
             _, bx = self.xuCst.linearize(xbar_i, ubar_i)
 
-            Ac = cs.vertcat(A, C)
-            uba = cs.vertcat(-b, -d)
+            Ac = cs.vertcat(A, C_scaled)
+            uba = cs.vertcat(-b, -d_scaled)
             lba = cs.vertcat(-b, -cs.DM.inf(d.shape[0]))
 
             qp = {}
             qp['h'] = H.sparsity()
             qp['a'] = Ac.sparsity()
-            opts= {"error_on_fail": False}
+            opts= {"error_on_fail": True, "gurobi": {"OutputFlag": 1, "Presolve": 1, "BarConvTol": 1e-10}}
             S = cs.conic('S', 'gurobi', qp, opts)
 
             # H = H.toarray()
             # H = np.where(H < 1e-8, 0, H)
+            tp1 = time.perf_counter()
+            print("QP prep time:{}".format(tp1 - tp0))
 
             t0 = time.perf_counter()
-            results = S(h=H, g=g, a=Ac, uba=uba, lba=lba, lbx=bx[self.QPsize:], ubx=-bx[:self.QPsize], x0=cs.DM.zeros(self.QPsize))
+            try:
+                results = S(h=H, g=g, a=Ac, uba=uba, lba=lba, lbx=bx[self.QPsize:], ubx=-bx[:self.QPsize], x0=cs.DM.zeros(self.QPsize))
+                results['status_val'] = 1
+                results['status'] = 'optimal'
+            except RuntimeError:
+                results = {}
+                results['status'] = 'failed'
+                results['status_val'] = -10
+                results['x'] = np.zeros(self.QPsize)
 
             t1 = time.perf_counter()
             print("QP time:{}".format(t1 - t0))
 
-            results['status_val'] = 1
-            results['status'] = 'optimal'
+
 
             dzopt = np.array(results['x']).squeeze()
             dubar = dzopt[self.nx * (self.N + 1):]
             linesearch_step_opt = 1.
-            # t0 = time.perf_counter()
+            t0 = time.perf_counter()
             if results['status'] == 'optimal':
                 linesearch_step_opt, J_opt = self.lineSearch(xo, ubar_i, dubar, cost_fcn, cost_fcn_params, csts, csts_params)
-            else:
-                linesearch_step_opt = 0
 
-            ubar_opt_i = ubar_i + linesearch_step_opt*dubar.reshape((self.N, self.nu))
-            xbar_opt_i = self._predictTrajectories(xo, ubar_opt_i)
-            xbar_i, ubar_i = xbar_opt_i.copy(), ubar_opt_i.copy()
+
+                ubar_opt_i = ubar_i + linesearch_step_opt*dubar.reshape((self.N, self.nu))
+                xbar_opt_i = self._predictTrajectories(xo, ubar_opt_i)
+                xbar_i, ubar_i = xbar_opt_i.copy(), ubar_opt_i.copy()
+            else:
+                linesearch_step_opt = 0.
+
 
 
             self.cost_iter[ht_iter, task_id, i+1] = self._eval_cost_functions(cost_fcn, xbar_i, ubar_i, cost_fcn_params)
             self.step_size[ht_iter, task_id, i] = linesearch_step_opt
             self.solver_status[ht_iter, task_id, i] = results['status_val']
-            # t1 = time.perf_counter()
-            # print("Line Search time:{}".format(t1 - t0))
+            t1 = time.perf_counter()
+            print("Line Search time:{}".format(t1 - t0))
 
         return xbar_i, ubar_i, results['status']
 
@@ -393,6 +405,9 @@ class HTMPC(MPC):
 
         smallval_idx = np.where(np.logical_and(h < 1e-2, h > -1e-2))
         h[smallval_idx] = 0.
+
+        smallval_G_idx = np.where(G<1e-10)
+        G[smallval_G_idx] = 0.
 
         return G.copy(), h.copy()
 
