@@ -20,9 +20,9 @@ controller:
       Qqa: 0.
       Qqb: 0.
       Qva: 0.01
-      Qvb: 0.1
-      Qua: 0.1
-      Qub: 1.
+      Qvb: 0.01
+      Qua: 0.001
+      Qub: 0.1
 
   # robot parameters
   robot:

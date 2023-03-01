@@ -333,23 +333,24 @@ class HTMPC(MPC):
                 C = cs.vertcat(C, Ci)
                 d = cs.vertcat(d, di)
 
-            C_scaled, d_scaled = self.scaleConstraintsNew(C.toarray(), d.toarray().flatten())
+            C_scaled, d_scaled = self.scaleConstraints(C.toarray(), d.toarray().flatten())
 
             # State Bound
             _, bx = self.xuCst.linearize(xbar_i, ubar_i)
 
-            Ac = cs.vertcat(A, C_scaled)
-            uba = cs.vertcat(-b, -d_scaled)
+            Ac = cs.vertcat(A, C)
+            uba = cs.vertcat(-b, -d)
             lba = cs.vertcat(-b, -cs.DM.inf(d.shape[0]))
 
             qp = {}
             qp['h'] = H.sparsity()
             qp['a'] = Ac.sparsity()
-            opts= {"error_on_fail": True, "gurobi": {"OutputFlag": 1, "Presolve": 1, "BarConvTol": 1e-10}}
+            opts= {"error_on_fail": True, "gurobi": {"OutputFlag": 1, "Presolve": 1, "BarConvTol": 1e-8, "OptimalityTol": 1e-6}}
             S = cs.conic('S', 'gurobi', qp, opts)
 
             # H = H.toarray()
-            # H = np.where(H < 1e-8, 0, H)
+            # H = np.where(np.abs(H) < 1e-10, 0, H)
+            # g = np.where(np.abs(g) < 1e-10, 0, g)
             tp1 = time.perf_counter()
             print("QP prep time:{}".format(tp1 - tp0))
 
@@ -375,7 +376,6 @@ class HTMPC(MPC):
             t0 = time.perf_counter()
             if results['status'] == 'optimal':
                 linesearch_step_opt, J_opt = self.lineSearch(xo, ubar_i, dubar, cost_fcn, cost_fcn_params, csts, csts_params)
-
 
                 ubar_opt_i = ubar_i + linesearch_step_opt*dubar.reshape((self.N, self.nu))
                 xbar_opt_i = self._predictTrajectories(xo, ubar_opt_i)
