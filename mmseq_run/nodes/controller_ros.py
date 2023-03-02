@@ -4,6 +4,7 @@ import argparse
 import datetime
 import logging
 import time
+import sys
 
 import numpy as np
 import rospy
@@ -18,13 +19,14 @@ from mobile_manipulation_central.ros_interface import MobileManipulatorROSInterf
 
 def main():
     np.set_printoptions(precision=3, suppress=True)
-
+    argv = rospy.myargv(argv=sys.argv)
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", required=True, help="Path to configuration file.")
     parser.add_argument("--priority", type=str, default=None, help="priority, EE or base")
     parser.add_argument("--stmpctype", type=str, default=None,
                         help="STMPC type, SQP or lex. This overwrites the yaml settings")
-    args = parser.parse_args()
+    args = parser.parse_args(argv[1:])
+
 
     # load configuration and overwrite with args
     config = parsing.load_config(args.config)
@@ -91,17 +93,22 @@ def main():
     u = [0]
     while not rospy.is_shutdown():
         t1 = rospy.Time.now().to_sec()
-        if t1 - t > 1./ ctrl_config["rate"]:
+        # print(t1)
+        if t1 - t > (1./ ctrl_config["rate"])*5:
             print("Controller running slow. Last interval {}".format(t1 -t))
         t = t1
 
         # open-loop command
         robot_states = (robot_interface.q, robot_interface.v)
-        # print("q: {}, v:{}, u: {}, acc:{}".format(robot_states[0][0],robot_states[1][0], u[0], acc))
-        tc1 = time.perf_counter()
+        # print("Msg Oldness Base: {}s, Arm: {}s".format(t - robot_interface.base.last_msg_time, t - robot_interface.arm.last_msg_time))
+        # print("q: {}, v:{}, u: {}, acc:{}".format(robot_states[0][0], robot_states[1][0], u[0], acc))
+        # tc1 = time.perf_counter()
+        # tc1_ros = rospy.Time.now().to_sec()
         u, acc = controller.control(t-t0, robot_states, planners)
-        tc2 = time.perf_counter()
-        print(tc2 - tc1)
+        # tc2_ros = rospy.Time.now().to_sec()
+        # print("Controller Time (ROS): {}s ".format(tc2_ros - tc1_ros))
+        # tc2 = time.perf_counter()
+        # print(tc2 - tc1)
 
         robot_interface.publish_cmd_vel(u)
         rate.sleep()

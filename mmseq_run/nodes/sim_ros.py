@@ -4,7 +4,7 @@ import argparse
 import datetime
 import logging
 import time
-
+import sys
 import numpy as np
 from pyb_utils.ghost import GhostSphere, GhostCylinder
 import rospy
@@ -16,6 +16,7 @@ from mobile_manipulation_central.simulation_ros_interface import SimulatedMobile
 
 def main():
     np.set_printoptions(precision=3, suppress=True)
+    argv = rospy.myargv(argv=sys.argv)
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", required=True, help="Path to configuration file.")
@@ -28,7 +29,7 @@ def main():
     )
     parser.add_argument("--GUI", action="store_true",
                         help="STMPC type, SQP or lex. This overwrites the yaml settings")
-    args = parser.parse_args()
+    args = parser.parse_args(argv[1:])
 
     # load configuration and overwrite with args
     config = parsing.load_config(args.config)
