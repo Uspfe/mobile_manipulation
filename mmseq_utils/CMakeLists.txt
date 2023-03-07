@@ -4,3 +4,15 @@ project(mmseq_utils)
 find_package(catkin REQUIRED)
 
 catkin_python_setup()
+
+catkin_package(
+#  INCLUDE_DIRS include
+#  LIBRARIES mmseq_control
+#  CATKIN_DEPENDS other_catkin_pkg
+#  DEPENDS system_lib
+)
+
+catkin_install_python(PROGRAMS
+   scripts/plot_logger_ros.py
+   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
+ )

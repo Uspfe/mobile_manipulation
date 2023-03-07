@@ -78,7 +78,7 @@ class DataLogger:
 class DataPlotter:
     def __init__(self, data):
         self.data = data
-
+        self.data["name"] = self.data.get('name', 'data')
 
     @classmethod
     def from_logger(cls, logger):
@@ -101,8 +101,11 @@ class DataPlotter:
 
     def plot_ee_position(self, axes=None, index=0, legend=None):
         ts = self.data["ts"]
-        r_ew_w_ds = self.data["r_ew_w_ds"]
-        r_ew_ws = self.data["r_ew_ws"]
+        r_ew_w_ds = self.data.get("r_ew_w_ds", [])
+        r_ew_ws = self.data.get("r_ew_ws", [])
+
+        if len(r_ew_w_ds) == 0 and len(r_ew_ws) == 0:
+            return
 
         if axes is None:
             axes = []
@@ -111,12 +114,14 @@ class DataPlotter:
         if legend is None:
             legend = self.data["name"]
 
-        axes.plot(ts, r_ew_w_ds[:, 0], label=legend + "$x_d$", color="r", linestyle="--")
-        axes.plot(ts, r_ew_w_ds[:, 1], label=legend + "$y_d$", color="g", linestyle="--")
-        axes.plot(ts, r_ew_w_ds[:, 2], label=legend + "$z_d$", color="b", linestyle="--")
-        axes.plot(ts, r_ew_ws[:, 0], label=legend + "$x$", color="r")
-        axes.plot(ts, r_ew_ws[:, 1], label=legend + "$y$", color="g")
-        axes.plot(ts, r_ew_ws[:, 2], label=legend + "$z$", color="b")
+        if len(r_ew_w_ds) > 0:
+            axes.plot(ts, r_ew_w_ds[:, 0], label=legend + "$x_d$", color="r", linestyle="--")
+            axes.plot(ts, r_ew_w_ds[:, 1], label=legend + "$y_d$", color="g", linestyle="--")
+            axes.plot(ts, r_ew_w_ds[:, 2], label=legend + "$z_d$", color="b", linestyle="--")
+        if len(r_ew_ws) > 0:
+            axes.plot(ts, r_ew_ws[:, 0], label=legend + "$x$", color="r")
+            axes.plot(ts, r_ew_ws[:, 1], label=legend + "$y$", color="g")
+            axes.plot(ts, r_ew_ws[:, 2], label=legend + "$z$", color="b")
         axes.grid()
         axes.legend()
         axes.set_xlabel("Time (s)")
@@ -128,8 +133,10 @@ class DataPlotter:
 
     def plot_base_position(self, axes=None, index=0, legend=None):
         ts = self.data["ts"]
-        r_ew_w_ds = self.data["r_bw_w_ds"]
-        r_ew_ws = self.data["r_bw_ws"]
+        r_ew_w_ds = self.data.get("r_bw_w_ds", [])
+        r_ew_ws = self.data.get("r_bw_ws",[])
+        if len(r_ew_w_ds) == 0 and len(r_ew_ws) == 0:
+            return
 
         if axes is None:
             axes = []
@@ -137,11 +144,12 @@ class DataPlotter:
 
         if legend is None:
             legend = self.data["name"]
-
-        axes.plot(ts, r_ew_w_ds[:, 0], label=legend + "$x_d$", color="r", linestyle="--")
-        axes.plot(ts, r_ew_w_ds[:, 1], label=legend + "$y_d$", color="g", linestyle="--")
-        axes.plot(ts, r_ew_ws[:, 0], label=legend + "$x$", color="r")
-        axes.plot(ts, r_ew_ws[:, 1], label=legend + "$y$", color="g")
+        if len(r_ew_w_ds) > 0:
+            axes.plot(ts, r_ew_w_ds[:, 0], label=legend + "$x_d$", color="r", linestyle="--")
+            axes.plot(ts, r_ew_w_ds[:, 1], label=legend + "$y_d$", color="g", linestyle="--")
+        if len(r_ew_ws) > 0:
+            axes.plot(ts, r_ew_ws[:, 0], label=legend + "$x$", color="r")
+            axes.plot(ts, r_ew_ws[:, 1], label=legend + "$y$", color="g")
         axes.grid()
         axes.legend()
         axes.set_xlabel("Time (s)")
@@ -393,7 +401,11 @@ class DataPlotter:
                 axes.append(ax)
 
         # Fig 1: Cost for each task over time and iterations
-        ax = axes[0]
+        if task_num > 1:
+            ax = axes[0]
+        else:
+            ax = [axes[0]]
+
         xticks = np.arange(N) * (HT_iter_num * ST_iter_num)
         xlables = [str(t) for t in t_sim]
         print(cost.shape)
@@ -410,7 +422,10 @@ class DataPlotter:
         # plt.show(block=False)
 
         # Fig 2: Cost for each task over time
-        ax = axes[1]
+        if task_num > 1:
+            ax = axes[1]
+        else:
+            ax = [axes[1]]
 
         for l in range(task_num):
             ax[l].plot(t_sim, cost_final[:, l], ".-", label=legend, linewidth=3, markersize=10)
@@ -435,12 +450,13 @@ class DataPlotter:
 
         if axes is None:
             f, axes = plt.subplots(task_num, 1, sharex=True)
-
+        if task_num == 1:
+            axes = [axes]
         xticks = np.arange(N) * (HT_iter_num * ST_iter_num)
         xlables = [str(t) for t in t_sim]
         for l in range(task_num):
             axes[l].plot(status[:, :, l, :].flatten(), "x-", label=legend + " solver status", linewidth=2, markersize=8)
-            axes[l].plot(step_size[:, :, l, :].flatten(), "x-", label=legend + " step size", linewidth=2, markersize=8)
+            # axes[l].plot(step_size[:, :, l, :].flatten(), "x-", label=legend + " step size", linewidth=2, markersize=8)
             axes[l].set_title("Task" + str(l))
             axes[l].set_xticks(xticks)
             axes[l].set_xticklabels(xlables)
@@ -461,7 +477,18 @@ class DataPlotter:
 
         self.plot_cost_htmpc()
         self.plot_solver_status_htmpc()
-        self.plot_run_time()
+        # self.plot_run_time()
 
         figs = [plt.figure(n) for n in plt.get_fignums()]
         multipage("data.pdf", figs)
+
+    def plot_mpc(self):
+        self.plot_cost_htmpc()
+        self.plot_solver_status_htmpc()
+        self.plot_run_time()
+
+    def plot_robot(self):
+        self.plot_cmd_vs_real_vel()
+        self.plot_state()
+
+

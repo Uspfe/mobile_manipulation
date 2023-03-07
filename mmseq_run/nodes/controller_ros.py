@@ -114,9 +114,9 @@ class ControllerROSNode:
             # print("Msg Oldness Base: {}s, Arm: {}s".format(t - robot_interface.base.last_msg_time, t - robot_interface.arm.last_msg_time))
             # print("q: {}, v:{}, u: {}, acc:{}".format(robot_states[0][0], robot_states[1][0], u[0], acc))
             # tc1 = time.perf_counter()
-            # tc1_ros = rospy.Time.now().to_sec()
+            tc1_ros = rospy.Time.now().to_sec()
             u, acc = self.controller.control(t-t0, robot_states, self.planners)
-            # tc2_ros = rospy.Time.now().to_sec()
+            tc2_ros = rospy.Time.now().to_sec()
             # print("Controller Time (ROS): {}s ".format(tc2_ros - tc1_ros))
             # tc2 = time.perf_counter()
             # print(tc2 - tc1)
@@ -126,18 +126,18 @@ class ControllerROSNode:
             # log
             self.logger.append("ts", t)
             self.log_mpc_info(self.logger, self.controller)
-
-            # r_ew_wd = []
-            # r_bw_wd = []
-            # for planner in planners:
-            #     if planner.type == "EE":
-            #         r_ew_wd, _ = planner.getTrackingPoint(t, robot_states)
-            #     elif planner.type == "base":
-            #         r_bw_wd, _ = planner.getTrackingPoint(t, robot_states)
-            # if len(r_ew_wd) > 0:
-            #     logger.append("r_ew_w_ds", r_ew_wd)
-            # if len(r_bw_wd) > 0:
-            #     logger.append("r_bw_w_ds", r_bw_wd)
+            self.logger.append("controller_run_time", tc2_ros - tc1_ros)
+            r_ew_wd = []
+            r_bw_wd = []
+            for planner in self.planners:
+                if planner.type == "EE":
+                    r_ew_wd, _ = planner.getTrackingPoint(t, robot_states)
+                elif planner.type == "base":
+                    r_bw_wd, _ = planner.getTrackingPoint(t, robot_states)
+            if len(r_ew_wd) > 0:
+                self.logger.append("r_ew_w_ds", r_ew_wd)
+            if len(r_bw_wd) > 0:
+                self.logger.append("r_bw_w_ds", r_bw_wd)
 
             rate.sleep()
 

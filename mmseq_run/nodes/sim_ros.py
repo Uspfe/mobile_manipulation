@@ -80,9 +80,8 @@ def main():
         ros_interface.publish_feedback(t, q, v)
         ros_interface.publish_time(t)
 
-        cmd_vel_world = robot.command_velocity(ros_interface.cmd_vel)
+        cmd_vel_world = robot.command_velocity(ros_interface.cmd_vel, bodyframe=True)
         t, _ = sim.step(t, step_robot=False)
-
         ee_curr_pos, _ = robot.link_pose()
         base_curr_pos, _ = robot.link_pose(-1)
 

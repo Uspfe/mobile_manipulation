@@ -113,7 +113,10 @@ class HTMPC(MPC):
         self.x_bar = xbar_opt.copy()
         self.u_bar = ubar_opt.copy()
         acc_cmd = self.u_bar[0]
-        self.v_cmd = self.v_cmd + acc_cmd * self.dt
+        self.v_cmd = self.v_cmd + acc_cmd / self.rate
+        self.v_cmd = np.where(self.v_cmd < self.robot.ub_x[self.robot.DoF:]*0.95, self.v_cmd, self.robot.ub_x[self.robot.DoF:]*0.95)
+        self.v_cmd = np.where(self.v_cmd > self.robot.lb_x[self.robot.DoF:]*0.95, self.v_cmd,
+                              self.robot.lb_x[self.robot.DoF:]*0.95)
         return self.v_cmd, acc_cmd
 
     def solveHTMPC(self, xo, xbar, ubar, cost_fcns, hier_csts, r_bars):
@@ -133,7 +136,6 @@ class HTMPC(MPC):
 
         self.cost_iter = np.zeros((self.params["HT_MaxIntvl"], task_num, self.params["ST_MaxIntvl"]+1))
         self.cost_final = np.zeros(task_num)
-        self.stmpc_run_time = np.zeros((self.params["HT_MaxIntvl"], task_num))
 
         self.step_size = np.zeros((self.params["HT_MaxIntvl"], task_num, self.params["ST_MaxIntvl"]))
         self.solver_status = np.zeros_like(self.step_size)
@@ -155,11 +157,11 @@ class HTMPC(MPC):
                     for prev_task_id in range(task_id):
                         csts_params["ineq"].append([r_bars[prev_task_id][0].T, e_bars[prev_task_id]])
 
-                t0 = time.perf_counter()
+                # t0 = time.perf_counter()
                 xbar_lopt, ubar_lopt, status = self.solveSTMPCCasadi(xo, xbar_l.copy(), ubar_l.copy(), cost_fcn, r_bars[task_id], csts, csts_params, i, task_id)
-                t1 = time.perf_counter()
+                # t1 = time.perf_counter()
                 # print("STMPC Time: {}".format(t1 - t0))
-                self.stmpc_run_time[i, task_id] = t1 - t0
+
 
                 e_bars_l = cost_fcn[0].e_bar_fcn(xbar_lopt.T, ubar_lopt.T, r_bars[task_id][0].T)
                 e_bars.append(e_bars_l.toarray().flatten())
@@ -335,7 +337,7 @@ class HTMPC(MPC):
                 C = cs.vertcat(C, Ci)
                 d = cs.vertcat(d, di)
 
-            C_scaled, d_scaled = self.scaleConstraints(C.toarray(), d.toarray().flatten())
+            # C_scaled, d_scaled = self.scaleConstraints(C.toarray(), d.toarray().flatten())
 
             # State Bound
             _, bx = self.xuCst.linearize(xbar_i, ubar_i)
@@ -354,7 +356,7 @@ class HTMPC(MPC):
             # H = np.where(np.abs(H) < 1e-10, 0, H)
             # g = np.where(np.abs(g) < 1e-10, 0, g)
             tp1 = time.perf_counter()
-            print("QP prep time:{}".format(tp1 - tp0))
+            self.py_logger.log(5, "QP prep time:{}".format(tp1 - tp0))
 
             t0 = time.perf_counter()
             try:
@@ -362,13 +364,19 @@ class HTMPC(MPC):
                 results['status_val'] = 1
                 results['status'] = 'optimal'
             except RuntimeError:
-                results = {}
-                results['status'] = 'failed'
-                results['status_val'] = -10
-                results['x'] = np.zeros(self.QPsize)
+                if not self.xuCst.check(xbar_i, ubar_i):
+                    results = {}
+                    results['status'] = 'infeasible'
+                    results['status_val'] = -1
+                    results['x'] = np.zeros(self.QPsize)
+                else:
+                    results = {}
+                    results['status'] = 'unknown'
+                    results['status_val'] = -10
+                    results['x'] = np.zeros(self.QPsize)
 
             t1 = time.perf_counter()
-            print("QP time:{}".format(t1 - t0))
+            self.py_logger.log(5, "QP time:{}".format(t1 - t0))
 
 
 
@@ -392,7 +400,7 @@ class HTMPC(MPC):
             self.step_size[ht_iter, task_id, i] = linesearch_step_opt
             self.solver_status[ht_iter, task_id, i] = results['status_val']
             t1 = time.perf_counter()
-            print("Line Search time:{}".format(t1 - t0))
+            self.py_logger.log(5,"Line Search time:{}".format(t1 - t0))
 
         return xbar_i, ubar_i, results['status']
 
@@ -457,7 +465,7 @@ class HTMPC(MPC):
                 feas_i = cst.check(xbar_new, ubar_new, *csts_params["ineq"][cst_id])
                 if not feas_i:
                     feas = False
-                    self.py_logger.debug("Controller: line search step not feasible.")
+                    self.py_logger.debug("Controller: line search step {} not feasible. Violating constraint {}".format(t, cst.name))
                     break
 
             if feas:
@@ -544,7 +552,6 @@ class HTMPCLex(HTMPC):
         ubar_l = ubar.copy()
 
         self.cost_iter = np.zeros((self.params["HT_MaxIntvl"], task_num, 2))
-        self.stmpc_run_time = np.zeros((self.params["HT_MaxIntvl"], task_num))
 
         self.cost_final = np.zeros(task_num)
         self.solver_status = None
@@ -561,11 +568,8 @@ class HTMPCLex(HTMPC):
                     for prev_task_id in range(task_id):
                         csts_params["ineq"].append([r_bars[prev_task_id][0].T, e_bars[prev_task_id]])
 
-                t0 = time.process_time()
                 xbar_lopt, ubar_lopt, status = self.solveSTMPC(xo, xbar_l.copy(), ubar_l.copy(), cost_fcn, r_bars[task_id],
                                                                csts, csts_params, ht_iter=i, task_id=task_id)
-                t1 = time.process_time()
-                self.stmpc_run_time[i, task_id] = t1 - t0
 
                 e_bars_l = cost_fcn[0].e_bar_fcn(xbar_lopt.T, ubar_lopt.T, r_bars[task_id][0].T)
                 e_bars.append(e_bars_l.toarray().flatten())
