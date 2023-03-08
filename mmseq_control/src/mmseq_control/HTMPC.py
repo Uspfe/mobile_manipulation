@@ -471,7 +471,7 @@ class HTMPC(MPC):
             if feas:
                 J_xp = 0
                 J_xp_lin = 0
-                for fid, f in enumerate(cost_fcn[:-1]):
+                for fid, f in enumerate(cost_fcn):
                     J_xp += f.evaluate(xbar_new, ubar_new, cost_fcn_params[fid])
                     _, g = f.quad(xbar, ubar, cost_fcn_params[fid])
                     J_xp_lin += f.evaluate(xbar, ubar, cost_fcn_params[fid]) + alpha * g.T @ dzopt

@@ -121,6 +121,8 @@ def main():
         # log
         r_ew_w, Q_we = robot.link_pose()
         v_ew_w, ω_ew_w = robot.link_velocity()
+        r_ew_wd = []
+        r_bw_wd = []
         for planner in planners:
             if planner.type == "EE":
                 r_ew_wd, _ = planner.getTrackingPoint(t, robot_states)
@@ -129,13 +131,15 @@ def main():
         logger.append("ts", t)
         logger.append("xs", np.hstack(robot_states))
         logger.append("cmd_vels", u)
-        logger.append("r_ew_w_ds", r_ew_wd)
+        if len(r_ew_wd)>0:
+            logger.append("r_ew_w_ds", r_ew_wd)
         logger.append("r_ew_ws", r_ew_w)
         logger.append("Q_wes", Q_we)
         logger.append("v_ew_ws", v_ew_w)
         logger.append("ω_ew_ws", ω_ew_w)
 
-        logger.append("r_bw_w_ds", r_bw_wd)
+        if len(r_bw_wd)>0:
+            logger.append("r_bw_w_ds", r_bw_wd)
         logger.append("r_bw_ws", robot_states[0][:2])
 
         if controller.solver_status is not None:
@@ -145,19 +149,19 @@ def main():
         if controller.step_size is not None:
             logger.append("mpc_step_sizes", controller.step_size)
 
-        if controller.stmpc_run_time is not None:
-            logger.append("stmpc_run_time", controller.stmpc_run_time)
+        # if controller.stmpc_run_time is not None:
+        #     logger.append("stmpc_run_time", controller.stmpc_run_time)
 
-
+        print("Time {}".format(t))
         time.sleep(sim.timestep)
 
     data_name = ctrl_config["type"]
     timestamp = datetime.datetime.now()
     logger.save(timestamp, data_name)
-    # plotter = DataPlotter.from_logger(logger)
+    plotter = DataPlotter.from_logger(logger)
+    plotter.plot_all()
     # plotter.plot_cmd_vs_real_vel()
-    # plotter.plot_ee_position()
-    # plotter.show()
+    plotter.show()
 
 if __name__ == "__main__":
     main()
