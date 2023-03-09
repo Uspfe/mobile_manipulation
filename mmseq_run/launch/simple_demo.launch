@@ -1,0 +1,17 @@
+<?xml version="1.0"?>
+<!-- Launches the ROS-based simulation, which uses the real MPC and MRT nodes talking to a PyBullet sim environment. -->
+
+<launch>
+  <arg name="config"/>
+
+  <!-- use simulation time -->
+  <param name="/use_sim_time" value="true" type="bool"/>
+
+  <!-- Simulation -->
+  <node pkg="mmseq_run" type="sim_ros.py" name="sim_ros" output="screen" required="true" args="--config $(arg config) --GUI" />
+
+  <!-- Controller -->
+  <node pkg="mmseq_run" type="controller_ros_simple_demo.py" name="controller" output="screen" required="true" args="--config $(arg config)" />
+
+
+</launch>
