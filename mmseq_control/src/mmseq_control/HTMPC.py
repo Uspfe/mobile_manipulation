@@ -39,7 +39,7 @@ class MPC():
 
         self.v_cmd = np.zeros(self.nx - self.DoF)
 
-        self.xuCst = StateControlBoxConstraint(self.dt, self.robot, self.N)
+        self.xuCst = StateControlBoxConstraint(self.dt, self.robot, self.N, tol=1e-5)
         self.MotionCst = MotionConstraint(self.dt, self.N, self.robot)
 
         self.x_bar_sym = cs.MX.sym('x_bar', self.nx, self.N + 1)
@@ -86,6 +86,7 @@ class HTMPC(MPC):
 
         # 0.1 Get linearization point
         self.u_bar[:-1] = self.u_bar[1:]
+        self.u_bar[-1] = 0
         self.x_bar = self._predictTrajectories(xo, self.u_bar)
 
         # 0.2 Get ref, cost_fcn, hierarchy constraint for each planner
@@ -123,9 +124,9 @@ class HTMPC(MPC):
         self.u_bar = ubar_opt.copy()
         acc_cmd = self.u_bar[0]
         self.v_cmd = self.v_cmd + acc_cmd / self.rate
-        self.v_cmd = np.where(self.v_cmd < self.robot.ub_x[self.robot.DoF:]*0.95, self.v_cmd, self.robot.ub_x[self.robot.DoF:]*0.95)
-        self.v_cmd = np.where(self.v_cmd > self.robot.lb_x[self.robot.DoF:]*0.95, self.v_cmd,
-                              self.robot.lb_x[self.robot.DoF:]*0.95)
+        self.v_cmd = np.where(self.v_cmd < self.robot.ub_x[self.robot.DoF:]*0.9, self.v_cmd, self.robot.ub_x[self.robot.DoF:]*0.9)
+        self.v_cmd = np.where(self.v_cmd > self.robot.lb_x[self.robot.DoF:]*0.9, self.v_cmd,
+                              self.robot.lb_x[self.robot.DoF:]*0.9)
         return self.v_cmd, acc_cmd
 
     def solveHTMPC(self, xo, xbar, ubar, cost_fcns, hier_csts, r_bars):
@@ -311,87 +312,185 @@ class HTMPC(MPC):
         self.cost_iter[ht_iter, task_id, 0] = self._eval_cost_functions(cost_fcn, xbar_i, ubar_i, cost_fcn_params)
 
         for i in range(self.params["ST_MaxIntvl"]):
-            tp0 = time.perf_counter()
-            # t0 = time.perf_counter()
-            # Cost Function
-            H = cs.DM.zeros((self.QPsize, self.QPsize))
-            H += cs.DM.eye(self.QPsize) * 1e-6
-            g = cs.DM.zeros(self.QPsize)
-            for id, f in enumerate(cost_fcn):
-                Hi, gi = f.quad(xbar_i, ubar_i, cost_fcn_params[id])
-                H += Hi
-                g += gi
-            # t1 = time.perf_counter()
-            # print("Cost Function Prep Time:{}".format(t1 - t0))
+            if not self.params["slack"]:
+                tp0 = time.perf_counter()
+                # t0 = time.perf_counter()
+                # Cost Function
+                H = cs.DM.zeros((self.QPsize, self.QPsize))
+                H += cs.DM.eye(self.QPsize) * 1e-6
+                g = cs.DM.zeros(self.QPsize)
+                for id, f in enumerate(cost_fcn):
+                    Hi, gi = f.quad(xbar_i, ubar_i, cost_fcn_params[id])
+                    H += Hi
+                    g += gi
+                # t1 = time.perf_counter()
+                # print("Cost Function Prep Time:{}".format(t1 - t0))
 
-            # Equality Constraints
-            # t0 = time.perf_counter()
+                # Equality Constraints
+                # t0 = time.perf_counter()
 
-            A = cs.DM.zeros((0, self.QPsize))
-            b = cs.DM.zeros(0)
+                A = cs.DM.zeros((0, self.QPsize))
+                b = cs.DM.zeros(0)
 
-            for id, cst in enumerate(csts["eq"]):
-                Ai, bi = cst.linearize(xbar_i, ubar_i, *csts_params["eq"][id])
-                A = cs.vertcat(A, Ai)
-                b = cs.vertcat(b, bi)
-            # t1 = time.perf_counter()
-            # print("Eq Constraint Prep Time:{}".format(t1 - t0))
+                for id, cst in enumerate(csts["eq"]):
+                    Ai, bi = cst.linearize(xbar_i, ubar_i, *csts_params["eq"][id])
+                    A = cs.vertcat(A, Ai)
+                    b = cs.vertcat(b, bi)
+                # t1 = time.perf_counter()
+                # print("Eq Constraint Prep Time:{}".format(t1 - t0))
 
-            # Inequality Constraints (without state bound)
-            # t0 = time.perf_counter()
-            C = cs.DM.zeros((0, self.QPsize))
-            d = cs.DM.zeros(0)
-            for id, cst in enumerate(csts["ineq"][1:]):
-                Ci, di = cst.linearize(xbar_i, ubar_i, *csts_params["ineq"][id+1])
-                C = cs.vertcat(C, Ci)
-                d = cs.vertcat(d, di)
+                # Inequality Constraints (without state bound)
+                # t0 = time.perf_counter()
+                C = cs.DM.zeros((0, self.QPsize))
+                d = cs.DM.zeros(0)
+                for id, cst in enumerate(csts["ineq"][1:]):
+                    Ci, di = cst.linearize(xbar_i, ubar_i, *csts_params["ineq"][id + 1])
+                    C = cs.vertcat(C, Ci)
+                    d = cs.vertcat(d, di)
 
-            # C_scaled, d_scaled = self.scaleConstraints(C.toarray(), d.toarray().flatten())
+                # C_scaled, d_scaled = self.scaleConstraints(C.toarray(), d.toarray().flatten())
 
-            # State Bound
-            _, bx = self.xuCst.linearize(xbar_i, ubar_i)
+                # State Bound
+                # _, bx = self.xuCst.linearize(xbar_i, ubar_i)
+                Cxu, dxu = self.xuCst.linearize(xbar_i, ubar_i)
 
-            Ac = cs.vertcat(A, C)
-            uba = cs.vertcat(-b, -d)
-            lba = cs.vertcat(-b, -cs.DM.inf(d.shape[0]))
+                # Ac = cs.vertcat(A, C)
+                # uba = cs.vertcat(-b, -d)
+                # lba = cs.vertcat(-b, -cs.DM.inf(d.shape[0]))
 
-            qp = {}
-            qp['h'] = H.sparsity()
-            qp['a'] = Ac.sparsity()
-            opts= {"error_on_fail": True, "gurobi": {"OutputFlag": 0, "LogToConsole": 0, "Presolve": 1, "BarConvTol": 1e-8, "OptimalityTol": 1e-6}}
-            S = cs.conic('S', 'gurobi', qp, opts)
+                Ac = cs.vertcat(A, C, Cxu[:self.QPsize, :self.QPsize])
+                uba = cs.vertcat(-b, -d, -dxu[:self.QPsize])
+                lba = cs.vertcat(-b, -cs.DM.inf(d.shape[0]), dxu[self.QPsize:])
 
-            # H = H.toarray()
-            # H = np.where(np.abs(H) < 1e-10, 0, H)
-            # g = np.where(np.abs(g) < 1e-10, 0, g)
-            tp1 = time.perf_counter()
-            self.py_logger.log(5, "QP prep time:{}".format(tp1 - tp0))
+                qp = {}
+                qp['h'] = H.sparsity()
+                qp['a'] = Ac.sparsity()
+                opts= {"error_on_fail": True, "gurobi": {"OutputFlag":0, "LogToConsole": 0, "Presolve": 1, "BarConvTol": 1e-8, "OptimalityTol": 1e-6}}
+                S = cs.conic('S', 'gurobi', qp, opts)
 
-            t0 = time.perf_counter()
-            try:
-                results = S(h=H, g=g, a=Ac, uba=uba, lba=lba, lbx=bx[self.QPsize:], ubx=-bx[:self.QPsize])
-                results['status_val'] = 1
-                results['status'] = 'optimal'
-            except RuntimeError:
-                if not self.xuCst.check(xbar_i, ubar_i):
-                    results = {}
-                    results['status'] = 'infeasible'
-                    results['status_val'] = -1
-                    results['x'] = np.zeros(self.QPsize)
-                else:
-                    results = {}
-                    results['status'] = 'unknown'
-                    results['status_val'] = -10
-                    results['x'] = np.zeros(self.QPsize)
+                # H = H.toarray()
+                # H = np.where(np.abs(H) < 1e-10, 0, H)
+                # g = np.where(np.abs(g) < 1e-10, 0, g)
+                tp1 = time.perf_counter()
+                self.py_logger.log(5, "QP prep time:{}".format(tp1 - tp0))
 
-            t1 = time.perf_counter()
-            self.py_logger.log(5, "QP time:{}".format(t1 - t0))
+                t0 = time.perf_counter()
+                try:
+                    # results = S(h=H, g=g, a=Ac, uba=uba, lba=lba, lbx=bx[self.QPsize:], ubx=-bx[:self.QPsize])
+                    results = S(h=H, g=g, a=Ac, uba=uba, lba=lba)
+
+                    results['status_val'] = 1
+                    results['status'] = 'optimal'
+                except RuntimeError:
+                    if not self.xuCst.check(xbar_i, ubar_i):
+                        results = {}
+                        results['status'] = 'infeasible'
+                        results['status_val'] = -1
+                        results['x'] = np.zeros(self.QPsize)
+                    else:
+                        results = {}
+                        results['status'] = 'unknown'
+                        results['status_val'] = -10
+                        results['x'] = np.zeros(self.QPsize)
+
+                t1 = time.perf_counter()
+                self.py_logger.log(5, "QP time:{}".format(t1 - t0))
 
 
 
-            dzopt = np.array(results['x']).squeeze()
+                dzopt = np.array(results['x']).squeeze()
+            else:
+                tp0 = time.perf_counter()
+
+                # State Bound
+                # _, bx = self.xuCst.linearize(xbar_i, ubar_i)
+                Cxu, dxu = self.xuCst.linearize(xbar_i, ubar_i)
+                slack_var_size = dxu.size()[0]
+
+                t0 = time.perf_counter()
+                # Cost Function
+                H = cs.DM.zeros((self.QPsize + slack_var_size, self.QPsize+slack_var_size))
+                H[:self.QPsize, :self.QPsize] += cs.DM.eye(self.QPsize) * 1e-6
+                H[self.QPsize:, self.QPsize:] += cs.DM.eye(slack_var_size) * 10
+                g = cs.DM.zeros(self.QPsize + slack_var_size)
+                for id, f in enumerate(cost_fcn):
+                    Hi, gi = f.quad(xbar_i, ubar_i, cost_fcn_params[id])
+                    H[:self.QPsize, :self.QPsize] += Hi
+                    g[:self.QPsize] += gi
+                t1 = time.perf_counter()
+                print("Cost Function Prep Time:{}".format(t1 - t0))
+
+                # Equality Constraints
+                # t0 = time.perf_counter()
+
+                A = cs.DM.zeros((0, self.QPsize))
+                b = cs.DM.zeros(0)
+
+                for id, cst in enumerate(csts["eq"]):
+                    Ai, bi = cst.linearize(xbar_i, ubar_i, *csts_params["eq"][id])
+                    A = cs.vertcat(A, Ai)
+                    b = cs.vertcat(b, bi)
+                # t1 = time.perf_counter()
+                # print("Eq Constraint Prep Time:{}".format(t1 - t0))
+
+                # Inequality Constraints (without state bound)
+                # t0 = time.perf_counter()
+                C = cs.DM.zeros((0, self.QPsize))
+                d = cs.DM.zeros(0)
+                for id, cst in enumerate(csts["ineq"][1:]):
+                    Ci, di = cst.linearize(xbar_i, ubar_i, *csts_params["ineq"][id + 1])
+                    C = cs.vertcat(C, Ci)
+                    d = cs.vertcat(d, di)
+
+                Ac = cs.vertcat(A, C)
+                Ac =cs.horzcat(Ac, cs.DM.zeros(Ac.size()[0], slack_var_size))
+                Axu = cs.horzcat(Cxu, -cs.DM_eye(slack_var_size))
+                Ac = cs.vertcat(Ac, Axu)
+
+
+                uba = cs.vertcat(-b, -d, -dxu)
+                lba = cs.vertcat(-b, -cs.DM.inf(d.shape[0] + slack_var_size))
+
+                ubx = cs.DM.inf(self.QPsize + slack_var_size)
+                lbx = cs.vertcat(-cs.DM.inf(self.QPsize), cs.DM.zeros(slack_var_size))
+
+                qp = {}
+                qp['h'] = H.sparsity()
+                qp['a'] = Ac.sparsity()
+                opts = {"error_on_fail": True,
+                        "gurobi": {"OutputFlag": 0, "LogToConsole": 0, "Presolve": 1, "BarConvTol": 1e-8,
+                                   "OptimalityTol": 1e-6}}
+                S = cs.conic('S', 'gurobi', qp, opts)
+
+                tp1 = time.perf_counter()
+                self.py_logger.log(5, "QP prep time:{}".format(tp1 - tp0))
+
+                t0 = time.perf_counter()
+                try:
+                    results = S(h=H, g=g, a=Ac, uba=uba, lba=lba, lbx=lbx, ubx=ubx)
+                    # results = S(h=H, g=g, a=Ac, uba=uba, lba=lba)
+
+                    results['status_val'] = 1
+                    results['status'] = 'optimal'
+                except RuntimeError:
+                    if not self.xuCst.check(xbar_i, ubar_i):
+                        results = {}
+                        results['status'] = 'infeasible'
+                        results['status_val'] = -1
+                        results['x'] = np.zeros(self.QPsize)
+                    else:
+                        results = {}
+                        results['status'] = 'unknown'
+                        results['status_val'] = -10
+                        results['x'] = np.zeros(self.QPsize)
+
+                t1 = time.perf_counter()
+                self.py_logger.log(5, "QP time:{}".format(t1 - t0))
+
+                dzopt = np.array(results['x']).squeeze()[:self.QPsize]
+                s = np.array(results['x']).squeeze()[self.QPsize:]
+
             dubar = dzopt[self.nx * (self.N + 1):]
-            linesearch_step_opt = 1.
             t0 = time.perf_counter()
             if results['status'] == 'optimal':
                 # linesearch_step_opt, J_opt = self.lineSearch(xo, ubar_i, dubar, cost_fcn, cost_fcn_params, csts, csts_params)
@@ -402,7 +501,6 @@ class HTMPC(MPC):
                 xbar_i, ubar_i = xbar_opt_i.copy(), ubar_opt_i.copy()
             else:
                 linesearch_step_opt = 0.
-
 
 
             self.cost_iter[ht_iter, task_id, i+1] = self._eval_cost_functions(cost_fcn, xbar_i, ubar_i, cost_fcn_params)

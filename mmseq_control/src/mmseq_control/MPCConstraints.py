@@ -159,7 +159,7 @@ class HierarchicalTrackingConstraint(NonlinearConstraint):
         super().__init__(dt, nx, nu, ng, N, g_fcn, params_sym, name+"_h", 1e-2)
 
 class StateControlBoxConstraint(NonlinearConstraint):
-    def __init__(self, dt, robot_mdl, N):
+    def __init__(self, dt, robot_mdl, N, tol=1e-2):
         ss_mdl = robot_mdl.ssSymMdl
         nx = ss_mdl["nx"]
         nu = ss_mdl["nu"]
@@ -172,7 +172,7 @@ class StateControlBoxConstraint(NonlinearConstraint):
         g_eqn = cs.vertcat(self.z_bar_sym, -self.z_bar_sym) - np.expand_dims(np.hstack((self.ub, -self.lb)),-1)
         g_fcn = cs.Function('g_'+name, [self.x_bar_sym, self.u_bar_sym], [g_eqn], ["x_bar", "u_bar"], ['g_'+name])
 
-        super().__init__(dt, nx, nu, ng, N, g_fcn, [], name, tol=1e-2)
+        super().__init__(dt, nx, nu, ng, N, g_fcn, [], name, tol=tol)
 
 def testBoxConstraint():
     print("Testing Box Constraint")

@@ -14,11 +14,11 @@ controller:
   # weights for each cost function
   cost_params:
     EEPos3:
-      Qk: 10.
-      P: 10.
+      Qk: 1.
+      P: 1.
     BasePos2:
-      Qk: 10.
-      P: 10.
+      Qk: 1.
+      P: 1.
     Effort:
       Qqa: 0.
       Qqb: 0.
@@ -38,8 +38,8 @@ controller:
 
     limits:
       input:
-        lower: [ -2.5, -2.5, -1pi, -2.16, -2.16, -3.15, -3.2, -3.2, -3.2 ]
-        upper: [ 2.5, 2.5, 1pi, 2.16, 2.16, 3.15, 3.2, 3.2, 3.2  ]
+        lower: [ -1.1, -1.1, -1pi, -2.16, -2.16, -3.15, -3.2, -3.2, -3.2 ]
+        upper: [ 1.1, 1.1, 1pi, 2.16, 2.16, 3.15, 3.2, 3.2, 3.2  ]
       state:
         lower: [ -10, -10, -1pi, -1pi, -1pi, -1pi, -1pi, -1pi, -1pi,
                  -1.1, -1.1, -2, -2, -2, -3, -3, -3, -3]
