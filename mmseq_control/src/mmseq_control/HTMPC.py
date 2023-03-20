@@ -10,7 +10,7 @@ from mosek import iparam, dparam
 from mmseq_control.MPCCostFunctions import EEPos3CostFunction, BasePos2CostFunction, ControlEffortCostFunciton
 from mmseq_control.MPCConstraints import HierarchicalTrackingConstraint, MotionConstraint, StateControlBoxConstraint
 from mmseq_control.robot import MobileManipulator3D as MM
-
+from mmseq_utils.math import wrap_pi_array
 
 
 class MPC():
@@ -82,6 +82,7 @@ class HTMPC(MPC):
     def control(self, t, robot_states, planners):
         self.curr_control_time = t
         q, v = robot_states
+        q[2:9] = wrap_pi_array(q[2:9])
         xo = np.hstack((q, v))
 
         # 0.1 Get linearization point
@@ -113,6 +114,9 @@ class HTMPC(MPC):
             if id == num_plans - 1:
                 cost_fcns[-1].append(self.CtrlEffCost)
                 r_bars[-1].append(np.zeros(self.CtrlEffCost.nr))
+                # if num_plans == 2:
+                #     cost_fcns[-1].append(cost_fcns[0][0])
+                #     r_bars[-1].append(r_bars[0][0])
 
             if id < num_plans - 1:
                 hier_csts.append(HierarchicalTrackingConstraint(cost_fcns[-1][0], planner.type))
@@ -124,9 +128,11 @@ class HTMPC(MPC):
         self.u_bar = ubar_opt.copy()
         acc_cmd = self.u_bar[0]
         self.v_cmd = self.v_cmd + acc_cmd / self.rate
-        self.v_cmd = np.where(self.v_cmd < self.robot.ub_x[self.robot.DoF:]*0.9, self.v_cmd, self.robot.ub_x[self.robot.DoF:]*0.9)
-        self.v_cmd = np.where(self.v_cmd > self.robot.lb_x[self.robot.DoF:]*0.9, self.v_cmd,
-                              self.robot.lb_x[self.robot.DoF:]*0.9)
+        clamp_rate = 0.95
+        self.v_cmd = np.where(self.v_cmd < self.robot.ub_x[self.robot.DoF:]*clamp_rate, self.v_cmd,
+                              self.robot.ub_x[self.robot.DoF:]*clamp_rate)
+        self.v_cmd = np.where(self.v_cmd > self.robot.lb_x[self.robot.DoF:]*clamp_rate, self.v_cmd,
+                              self.robot.lb_x[self.robot.DoF:]*clamp_rate)
         return self.v_cmd, acc_cmd
 
     def solveHTMPC(self, xo, xbar, ubar, cost_fcns, hier_csts, r_bars):
@@ -169,6 +175,8 @@ class HTMPC(MPC):
 
                 # t0 = time.perf_counter()
                 xbar_lopt, ubar_lopt, status = self.solveSTMPCCasadi(xo, xbar_l.copy(), ubar_l.copy(), cost_fcn, r_bars[task_id], csts, csts_params, i, task_id)
+                # xbar_lopt, ubar_lopt, status = self.solveSTMPC(xo, xbar_l.copy(), ubar_l.copy(), cost_fcn, r_bars[task_id], csts, csts_params, i, task_id)
+
                 # t1 = time.perf_counter()
                 # print("STMPC Time: {}".format(t1 - t0))
 
@@ -351,16 +359,16 @@ class HTMPC(MPC):
                 # C_scaled, d_scaled = self.scaleConstraints(C.toarray(), d.toarray().flatten())
 
                 # State Bound
-                # _, bx = self.xuCst.linearize(xbar_i, ubar_i)
-                Cxu, dxu = self.xuCst.linearize(xbar_i, ubar_i)
+                _, bx = self.xuCst.linearize(xbar_i, ubar_i)
+                # Cxu, dxu = self.xuCst.linearize(xbar_i, ubar_i)
 
-                # Ac = cs.vertcat(A, C)
-                # uba = cs.vertcat(-b, -d)
-                # lba = cs.vertcat(-b, -cs.DM.inf(d.shape[0]))
+                Ac = cs.vertcat(A, C)
+                uba = cs.vertcat(-b, -d)
+                lba = cs.vertcat(-b, -cs.DM.inf(d.shape[0]))
 
-                Ac = cs.vertcat(A, C, Cxu[:self.QPsize, :self.QPsize])
-                uba = cs.vertcat(-b, -d, -dxu[:self.QPsize])
-                lba = cs.vertcat(-b, -cs.DM.inf(d.shape[0]), dxu[self.QPsize:])
+                # Ac = cs.vertcat(A, C, Cxu[:self.QPsize, :self.QPsize])
+                # uba = cs.vertcat(-b, -d, -dxu[:self.QPsize])
+                # lba = cs.vertcat(-b, -cs.DM.inf(d.shape[0]), dxu[self.QPsize:])
 
                 qp = {}
                 qp['h'] = H.sparsity()
@@ -376,8 +384,8 @@ class HTMPC(MPC):
 
                 t0 = time.perf_counter()
                 try:
-                    # results = S(h=H, g=g, a=Ac, uba=uba, lba=lba, lbx=bx[self.QPsize:], ubx=-bx[:self.QPsize])
-                    results = S(h=H, g=g, a=Ac, uba=uba, lba=lba)
+                    results = S(h=H, g=g, a=Ac, uba=uba, lba=lba, lbx=bx[self.QPsize:], ubx=-bx[:self.QPsize])
+                    # results = S(h=H, g=g, a=Ac, uba=uba, lba=lba)
 
                     results['status_val'] = 1
                     results['status'] = 'optimal'

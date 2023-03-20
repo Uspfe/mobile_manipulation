@@ -38,6 +38,7 @@ class MobileManipulator3D:
         self.tool_link_name = config["robot"]["tool_link_name"]
         self._setupKinSymMdl()
         self._setupSSSymMdlDI()
+        self._setupJacobianSymMdl()
 
     def _setupSSSymMdlDI(self):
         """ Create State-space symbolic model for MM
@@ -82,6 +83,14 @@ class MobileManipulator3D:
         self.kinSymMdls = {}
         for name in self.link_names:
             self.kinSymMdls[name] = self._getFk(name)
+
+    def _setupJacobianSymMdl(self):
+        self.jacSymMdls = {}
+        for name in self.link_names:
+            fk_fcn = self.kinSymMdls[name]
+            fk_pos_eqn, _ = fk_fcn(self.q_sym)
+            Jk_eqn = cs.jacobian(fk_pos_eqn, self.q_sym)
+            self.jacSymMdls[name] = cs.Function(name + "_jac_fcn", [self.q_sym], [Jk_eqn], ["q"], ["J(q)"])
 
     def _getFk(self, link_name):
         """ Create symbolic function for a link named link_name
@@ -183,21 +192,28 @@ def main():
 
     for name in robot.link_names[1:]:
         print(name)
+        q, v = mm.joint_states()
+
         link_idx = mm.links[name][0]
         pos_sim, orn_sim = mm.link_pose(link_idx)
         rot_sim = SO3.from_quaternion(orn_sim, 'xyzw').as_matrix()
+        J_sim = mm.jacobian(q)
 
-        q, v = mm.joint_states()
         fk_fcn = robot.kinSymMdls[name]
         # yappi.set_clock_type("wall")
         # yappi.start()
         pos_mdl, rot_mdl = fk_fcn(q)
+        J_fcn = robot.jacSymMdls[name]
+        J_mdl = J_fcn(q)
+        # print(J_mdl)
+        # print(J_sim[:3])
         # yappi.get_func_stats().print_all()
 
         pos_mdl = pos_mdl.toarray().flatten()
         # Note that position differences won't be zero because pybullet gives CoM position whereas casadi_kin_dyn gives joint position
         # The differences should be exactly the CoM position in world frame
         print("pos diff:{}, rot diff{}".format(np.linalg.norm(pos_sim - pos_mdl), np.linalg.norm(rot_mdl - rot_sim)))
+        print("J diff{}".format(np.linalg.norm(J_mdl - J_sim[:3])))
 
     print("Testing motion model integrator")
     dt = 0.1

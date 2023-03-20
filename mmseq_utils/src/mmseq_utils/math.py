@@ -149,6 +149,19 @@ def plane_span(normal):
     """
     return null_space(normal[None, :]).T
 
+def wrap_pi_scalar(theta):
+    while np.abs(theta) > np.pi:
+        if theta > np.pi:
+            theta -= 2 * np.pi
+        elif theta < - np.pi:
+            theta += 2 * np.pi
+
+    return theta
+
+def wrap_pi_array(thetas):
+    thetas_wrapped = [wrap_pi_scalar(theta) for theta in thetas]
+
+    return np.array(thetas_wrapped)
 
 # TODO
 # def project_points_on_axes(vertices, point, axes):
