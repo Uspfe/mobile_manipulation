@@ -23,7 +23,7 @@ class MPC():
 
         self.params = config
         self.dt = self.params["dt"]
-        self.N = int(self.params['prediction_horizon']/self.params['dt'])
+        self.N = int(self.params['prediction_horizon'] / self.params['dt'])
         self.QPsize = self.nx * (self.N + 1) + self.nu * self.N
 
         self.EEPos3Cost = EEPos3CostFunction(self.dt, self.N, self.robot, config["cost_params"]["EEPos3"])
@@ -80,6 +80,7 @@ class HTMPC(MPC):
         self.MotionCst = MotionConstraint(self.dt, self.N, self.robot, "DI Motion Model")
 
     def control(self, t, robot_states, planners):
+        self.py_logger.debug("control time {}".format(t))
         self.curr_control_time = t
         q, v = robot_states
         q[2:9] = wrap_pi_array(q[2:9])
@@ -97,30 +98,30 @@ class HTMPC(MPC):
         hier_csts = []
 
         for id, planner in enumerate(planners):
-            r_bar = [planner.getTrackingPoint(t+k*self.dt, (self.x_bar[k, :self.DoF], self.x_bar[k, self.DoF:]))[0] for k in range(self.N+1)]
-            # r_bars.append([np.array(r_bar), np.zeros(self.CtrlEffCost.nr)])
-            r_bars.append([np.array(r_bar)])
+            r_bar = [planner.getTrackingPoint(t + k * self.dt, (self.x_bar[k, :self.DoF], self.x_bar[k, self.DoF:]))[0]
+                     for k in range(self.N + 1)]
+            r_bars.append([np.array(r_bar), np.zeros(self.CtrlEffCost.nr)])
+            # r_bars.append([np.array(r_bar)])
             if planner.cost_type == "EEPos3":
-                # cost_fcns.append([self.EEPos3Cost, self.CtrlEffCost])
-                cost_fcns.append([self.EEPos3Cost])
+                cost_fcns.append([self.EEPos3Cost, self.CtrlEffCost])
+                # cost_fcns.append([self.EEPos3Cost])
 
             elif planner.cost_type == "BasePos2":
-                # cost_fcns.append([self.BasePos2Cost, self.CtrlEffCost])
-                cost_fcns.append([self.BasePos2Cost])
+                cost_fcns.append([self.BasePos2Cost, self.CtrlEffCost])
+                # cost_fcns.append([self.BasePos2Cost])
 
             else:
                 self.py_logger.warning("unknown cost type, planner # %d", id)
 
-            if id == num_plans - 1:
-                cost_fcns[-1].append(self.CtrlEffCost)
-                r_bars[-1].append(np.zeros(self.CtrlEffCost.nr))
-                # if num_plans == 2:
-                #     cost_fcns[-1].append(cost_fcns[0][0])
-                #     r_bars[-1].append(r_bars[0][0])
+            # if id == num_plans - 1:
+            #     cost_fcns[-1].append(self.CtrlEffCost)
+            #     r_bars[-1].append(np.zeros(self.CtrlEffCost.nr))
+            #     if num_plans == 2:
+            #         cost_fcns[-1].append(cost_fcns[0][0])
+            #         r_bars[-1].append(r_bars[0][0])
 
             if id < num_plans - 1:
                 hier_csts.append(HierarchicalTrackingConstraint(cost_fcns[-1][0], planner.type))
-
 
         xbar_opt, ubar_opt = self.solveHTMPC(xo, self.x_bar.copy(), self.u_bar.copy(), cost_fcns, hier_csts, r_bars)
 
@@ -128,11 +129,11 @@ class HTMPC(MPC):
         self.u_bar = ubar_opt.copy()
         acc_cmd = self.u_bar[0]
         self.v_cmd = self.v_cmd + acc_cmd / self.rate
-        clamp_rate = 0.95
-        self.v_cmd = np.where(self.v_cmd < self.robot.ub_x[self.robot.DoF:]*clamp_rate, self.v_cmd,
-                              self.robot.ub_x[self.robot.DoF:]*clamp_rate)
-        self.v_cmd = np.where(self.v_cmd > self.robot.lb_x[self.robot.DoF:]*clamp_rate, self.v_cmd,
-                              self.robot.lb_x[self.robot.DoF:]*clamp_rate)
+        clamp_rate = 0.99
+        self.v_cmd = np.where(self.v_cmd < self.robot.ub_x[self.robot.DoF:] * clamp_rate, self.v_cmd,
+                              self.robot.ub_x[self.robot.DoF:] * clamp_rate)
+        self.v_cmd = np.where(self.v_cmd > self.robot.lb_x[self.robot.DoF:] * clamp_rate, self.v_cmd,
+                              self.robot.lb_x[self.robot.DoF:] * clamp_rate)
         return self.v_cmd, acc_cmd
 
     def solveHTMPC(self, xo, xbar, ubar, cost_fcns, hier_csts, r_bars):
@@ -150,7 +151,7 @@ class HTMPC(MPC):
         xbar_l = xbar.copy()
         ubar_l = ubar.copy()
 
-        self.cost_iter = np.zeros((self.params["HT_MaxIntvl"], task_num, self.params["ST_MaxIntvl"]+1))
+        self.cost_iter = np.zeros((self.params["HT_MaxIntvl"], task_num, self.params["ST_MaxIntvl"] + 1))
         self.cost_final = np.zeros(task_num)
 
         self.step_size = np.zeros((self.params["HT_MaxIntvl"], task_num, self.params["ST_MaxIntvl"]))
@@ -174,21 +175,20 @@ class HTMPC(MPC):
                         csts_params["ineq"].append([r_bars[prev_task_id][0].T, e_bars[prev_task_id]])
 
                 # t0 = time.perf_counter()
-                xbar_lopt, ubar_lopt, status = self.solveSTMPCCasadi(xo, xbar_l.copy(), ubar_l.copy(), cost_fcn, r_bars[task_id], csts, csts_params, i, task_id)
+                xbar_lopt, ubar_lopt, status = self.solveSTMPCCasadi(xo, xbar_l.copy(), ubar_l.copy(), cost_fcn,
+                                                                     r_bars[task_id], csts, csts_params, i, task_id)
                 # xbar_lopt, ubar_lopt, status = self.solveSTMPC(xo, xbar_l.copy(), ubar_l.copy(), cost_fcn, r_bars[task_id], csts, csts_params, i, task_id)
 
                 # t1 = time.perf_counter()
                 # print("STMPC Time: {}".format(t1 - t0))
-
-
-                e_bars_l = cost_fcn[0].e_bar_fcn(xbar_lopt.T, ubar_lopt.T, r_bars[task_id][0].T)
-                e_bars.append(e_bars_l.toarray().flatten())
+                if task_id < task_num - 1:
+                    e_bars_l = cost_fcn[0].e_bar_fcn(xbar_lopt.T, ubar_lopt.T, r_bars[task_id][0].T)
+                    e_bars.append(e_bars_l.toarray().flatten())
                 xbar_l = xbar_lopt.copy()
                 ubar_l = ubar_lopt.copy()
 
         for task_id, cost_fcn in enumerate(cost_fcns):
             self.cost_final[task_id] = self._eval_cost_functions(cost_fcn, xbar_l, ubar_l, r_bars[task_id])
-
         return xbar_l, ubar_l
 
     def solveSTMPC(self, xo, xbar, ubar, cost_fcn, cost_fcn_params, csts, csts_params, ht_iter=0, task_id=0):
@@ -259,10 +259,10 @@ class HTMPC(MPC):
             A = matrix(A.toarray())
             b = matrix(-b.toarray())
             solvers.options['mosek'] = {iparam.log: 0, iparam.max_num_warnings: 0}
-                                        # dparam.intpnt_qo_tol_pfeas: 1e-5,
-                                        # dparam.intpnt_qo_tol_dfeas: 1e-5,
-                                        # dparam.intpnt_qo_tol_rel_gap: 1e-5,
-                                        # dparam.intpnt_qo_tol_infeas: 1e-5}
+            # dparam.intpnt_qo_tol_pfeas: 1e-5,
+            # dparam.intpnt_qo_tol_dfeas: 1e-5,
+            # dparam.intpnt_qo_tol_rel_gap: 1e-5,
+            # dparam.intpnt_qo_tol_infeas: 1e-5}
             initval = {'x': matrix(np.zeros(self.QPsize))}
             # t0 = time.perf_counter()
             results = solvers.qp(P, q, G, h, A, b, initvals=initval, solver='mosek')
@@ -282,18 +282,19 @@ class HTMPC(MPC):
             linesearch_step_opt = 1.
             # t0 = time.perf_counter()
             if results['status'] == 'optimal':
-                linesearch_step_opt, J_opt = self.lineSearch(xo, ubar_i, dubar, cost_fcn, cost_fcn_params, csts, csts_params)
+                linesearch_step_opt, J_opt = self.lineSearch(xo, ubar_i, dubar, cost_fcn, cost_fcn_params, csts,
+                                                             csts_params)
                 # linesearch_step_opt, J_opt = self.lineSearchNew(xo, ubar_i, dubar, cost_fcn, cost_fcn_params, csts, csts_params, dzopt)
 
             else:
                 linesearch_step_opt = 0
 
-            ubar_opt_i = ubar_i + linesearch_step_opt*dubar.reshape((self.N, self.nu))
+            ubar_opt_i = ubar_i + linesearch_step_opt * dubar.reshape((self.N, self.nu))
             xbar_opt_i = self._predictTrajectories(xo, ubar_opt_i)
             xbar_i, ubar_i = xbar_opt_i.copy(), ubar_opt_i.copy()
 
-
-            self.cost_iter[ht_iter, task_id, i+1] = self._eval_cost_functions(cost_fcn, xbar_i, ubar_i, cost_fcn_params)
+            self.cost_iter[ht_iter, task_id, i + 1] = self._eval_cost_functions(cost_fcn, xbar_i, ubar_i,
+                                                                                cost_fcn_params)
             self.step_size[ht_iter, task_id, i] = linesearch_step_opt
             self.solver_status[ht_iter, task_id, i] = results['status_val']
             # t1 = time.perf_counter()
@@ -373,7 +374,9 @@ class HTMPC(MPC):
                 qp = {}
                 qp['h'] = H.sparsity()
                 qp['a'] = Ac.sparsity()
-                opts= {"error_on_fail": True, "gurobi": {"OutputFlag":0, "LogToConsole": 0, "Presolve": 1, "BarConvTol": 1e-8, "OptimalityTol": 1e-6}}
+                opts = {"error_on_fail": True,
+                        "gurobi": {"OutputFlag": 0, "LogToConsole": 0, "Presolve": 1, "BarConvTol": 1e-8,
+                                   "OptimalityTol": 1e-6}}
                 S = cs.conic('S', 'gurobi', qp, opts)
 
                 # H = H.toarray()
@@ -404,8 +407,6 @@ class HTMPC(MPC):
                 t1 = time.perf_counter()
                 self.py_logger.log(5, "QP time:{}".format(t1 - t0))
 
-
-
                 dzopt = np.array(results['x']).squeeze()
             else:
                 tp0 = time.perf_counter()
@@ -417,7 +418,7 @@ class HTMPC(MPC):
 
                 t0 = time.perf_counter()
                 # Cost Function
-                H = cs.DM.zeros((self.QPsize + slack_var_size, self.QPsize+slack_var_size))
+                H = cs.DM.zeros((self.QPsize + slack_var_size, self.QPsize + slack_var_size))
                 H[:self.QPsize, :self.QPsize] += cs.DM.eye(self.QPsize) * 1e-6
                 H[self.QPsize:, self.QPsize:] += cs.DM.eye(slack_var_size) * 10
                 g = cs.DM.zeros(self.QPsize + slack_var_size)
@@ -451,10 +452,9 @@ class HTMPC(MPC):
                     d = cs.vertcat(d, di)
 
                 Ac = cs.vertcat(A, C)
-                Ac =cs.horzcat(Ac, cs.DM.zeros(Ac.size()[0], slack_var_size))
+                Ac = cs.horzcat(Ac, cs.DM.zeros(Ac.size()[0], slack_var_size))
                 Axu = cs.horzcat(Cxu, -cs.DM_eye(slack_var_size))
                 Ac = cs.vertcat(Ac, Axu)
-
 
                 uba = cs.vertcat(-b, -d, -dxu)
                 lba = cs.vertcat(-b, -cs.DM.inf(d.shape[0] + slack_var_size))
@@ -502,20 +502,21 @@ class HTMPC(MPC):
             t0 = time.perf_counter()
             if results['status'] == 'optimal':
                 # linesearch_step_opt, J_opt = self.lineSearch(xo, ubar_i, dubar, cost_fcn, cost_fcn_params, csts, csts_params)
-                linesearch_step_opt, _ = self.lineSearchNew(xo, ubar_i, dubar, cost_fcn, cost_fcn_params, csts, csts_params, dzopt)
+                linesearch_step_opt, _ = self.lineSearchNew(xo, ubar_i, dubar, cost_fcn, cost_fcn_params, csts,
+                                                            csts_params, dzopt)
 
-                ubar_opt_i = ubar_i + linesearch_step_opt*dubar.reshape((self.N, self.nu))
+                ubar_opt_i = ubar_i + linesearch_step_opt * dubar.reshape((self.N, self.nu))
                 xbar_opt_i = self._predictTrajectories(xo, ubar_opt_i)
                 xbar_i, ubar_i = xbar_opt_i.copy(), ubar_opt_i.copy()
             else:
                 linesearch_step_opt = 0.
 
-
-            self.cost_iter[ht_iter, task_id, i+1] = self._eval_cost_functions(cost_fcn, xbar_i, ubar_i, cost_fcn_params)
+            self.cost_iter[ht_iter, task_id, i + 1] = self._eval_cost_functions(cost_fcn, xbar_i, ubar_i,
+                                                                                cost_fcn_params)
             self.step_size[ht_iter, task_id, i] = linesearch_step_opt
             self.solver_status[ht_iter, task_id, i] = results['status_val']
             t1 = time.perf_counter()
-            self.py_logger.log(5,"Line Search time:{}".format(t1 - t0))
+            self.py_logger.log(5, "Line Search time:{}".format(t1 - t0))
 
         return xbar_i, ubar_i, results['status']
 
@@ -537,7 +538,6 @@ class HTMPC(MPC):
     def scaleConstraintsNew(self, G, h):
         smallval_idx = np.where(np.abs(h) < 1e-6)
         h[smallval_idx] = 0.
-
 
         smallval_G_idx = np.where(np.abs(G) < 1e-10)
         G[smallval_G_idx] = 0.
@@ -565,12 +565,15 @@ class HTMPC(MPC):
         # scale factor starts at 1
         t = 1
 
-        beta = self.params["beta"]      # backtracking coefficient
-        alpha = self.params["alpha"]    # discount in decrement
+        beta = self.params["beta"]  # backtracking coefficient
+        alpha = self.params["alpha"]  # discount in decrement
         MAX_ITER = 10
 
         dubar_rp = dubar.reshape((self.N, self.nu))
         xbar = self._predictTrajectories(xo, ubar)
+        # print(xbar[:, 9])
+        # print(ubar[:, 0])
+        # print(xo)
         for k in range(MAX_ITER):
             ubar_new = ubar + t * dubar_rp
             xbar_new = self._predictTrajectories(xo, ubar_new)
@@ -580,7 +583,9 @@ class HTMPC(MPC):
                 feas_i = cst.check(xbar_new, ubar_new, *csts_params["ineq"][cst_id])
                 if not feas_i:
                     feas = False
-                    self.py_logger.debug("Controller: line search step {} not feasible. Violating constraint {}".format(t, cst.name))
+                    # print(xbar_new[:, 9])
+                    self.py_logger.debug(
+                        "Controller: line search step {} not feasible. Violating constraint {}".format(t, cst.name))
                     break
 
             if feas:
@@ -593,7 +598,7 @@ class HTMPC(MPC):
                 if J_xp < J_xp_lin:
                     return t, J_xp
                 else:
-                    self.py_logger.debug("Controller: line search step acceptance condition not met.")
+                    self.py_logger.debug("Controller: line search step acceptance condition not met {}.".format(J_xp_lin - J_xp))
 
             t = t * beta
 
@@ -601,11 +606,6 @@ class HTMPC(MPC):
         for fid, f in enumerate(cost_fcn):
             J += f.evaluate(xbar, ubar, cost_fcn_params[fid])
         return 0, J
-
-
-
-
-
 
     def lineSearch(self, xo, ubar, dubar, cost_fcn, cost_fcn_params, csts, csts_params):
         alphas = np.linspace(0, 1, 10)
@@ -697,7 +697,7 @@ class HTMPCLex(HTMPC):
         return xbar_l, ubar_l
 
     def solveSTMPC(self, xo, xbar, ubar, cost_fcn, cost_fcn_params, csts, csts_params, ht_iter=0, task_id=0):
-        self.cost_iter[ht_iter,task_id,0] = self._eval_cost_functions(cost_fcn, xbar, ubar, cost_fcn_params)
+        self.cost_iter[ht_iter, task_id, 0] = self._eval_cost_functions(cost_fcn, xbar, ubar, cost_fcn_params)
         # f (x)
         f_eqn = cs.DM.zeros()
         for cost_id, cost in enumerate(cost_fcn):
@@ -725,7 +725,7 @@ class HTMPCLex(HTMPC):
             gub = cs.vertcat(gub, cs.DM.zeros(p))
 
         nlp = {'x': self.z_bar_sym, 'f': f_eqn, 'g': g_eqn}
-        opts = {"ipopt": {'linear_solver': "ma86", 'print_level': 0}}#, 'constr_viol_tol': 1e-5, 'tol': 1e-5}}
+        opts = {"ipopt": {'linear_solver': "ma86", 'print_level': 0}}  # , 'constr_viol_tol': 1e-5, 'tol': 1e-5}}
         S = cs.nlpsol('S', 'ipopt', nlp, opts)
 
         # Solve NLP
@@ -742,4 +742,3 @@ class HTMPCLex(HTMPC):
         self.cost_iter[ht_iter, task_id, 1] = self._eval_cost_functions(cost_fcn, xbar_new, ubar_new, cost_fcn_params)
 
         return xbar_new, ubar_new, 0
-
