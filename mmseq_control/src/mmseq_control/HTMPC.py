@@ -7,7 +7,7 @@ import casadi as cs
 from cvxopt import solvers, matrix
 from mosek import iparam, dparam
 
-from mmseq_control.MPCCostFunctions import EEPos3CostFunction, BasePos2CostFunction, ControlEffortCostFunciton
+from mmseq_control.MPCCostFunctions import EEPos3CostFunction, BasePos2CostFunction, ControlEffortCostFunciton, SoftConstraintsRBFCostFunction
 from mmseq_control.MPCConstraints import HierarchicalTrackingConstraint, MotionConstraint, StateControlBoxConstraint
 from mmseq_control.robot import MobileManipulator3D as MM
 from mmseq_utils.math import wrap_pi_array
@@ -41,6 +41,7 @@ class MPC():
 
         self.xuCst = StateControlBoxConstraint(self.dt, self.robot, self.N, tol=1e-5)
         self.MotionCst = MotionConstraint(self.dt, self.N, self.robot)
+        self.xuSoftCst = SoftConstraintsRBFCostFunction(self.params["xu_soft"]["mu"], self.params["xu_soft"]["zeta"], self.xuCst, "xuSoftCst")
 
         self.x_bar_sym = cs.MX.sym('x_bar', self.nx, self.N + 1)
         self.u_bar_sym = cs.MX.sym('u_bar', self.nu, self.N)
@@ -100,7 +101,7 @@ class HTMPC(MPC):
         for id, planner in enumerate(planners):
             r_bar = [planner.getTrackingPoint(t + k * self.dt, (self.x_bar[k, :self.DoF], self.x_bar[k, self.DoF:]))[0]
                      for k in range(self.N + 1)]
-            r_bars.append([np.array(r_bar), np.zeros(self.CtrlEffCost.nr)])
+            r_bars.append([[np.array(r_bar)], [np.zeros(self.CtrlEffCost.nr)]])
             # r_bars.append([np.array(r_bar)])
             if planner.cost_type == "EEPos3":
                 cost_fcns.append([self.EEPos3Cost, self.CtrlEffCost])
@@ -166,29 +167,40 @@ class HTMPC(MPC):
                     cst.tol = self.tol_schedule[i]
 
             for task_id, cost_fcn in enumerate(cost_fcns):
-                csts = {"eq": [self.MotionCst], "ineq": [self.xuCst]}
-                csts_params = {"eq": [[xo]], "ineq": [[]]}
+                if self.params["soft_cst"]:
+                    csts = {"eq": [self.MotionCst], "ineq": []}
+                    csts_params = {"eq": [[xo]], "ineq": []}
+
+                else:
+                    csts = {"eq": [self.MotionCst], "ineq": [self.xuCst]}
+                    csts_params = {"eq": [[xo]], "ineq": [[]]}
 
                 if task_id > 0:
                     csts["ineq"] += hier_csts[:task_id]
                     for prev_task_id in range(task_id):
-                        csts_params["ineq"].append([r_bars[prev_task_id][0].T, e_bars[prev_task_id]])
+                        csts_params["ineq"].append([r_bars[prev_task_id][0][0].T, e_bars[prev_task_id]])
 
                 # t0 = time.perf_counter()
-                xbar_lopt, ubar_lopt, status = self.solveSTMPCCasadi(xo, xbar_l.copy(), ubar_l.copy(), cost_fcn,
+                if self.params["soft_cst"]:
+                    xbar_lopt, ubar_lopt, status = self.solveSTMPCCasadi(xo, xbar_l.copy(), ubar_l.copy(), cost_fcn+[self.xuSoftCst],
+                                                                         r_bars[task_id]+[[]], csts, csts_params, i, task_id)
+                else:
+                    xbar_lopt, ubar_lopt, status = self.solveSTMPCCasadi(xo, xbar_l.copy(), ubar_l.copy(), cost_fcn,
                                                                      r_bars[task_id], csts, csts_params, i, task_id)
                 # xbar_lopt, ubar_lopt, status = self.solveSTMPC(xo, xbar_l.copy(), ubar_l.copy(), cost_fcn, r_bars[task_id], csts, csts_params, i, task_id)
 
                 # t1 = time.perf_counter()
                 # print("STMPC Time: {}".format(t1 - t0))
                 if task_id < task_num - 1:
-                    e_bars_l = cost_fcn[0].e_bar_fcn(xbar_lopt.T, ubar_lopt.T, r_bars[task_id][0].T)
+                    e_bars_l = cost_fcn[0].e_bar_fcn(xbar_lopt.T, ubar_lopt.T, r_bars[task_id][0][0].T)
                     e_bars.append(e_bars_l.toarray().flatten())
                 xbar_l = xbar_lopt.copy()
                 ubar_l = ubar_lopt.copy()
 
         for task_id, cost_fcn in enumerate(cost_fcns):
             self.cost_final[task_id] = self._eval_cost_functions(cost_fcn, xbar_l, ubar_l, r_bars[task_id])
+            if self.params["soft_cst"]:
+                self.cost_final[task_id] += self.xuSoftCst.evaluate(xbar_l, ubar_l)
         return xbar_l, ubar_l
 
     def solveSTMPC(self, xo, xbar, ubar, cost_fcn, cost_fcn_params, csts, csts_params, ht_iter=0, task_id=0):
@@ -329,7 +341,7 @@ class HTMPC(MPC):
                 H += cs.DM.eye(self.QPsize) * 1e-6
                 g = cs.DM.zeros(self.QPsize)
                 for id, f in enumerate(cost_fcn):
-                    Hi, gi = f.quad(xbar_i, ubar_i, cost_fcn_params[id])
+                    Hi, gi = f.quad(xbar_i, ubar_i, *cost_fcn_params[id])
                     H += Hi
                     g += gi
                 # t1 = time.perf_counter()
@@ -352,10 +364,16 @@ class HTMPC(MPC):
                 # t0 = time.perf_counter()
                 C = cs.DM.zeros((0, self.QPsize))
                 d = cs.DM.zeros(0)
-                for id, cst in enumerate(csts["ineq"][1:]):
-                    Ci, di = cst.linearize(xbar_i, ubar_i, *csts_params["ineq"][id + 1])
-                    C = cs.vertcat(C, Ci)
-                    d = cs.vertcat(d, di)
+                if self.params['soft_cst']:
+                    for id, cst in enumerate(csts["ineq"]):
+                        Ci, di = cst.linearize(xbar_i, ubar_i, *csts_params["ineq"][id])
+                        C = cs.vertcat(C, Ci)
+                        d = cs.vertcat(d, di)
+                else:
+                    for id, cst in enumerate(csts["ineq"][1:]):
+                        Ci, di = cst.linearize(xbar_i, ubar_i, *csts_params["ineq"][id + 1])
+                        C = cs.vertcat(C, Ci)
+                        d = cs.vertcat(d, di)
 
                 # C_scaled, d_scaled = self.scaleConstraints(C.toarray(), d.toarray().flatten())
 
@@ -387,7 +405,10 @@ class HTMPC(MPC):
 
                 t0 = time.perf_counter()
                 try:
-                    results = S(h=H, g=g, a=Ac, uba=uba, lba=lba, lbx=bx[self.QPsize:], ubx=-bx[:self.QPsize])
+                    if self.params["soft_cst"]:
+                        results = S(h=H, g=g, a=Ac, uba=uba, lba=lba)
+                    else:
+                        results = S(h=H, g=g, a=Ac, uba=uba, lba=lba, lbx=bx[self.QPsize:], ubx=-bx[:self.QPsize])
                     # results = S(h=H, g=g, a=Ac, uba=uba, lba=lba)
 
                     results['status_val'] = 1
@@ -423,7 +444,7 @@ class HTMPC(MPC):
                 H[self.QPsize:, self.QPsize:] += cs.DM.eye(slack_var_size) * 10
                 g = cs.DM.zeros(self.QPsize + slack_var_size)
                 for id, f in enumerate(cost_fcn):
-                    Hi, gi = f.quad(xbar_i, ubar_i, cost_fcn_params[id])
+                    Hi, gi = f.quad(xbar_i, ubar_i, *cost_fcn_params[id])
                     H[:self.QPsize, :self.QPsize] += Hi
                     g[:self.QPsize] += gi
                 t1 = time.perf_counter()
@@ -592,9 +613,9 @@ class HTMPC(MPC):
                 J_xp = 0
                 J_xp_lin = 0
                 for fid, f in enumerate(cost_fcn):
-                    J_xp += f.evaluate(xbar_new, ubar_new, cost_fcn_params[fid])
-                    _, g = f.quad(xbar, ubar, cost_fcn_params[fid])
-                    J_xp_lin += f.evaluate(xbar, ubar, cost_fcn_params[fid]) + alpha * t * g.T @ dzopt
+                    J_xp += f.evaluate(xbar_new, ubar_new, *cost_fcn_params[fid])
+                    _, g = f.quad(xbar, ubar, *cost_fcn_params[fid])
+                    J_xp_lin += f.evaluate(xbar, ubar, *cost_fcn_params[fid]) + alpha * t * g.T @ dzopt
                 if J_xp < J_xp_lin:
                     return t, J_xp
                 else:
@@ -604,7 +625,7 @@ class HTMPC(MPC):
 
         J = 0
         for fid, f in enumerate(cost_fcn):
-            J += f.evaluate(xbar, ubar, cost_fcn_params[fid])
+            J += f.evaluate(xbar, ubar, *cost_fcn_params[fid])
         return 0, J
 
     def lineSearch(self, xo, ubar, dubar, cost_fcn, cost_fcn_params, csts, csts_params):
@@ -642,7 +663,7 @@ class HTMPC(MPC):
     def _eval_cost_functions(self, cost_fcn, xbar, ubar, cost_fcn_params):
         J = 0
         for id, f in enumerate(cost_fcn):
-            Ji = f.evaluate(xbar, ubar, cost_fcn_params[id])
+            Ji = f.evaluate(xbar, ubar, *cost_fcn_params[id])
             J += Ji
         return J
 

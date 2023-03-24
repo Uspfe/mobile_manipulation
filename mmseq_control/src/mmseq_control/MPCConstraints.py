@@ -97,7 +97,8 @@ class MotionConstraint(Constraint):
 # TODO rename to nonlinear inequality constraint
 class NonlinearConstraint(Constraint):
     def __init__(self, dt, nx, nu, ng, N, g_fcn, params_sym, constraint_name, tol=1e-5):
-        """
+        """ nonlinear inequality constraint
+                            g(x_bar, u_bar, *params) < 0
 
         :param dt: discretization time step
         :param nx: state dim
@@ -173,6 +174,46 @@ class StateControlBoxConstraint(NonlinearConstraint):
         g_fcn = cs.Function('g_'+name, [self.x_bar_sym, self.u_bar_sym], [g_eqn], ["x_bar", "u_bar"], ['g_'+name])
 
         super().__init__(dt, nx, nu, ng, N, g_fcn, [], name, tol=tol)
+
+def testSoftConstraint(config):
+    from mmseq_control.MPCCostFunctions import SoftConstraintsRBFCostFunction
+    dt = 0.1
+    N = 10
+    # robot mdl
+    robot = MobileManipulator3D(config["controller"])
+    nx = robot.ssSymMdl["nx"]
+    nu = robot.ssSymMdl["nu"]
+    Qpsize = (N + 1) * nx + N * nu
+    x_bar = np.ones((N + 1, nx))*1.15
+    u_bar = np.ones((N, nu)) * 1
+    z_bar = np.hstack((x_bar.flatten(), u_bar.flatten()))
+    e_bar = np.ones((N+1) * 2) * 2
+    r_bar = np.ones((N+1, 2))
+
+    # cost function params
+    cost_params = {}
+    cost_params["EE"] = {"Qk": 1., "P": 100.}
+    cost_params["base"] = {"Qk": 1., "P": 100.}
+    cost_params["effort"] = {"Qqa": 0., "Qqb": 0.,
+                             "Qva": 1e-2, "Qvb": 2e-2,
+                             "Qua": 1e-1, "Qub": 1e-1}
+
+    cost_base = BasePos2CostFunction(dt, N, robot, cost_params["base"])
+    cost_ee = EEPos3CostFunction(dt, N, robot, cost_params["EE"])
+    base_h_cst = HierarchicalTrackingConstraint(cost_base, "base")
+    # ee_h_cst = HierarchicalTrackingConstraint(cost_ee, "ee")
+    xu_cst = StateControlBoxConstraint(dt, robot, N)
+    mu = 0.005
+    zeta = 0.0025
+    base_h_cst_soft = SoftConstraintsRBFCostFunction(mu, zeta, base_h_cst, "base_hier")
+    J_soft = base_h_cst_soft.evaluate(x_bar, u_bar, *[r_bar.T, e_bar.T])
+    print(base_h_cst_soft.h_fcn(x_bar.T, u_bar.T, *[r_bar.T, e_bar.T]))
+    print(J_soft)
+
+    xu_cst_soft = SoftConstraintsRBFCostFunction(mu, zeta, xu_cst, "xu")
+    J_soft = xu_cst_soft.evaluate(x_bar, u_bar)
+    print(xu_cst_soft.h_fcn(x_bar.T, u_bar.T))
+    print(J_soft)
 
 def testBoxConstraint():
     print("Testing Box Constraint")
@@ -264,7 +305,9 @@ if __name__ == "__main__":
     dt = 0.1
     N = 10
     # robot mdl
-    robot = MobileManipulator3D()
+    from mmseq_utils import parsing
+    config = parsing.load_config("/home/tracy/Projects/mm_catkin_ws/src/mm_sequential_tasks/mmseq_run/config/sim/simulation.yaml")
+    robot = MobileManipulator3D(config["controller"])
     motion_cst = MotionConstraint(dt, N, robot)
 
     q = [0.0, 0.0, 0.0] + [0.0, -2.3562, -1.5708, -2.3562, -1.5708, 1.5708]
@@ -304,3 +347,4 @@ if __name__ == "__main__":
     testNonlinearConstraint()
     testHiearchicalConstraint()
     testBoxConstraint()
+    testSoftConstraint(config)

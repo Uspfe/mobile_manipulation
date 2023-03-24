@@ -6,6 +6,21 @@ from scipy.linalg import block_diag
 import casadi as cs
 from mmseq_control.robot import MobileManipulator3D
 
+class RBF:
+    mu_sym = cs.MX.sym('mu')
+    zeta_sym = cs.MX.sym('zeta')
+    h_sym = cs.MX.sym('h')
+    s_sym = cs.MX.sym('s')
+
+    B_eqn_list = [-mu_sym * cs.log(h_sym),
+                  mu_sym * (0.5 * (((h_sym - 2 * zeta_sym) / zeta_sym) ** 2 - 1) - cs.log(zeta_sym))]
+    B_eqn = cs.conditional(s_sym, B_eqn_list, 0, False)
+    B_fcn = cs.Function("B_fcn", [s_sym, h_sym, mu_sym, zeta_sym], [B_eqn])
+
+    B_hess_eqn, B_grad_eqn = cs.hessian(B_eqn, h_sym)
+    B_hess_fcn = cs.Function("ddBddh_fcn", [s_sym, h_sym, mu_sym, zeta_sym], [B_hess_eqn])
+    B_grad_fcn = cs.Function("dBdh_fcn", [s_sym, h_sym, mu_sym, zeta_sym], [B_grad_eqn])
+
 class CostFunctions(ABC):
     def __init__(self, dt, nx, nu, N):
         """ MPC cost functions base class
@@ -30,7 +45,7 @@ class CostFunctions(ABC):
         super().__init__()
 
     @abstractmethod
-    def evaluate(self, x_bar, u_bar, r_bar=None):
+    def evaluate(self, x_bar, u_bar, *params):
         """ evaluate cost function over the prediction window
 
         :param x_bar: predicted state trajectory numpy.ndarray [N+1, nx]
@@ -41,7 +56,7 @@ class CostFunctions(ABC):
         pass
 
     @abstractmethod
-    def quad(self, x_bar, u_bar, r_bar=None):
+    def quad(self, x_bar, u_bar, *params):
         """ quadratize(second order taylor expansion) of cost function around x_bar, u_bar, r_bar
 
         :param x_bar: linearization state trajectory numpy.ndarray [N+1, nx]
@@ -81,13 +96,13 @@ class LinearLeastSquare(CostFunctions):
         self.grad_fcn = cs.Function('dJdz', [self.z_bar_sym, self.b_sym], [self.grad_eqn]).expand()
         self.hess_fcn = cs.Function('ddJddz', [self.z_bar_sym, self.b_sym], [self.hess_eqn]).expand()
 
-    def evaluate(self, x_bar, u_bar, r_bar=None):
-        return self.J_fcn(x_bar.T, u_bar.T, r_bar)
+    def evaluate(self, x_bar, u_bar, *params):
+        return self.J_fcn(x_bar.T, u_bar.T, params[0].T)
 
-    def quad(self, x_bar, u_bar, r_bar=None):
+    def quad(self, x_bar, u_bar, *params):
         z_bar = np.hstack((x_bar.flatten(), u_bar.flatten()))
-        H = self.hess_fcn(z_bar, r_bar)
-        g = self.grad_fcn(z_bar, r_bar)
+        H = self.hess_fcn(z_bar, params[0].T)
+        g = self.grad_fcn(z_bar, params[0].T)
 
         return H, g
 
@@ -146,13 +161,13 @@ class TrackingCostFunction(CostFunctions):
 
         return J, e_bar_eqn
 
-    def evaluate(self, x_bar, u_bar, r_bar=None):
-        return self.J_fcn(x_bar.T, u_bar.T, r_bar.T).toarray()[0][0]
+    def evaluate(self, x_bar, u_bar, *params):
+        return self.J_fcn(x_bar.T, u_bar.T, params[0].T).toarray()[0][0]
 
-    def quad(self, x_bar, u_bar, r_bar=None):
+    def quad(self, x_bar, u_bar, *params):
         z_bar = np.hstack((x_bar.flatten(), u_bar.flatten()))
-        H = self.hess_approx_fcn(z_bar, r_bar.T)
-        g = self.grad_fcn(z_bar, r_bar.T)
+        H = self.hess_approx_fcn(z_bar, params[0].T)
+        g = self.grad_fcn(z_bar, params[0].T)
         return H, g
 
 
@@ -206,11 +221,57 @@ class ControlEffortCostFunciton(LinearLeastSquare):
         super().__init__(dt, nx, nu, N, nr, ll_params)
 
 
-    def evaluate(self, x_bar, u_bar, r_bar=None):
+    def evaluate(self, x_bar, u_bar, *params):
         return super().evaluate(x_bar, u_bar, np.zeros(self.nr))
 
-    def quad(self, x_bar, u_bar, r_bar=None):
+    def quad(self, x_bar, u_bar, *params):
         return super().quad(x_bar, u_bar, np.zeros(self.nr))
+
+class SoftConstraintsRBFCostFunction(CostFunctions):
+    def __init__(self, mu, zeta, cst_obj, name="SoftConstraint"):
+        super().__init__(cst_obj.dt, cst_obj.nx, cst_obj.nu, cst_obj.N)
+
+        self.name = name
+        self.mu = mu
+        self.zeta = zeta
+
+        self.params_sym = cst_obj.params_sym
+        self.params_name = cst_obj.params_name
+
+        self.h_eqn = -cst_obj.g_fcn(self.x_bar_sym, self.u_bar_sym, *self.params_sym)
+        self.dhdz_eqn = -cst_obj.grad_fcn(self.z_bar_sym, *self.params_sym)
+        self.nh = self.h_eqn.shape[0]
+        self.s_sym = cs.MX.sym("s_"+self.name, self.nh)
+
+
+
+        J_eqn_list = [RBF.B_fcn(self.s_sym[k], self.h_eqn[k], self.mu, self.zeta) for k in range(self.nh)]
+        self.J_eqn = sum(J_eqn_list)
+        self.hess_eqn, self.grad_eqn = cs.hessian(self.J_eqn, self.z_bar_sym)
+        ddBddh_eqn_list = [RBF.B_hess_fcn(self.s_sym[k], self.h_eqn[k], self.mu, self.zeta) for k in range(self.nh)]
+        ddBddh_eqn = cs.diag(cs.vertcat(*ddBddh_eqn_list))
+        self.hess_approx_eqn = self.dhdz_eqn.T @ ddBddh_eqn @ self.dhdz_eqn
+
+        self.h_fcn = cs.Function("h_"+self.name, [self.x_bar_sym, self.u_bar_sym, *self.params_sym], [self.h_eqn]).expand()
+        self.J_fcn = cs.Function("J_" + self.name, [self.x_bar_sym, self.u_bar_sym, *self.params_sym, self.s_sym], [self.J_eqn]).expand()
+        self.hess_fcn = cs.Function("ddJddz_"+self.name, [self.z_bar_sym, *self.params_sym, self.s_sym], [self.hess_eqn]).expand()
+        self.hess_approx_fcn = cs.Function("ddJddz_approx_" + self.name, [self.z_bar_sym, *self.params_sym, self.s_sym],
+                                    [self.hess_approx_eqn]).expand()
+        self.grad_fcn = cs.Function("dJdz_" + self.name, [self.z_bar_sym, *self.params_sym, self.s_sym],
+                                    [self.grad_eqn]).expand()
+
+    def evaluate(self, x_bar, u_bar, *params):
+        s = self.h_fcn(x_bar.T, u_bar.T, *params) < self.zeta
+
+        return self.J_fcn(x_bar.T, u_bar.T, *params, s)
+
+    def quad(self, x_bar, u_bar, *params):
+        s = self.h_fcn(x_bar.T, u_bar.T, *params) < self.zeta
+        z_bar = np.hstack((x_bar.flatten(), u_bar.flatten()))
+        H = self.hess_approx_fcn(z_bar, *params, s)
+        g = self.grad_fcn(z_bar, *params, s)
+        return H, g
+
 
 def time_quad():
     setup = """
