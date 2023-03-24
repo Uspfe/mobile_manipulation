@@ -5,8 +5,8 @@ controller:
   # MPC params
   dt: 0.1
   prediction_horizon: 1.
-  HT_MaxIntvl: 3
-  ST_MaxIntvl: 3
+  HT_MaxIntvl: 1
+  ST_MaxIntvl: 1
 
   beta: 0.5
   alpha: 0.05
@@ -14,18 +14,18 @@ controller:
   # weights for each cost function
   cost_params:
     EEPos3:
-      Qk: 1.
-      P: 1.
+      Qk: 5.
+      P: 100.
     BasePos2:
-      Qk: 1.
-      P: 1.
+      Qk: 5.
+      P: 100.
     Effort:
       Qqa: 0.
       Qqb: 0.
       Qva: 0.01
       Qvb: 0.01
       Qua: 0.01
-      Qub: 0.1
+      Qub: 0.2
 
   # robot parameters
   robot:
@@ -38,8 +38,8 @@ controller:
 
     limits:
       input:
-        lower: [ -0.5, -0.5, -0.5, -2.16, -2.16, -3.15, -3.2, -3.2, -3.2 ]
-        upper: [ 0.5, 0.5, 0.5, 2.16, 2.16, 3.15, 3.2, 3.2, 3.2  ]
+        lower: [ -1.1, -1.1, -1.5, -2.16, -2.16, -3.15, -3.2, -3.2, -3.2 ]
+        upper: [ 1.1, 1.1, 1.5, 2.16, 2.16, 3.15, 3.2, 3.2, 3.2  ]
       state:
         lower: [ -10, -10, -1pi, -1pi, -1pi, -1pi, -1pi, -1pi, -1pi,
                  -1.1, -1.1, -2, -2, -2, -3, -3, -3, -3]

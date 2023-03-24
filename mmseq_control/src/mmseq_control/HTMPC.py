@@ -130,11 +130,12 @@ class HTMPC(MPC):
         self.u_bar = ubar_opt.copy()
         acc_cmd = self.u_bar[0]
         self.v_cmd = self.v_cmd + acc_cmd / self.rate
-        clamp_rate = 0.99
-        self.v_cmd = np.where(self.v_cmd < self.robot.ub_x[self.robot.DoF:] * clamp_rate, self.v_cmd,
-                              self.robot.ub_x[self.robot.DoF:] * clamp_rate)
-        self.v_cmd = np.where(self.v_cmd > self.robot.lb_x[self.robot.DoF:] * clamp_rate, self.v_cmd,
-                              self.robot.lb_x[self.robot.DoF:] * clamp_rate)
+        if not self.params["soft_cst"]:
+            clamp_rate = 0.99
+            self.v_cmd = np.where(self.v_cmd < self.robot.ub_x[self.robot.DoF:] * clamp_rate, self.v_cmd,
+                                  self.robot.ub_x[self.robot.DoF:] * clamp_rate)
+            self.v_cmd = np.where(self.v_cmd > self.robot.lb_x[self.robot.DoF:] * clamp_rate, self.v_cmd,
+                                  self.robot.lb_x[self.robot.DoF:] * clamp_rate)
         return self.v_cmd, acc_cmd
 
     def solveHTMPC(self, xo, xbar, ubar, cost_fcns, hier_csts, r_bars):
