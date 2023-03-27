@@ -8,6 +8,7 @@ import sys
 
 import numpy as np
 import rospy
+from spatialmath.base import rotz
 
 from mmseq_control.HTMPC import HTMPC, HTMPCLex
 from mmseq_simulator import simulation
@@ -41,7 +42,7 @@ class ControllerROSNode:
             config["controller"]["HT_MaxIntvl"] = 1
 
         ctrl_config = config["controller"]
-        planner_config = config["planner"]
+        self.planner_config = config["planner"]
 
         # controller
         if ctrl_config["type"] == "SQP" or ctrl_config["type"] == "SQP_TOL_SCHEDULE":
@@ -49,7 +50,6 @@ class ControllerROSNode:
         elif ctrl_config["type"] == "lex":
             self.controller = HTMPCLex(ctrl_config)
 
-        self.sot = SoTStatic(planner_config)
         self.ctrl_rate = ctrl_config["rate"]
 
         # set py logger level
@@ -85,6 +85,7 @@ class ControllerROSNode:
     def shutdownhook(self):
         self.ctrl_c = True
         timestamp = datetime.datetime.now()
+        self.robot_interface.brake()
         self.logger.save(timestamp, "control")
 
     def run(self):
@@ -99,6 +100,9 @@ class ControllerROSNode:
                 return
 
         print("Controller received joint states. Proceed ... ")
+        self.planner_coord_transform(self.robot_interface.q, self.planner_config)
+        self.sot = SoTStatic(self.planner_config)
+
 
         t = rospy.Time.now().to_sec()
         t0 = t
@@ -142,6 +146,7 @@ class ControllerROSNode:
                 self.logger.append("r_ew_w_ds", r_ew_wd)
             if len(r_bw_wd) > 0:
                 self.logger.append("r_bw_w_ds", r_bw_wd)
+            self.logger.append("cmd_vels", u)
 
             rate.sleep()
 
@@ -155,6 +160,13 @@ class ControllerROSNode:
         logger.append("mpc_cost_finals", controller.cost_final)
         logger.append("mpc_step_sizes", controller.step_size)
 
+    def planner_coord_transform(self, q, planner_config):
+        R_wb = rotz(q[2])
+        for task in planner_config["tasks"]:
+            if task["planner_type"] == "EESimplePlanner":
+                task["target_pos"] = R_wb @ task["target_pos"] + np.hstack((q[:2],0))
+            elif task["planner_type"] == "BaseSingleWaypoint":
+                task["target_pos"] = (R_wb @ np.hstack((task["target_pos"], 1)))[:2] + q[:2]
 
 if __name__ == "__main__":
     rospy.init_node("controller_ros")
