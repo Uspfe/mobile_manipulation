@@ -27,46 +27,4 @@ controller:
       Qua: 0.01
       Qub: 0.2
 
-  # robot parameters
-  robot:
-    dims:
-      q: 9  # generalized position
-      v: 9  # generalized velocity
-      x: 18 # state
-      u: 9  # input
-    x0: [1, -1, 0, 0.5pi, -0.25pi, 0.5pi, -0.25pi, 0.5pi, 0.417pi]
 
-    limits:
-      input:
-        lower: [ -1.1, -1.1, -1., -2.16, -2.16, -3.15, -3.2, -3.2, -3.2 ]
-        upper: [ 1.1, 1.1, 1., 2.16, 2.16, 3.15, 3.2, 3.2, 3.2  ]
-      state:
-        lower: [ -10, -10, -1pi, -1pi, -1pi, -1pi, -1pi, -1pi, -1pi,
-                 -1.1, -1.1, -2, -2, -2, -3, -3, -3, -3]
-        upper: [ 10, 10, 1pi, 1pi, 1pi, 1pi, 1pi, 1pi, 1pi,
-                 1.1, 1.1, 2, 2, 2, 3, 3, 3, 3]
-
-    link_names:
-      - "base"
-      - "ur10_arm_base_link"
-      - "ur10_arm_shoulder_link"
-      - "ur10_arm_upper_arm_link"
-      - "ur10_arm_forearm_link"
-      - "ur10_arm_wrist_1_link"
-      - "ur10_arm_wrist_2_link"
-      - "ur10_arm_wrist_3_link"
-      - "gripped_object"
-    tool_link_name: "gripped_object"
-    base_type: omnidirectional
-
-    urdf:
-#      package: "mmseq_assets"
-#      path: "thing/urdf/mm_ocs2_fingers.urdf"
-      package: "mmseq_assets"
-      path: "thing/urdf/thing_ocs2.urdf"
-      includes:
-        - "$(find mobile_manipulation_central)/urdf/xacro/thing_no_wheels.urdf.xacro"
-        - "$(find mmseq_assets)/thing/xacro/end_effector_fingers.urdf.xacro"
-      args:
-        use_collision: "false"
-        transform_params: "$(find mmseq_run)/config/robot/robot_transforms_real.yaml"
