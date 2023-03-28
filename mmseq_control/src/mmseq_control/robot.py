@@ -37,6 +37,7 @@ class MobileManipulator3D:
 
         self.link_names = config["robot"]["link_names"]
         self.tool_link_name = config["robot"]["tool_link_name"]
+        self.base_type = config["robot"]["base_type"]
         self._setupKinSymMdl()
         self._setupSSSymMdlDI()
         self._setupJacobianSymMdl()
@@ -103,11 +104,12 @@ class MobileManipulator3D:
             return cs.Function(link_name + "_fcn", [self.q_sym], [self.qb_sym[:2], self.qb_sym[2]], ["q"], ["pos2", "heading"])
 
         Hwb = cs.MX.eye(4)
-        Hwb[0, 0] = np.cos(self.qb_sym[2])
-        Hwb[1, 0] = np.sin(self.qb_sym[2])
-        Hwb[0, 1] = -np.sin(self.qb_sym[2])
-        Hwb[1, 1] = np.cos(self.qb_sym[2])
-        Hwb[:2, 3] = self.qb_sym[:2]
+        if self.base_type != "fixed":
+            Hwb[0, 0] = np.cos(self.qb_sym[2])
+            Hwb[1, 0] = np.sin(self.qb_sym[2])
+            Hwb[0, 1] = -np.sin(self.qb_sym[2])
+            Hwb[1, 1] = np.cos(self.qb_sym[2])
+            Hwb[:2, 3] = self.qb_sym[:2]
 
         fk_str = self.kindyn.fk(link_name)
         fk = cs.Function.deserialize(fk_str)
