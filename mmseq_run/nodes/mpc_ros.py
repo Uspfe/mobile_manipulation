@@ -92,7 +92,7 @@ class ControllerROSNode:
         dt_pub = 1./ self.cmd_vel_pub_rate
         dt_pub_sec = int(dt_pub)
         dt_pub_nsec = int((dt_pub - dt_pub_sec) * 1e9)
-        rospy.Timer(rospy.Duration(dt_pub_sec, dt_pub_nsec), self.publishCmdVel)
+        rospy.Timer(rospy.Duration(dt_pub_sec, dt_pub_nsec), self._publish_cmd_vel)
         self.lock = threading.Lock()
 
         rospy.on_shutdown(self.shutdownhook)
@@ -105,7 +105,7 @@ class ControllerROSNode:
         self.robot_interface.brake()
         self.logger.save(timestamp, "control")
 
-    def publishCmdVel(self, event):
+    def _publish_cmd_vel(self, event):
         if self.mpc_plan is not None:
             self.lock.acquire()
 
@@ -140,7 +140,7 @@ class ControllerROSNode:
 
         return m
 
-    def publishMPCData(self, controller):
+    def _publish_mpc_data(self, controller):
         # ee prediction
         marker_ee = self._make_marker(Marker.POINTS, 0, rgba=[1.0, 1.0, 1.0, 1], scale=[0.1, 0.1, 0.1])
         marker_ee.points = [Point(*pt) for pt in controller.ee_bar]
@@ -224,7 +224,7 @@ class ControllerROSNode:
                 self.logger.append("r_bw_w_ds", r_bw_wd)
             self.logger.append("cmd_vels", u)
 
-            self.publishMPCData(self.controller)
+            self._publish_mpc_data(self.controller)
             rate.sleep()
 
         # robot_interface.brake()
