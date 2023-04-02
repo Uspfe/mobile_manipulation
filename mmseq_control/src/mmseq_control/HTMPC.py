@@ -17,6 +17,7 @@ class MPC():
     def __init__(self, config):
         self.robot = MM(config)
         self.ssSymMdl = self.robot.ssSymMdl
+        self.kinSymMdl = self.robot.kinSymMdls
         self.nx = self.ssSymMdl["nx"]
         self.nu = self.ssSymMdl["nu"]
         self.DoF = self.robot.DoF
@@ -49,6 +50,13 @@ class MPC():
 
         self.py_logger = logging.getLogger("Controller")
 
+        # collecting data for visualization purpose
+        self.ee_bar = np.zeros((self.N+1, 3))
+        self.base_bar = np.zeros((self.N+1, 3))
+
+        self.ree_bar = []
+        self.rbase_bar = []
+
     @abstractmethod
     def control(self, t, robot_states, planners):
         """
@@ -62,6 +70,19 @@ class MPC():
 
     def _predictTrajectories(self, xo, u_bar):
         return MM.ssIntegrate(self.dt, xo, u_bar, self.ssSymMdl)
+
+    def _getEEBaseTrajectories(self, x_bar):
+        ee_bar = np.zeros((self.N + 1, 3))
+        base_bar = np.zeros((self.N + 1, 3))
+        for k in range(self.N+1):
+            base_bar[k] = x_bar[k, :3]
+            fee_fcn = self.kinSymMdl[self.robot.tool_link_name]
+            ee_pos, ee_orn = fee_fcn(x_bar[k, :self.DoF])
+            ee_bar[k] = ee_pos.toarray().flatten()
+
+        return ee_bar, base_bar
+
+
 
     def reset(self):
         self.x_bar = np.zeros((self.N + 1, self.nx))  # current best guess x0,...,xN
@@ -124,6 +145,11 @@ class HTMPC(MPC):
             if id < num_plans - 1:
                 hier_csts.append(HierarchicalTrackingConstraint(cost_fcns[-1][0], planner.type))
 
+            if planner.type == "EE":
+                self.ree_bar = r_bar
+            elif planner.type == "base":
+                self.rbase_bar = r_bar
+
         xbar_opt, ubar_opt = self.solveHTMPC(xo, self.x_bar.copy(), self.u_bar.copy(), cost_fcns, hier_csts, r_bars)
 
         self.x_bar = xbar_opt.copy()
@@ -137,6 +163,8 @@ class HTMPC(MPC):
         #                           self.robot.ub_x[self.robot.DoF:] * clamp_rate)
         #     self.v_cmd = np.where(self.v_cmd > self.robot.lb_x[self.robot.DoF:] * clamp_rate, self.v_cmd,
         #                           self.robot.lb_x[self.robot.DoF:] * clamp_rate)
+        self.ee_bar, self.base_bar = self._getEEBaseTrajectories(self.x_bar)
+
         return self.v_cmd, acc_cmd, self.u_bar.copy()
 
     def solveHTMPC(self, xo, xbar, ubar, cost_fcns, hier_csts, r_bars):

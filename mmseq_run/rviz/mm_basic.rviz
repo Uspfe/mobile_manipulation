@@ -7,7 +7,6 @@ Panels:
         - /Global Options1
         - /Status1
         - /RobotModel1
-        - /RobotModel1/Links1
         - /TF1
         - /TF1/Tree1
       Splitter Ratio: 0.4646194875240326
@@ -283,8 +282,8 @@ Visualization Manager:
       Marker Scale: 1
       Name: TF
       Show Arrows: true
-      Show Axes: true
-      Show Names: true
+      Show Axes: false
+      Show Names: false
       Tree:
         world:
           base_link:
@@ -328,6 +327,14 @@ Visualization Manager:
             {}
       Update Interval: 0
       Value: true
+    - Class: rviz/Marker
+      Enabled: true
+      Marker Topic: /mpc_visualization
+      Name: Marker
+      Namespaces:
+        {}
+      Queue Size: 100
+      Value: true
   Enabled: true
   Global Options:
     Background Color: 48; 48; 48
@@ -352,7 +359,7 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz/Orbit
-      Distance: 2.120434284210205
+      Distance: 9.227472305297852
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
@@ -368,9 +375,9 @@ Visualization Manager:
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.715397834777832
+      Pitch: 0.6453979015350342
       Target Frame: <Fixed Frame>
-      Yaw: 1.9803980588912964
+      Yaw: 1.855398178100586
     Saved: ~
 Window Geometry:
   Displays:

@@ -11,6 +11,9 @@ import numpy as np
 import rospy
 from spatialmath.base import rotz
 
+from visualization_msgs.msg import Marker
+from geometry_msgs.msg import Point
+
 from mmseq_control.HTMPC import HTMPC, HTMPCLex
 from mmseq_simulator import simulation
 from mmseq_plan.TaskManager import SoTStatic
@@ -82,13 +85,14 @@ class ControllerROSNode:
         self.robot_interface = MobileManipulatorROSInterface()
         # self.vicon_tool_interface = ViconObjectInterface("ThingWoodTray")
         self.vicon_tool_interface = ViconObjectInterface("tool")
+        self.visualization_pub = rospy.Publisher("mpc_visualization", Marker)
         self.mpc_plan = None
         self.mpc_plan_time_stamp = 0
         self.cmd_vel = np.zeros(9)
         dt_pub = 1./ self.cmd_vel_pub_rate
         dt_pub_sec = int(dt_pub)
         dt_pub_nsec = int((dt_pub - dt_pub_sec) * 1e9)
-        rospy.Timer(rospy.Duration(dt_pub_sec, dt_pub_nsec), self.cmdvelPublisher)
+        rospy.Timer(rospy.Duration(dt_pub_sec, dt_pub_nsec), self.publishCmdVel)
         self.lock = threading.Lock()
 
         rospy.on_shutdown(self.shutdownhook)
@@ -101,7 +105,7 @@ class ControllerROSNode:
         self.robot_interface.brake()
         self.logger.save(timestamp, "control")
 
-    def cmdvelPublisher(self, event):
+    def publishCmdVel(self, event):
         if self.mpc_plan is not None:
             self.lock.acquire()
 
@@ -113,6 +117,49 @@ class ControllerROSNode:
             self.lock.release()
 
         self.robot_interface.publish_cmd_vel(self.cmd_vel)
+
+    def _make_marker(self, marker_type, id, rgba, scale):
+        # make a visualization marker array for the occupancy grid
+        m = Marker()
+        m.header.frame_id = 'world'
+        m.header.stamp = rospy.Time.now()
+        m.id = id
+        m.type = marker_type
+        m.action = Marker.ADD
+
+        m.scale.x = scale[0]
+        m.scale.y = scale[1]
+        m.scale.z = scale[2]
+        m.color.r = rgba[0]
+        m.color.g = rgba[1]
+        m.color.b = rgba[2]
+        m.color.a = rgba[3]
+        m.lifetime = rospy.Duration.from_sec(1./self.mpc_rate)
+
+        m.pose.orientation.w = 1
+
+        return m
+
+    def publishMPCData(self, controller):
+        # ee prediction
+        marker_ee = self._make_marker(Marker.POINTS, 0, rgba=[1.0, 1.0, 1.0, 1], scale=[0.1, 0.1, 0.1])
+        marker_ee.points = [Point(*pt) for pt in controller.ee_bar]
+        self.visualization_pub.publish(marker_ee)
+
+        # base prediction
+        marker_base = self._make_marker(Marker.POINTS, 1, rgba=[1.0, 1.0, 1.0, 1], scale=[0.1, 0.1, 0.1])
+        marker_base.points = [Point(*pt[:2], 0) for pt in controller.base_bar]
+        self.visualization_pub.publish(marker_base)
+
+        # ee tracking points
+        marker_ree = self._make_marker(Marker.POINTS, 2, rgba=[1.0, 0, 0, 1], scale=[0.1, 0.1, 0.1])
+        marker_ree.points = [Point(*pt) for pt in controller.ree_bar]
+        self.visualization_pub.publish(marker_ree)
+
+        # base tracking points
+        marker_rbase = self._make_marker(Marker.POINTS, 3, rgba=[0.0, 0.0, 1, 1], scale=[0.1]*3)
+        marker_rbase.points = [Point(*pt[:2], 0) for pt in controller.rbase_bar]
+        self.visualization_pub.publish(marker_rbase)
 
     def run(self):
         rate = rospy.Rate(self.mpc_rate)
@@ -177,6 +224,7 @@ class ControllerROSNode:
                 self.logger.append("r_bw_w_ds", r_bw_wd)
             self.logger.append("cmd_vels", u)
 
+            self.publishMPCData(self.controller)
             rate.sleep()
 
         # robot_interface.brake()
