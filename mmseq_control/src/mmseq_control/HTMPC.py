@@ -124,11 +124,11 @@ class HTMPC(MPC):
                      for k in range(self.N + 1)]
             r_bars.append([[np.array(r_bar)], [np.zeros(self.CtrlEffCost.nr)]])
             # r_bars.append([np.array(r_bar)])
-            if planner.cost_type == "EEPos3":
+            if planner.type == "EE" and planner.ref_data_type == "Vec3":
                 cost_fcns.append([self.EEPos3Cost, self.CtrlEffCost])
                 # cost_fcns.append([self.EEPos3Cost])
 
-            elif planner.cost_type == "BasePos2":
+            elif planner.type == "base" and planner.ref_data_type == "Vec2":
                 cost_fcns.append([self.BasePos2Cost, self.CtrlEffCost])
                 # cost_fcns.append([self.BasePos2Cost])
 

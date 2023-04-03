@@ -12,8 +12,8 @@ class EESimplePlanner(Planner):
         self.name = planner_params["name"]
         self.target_pos = np.array(planner_params["target_pos"])
         self.type = "EE"
-        self.ref_type = "pos"
-        self.cost_type = "EEPos3"
+        self.ref_type = "waypoint"
+        self.ref_data_type = "Vec3"
 
         self.finished = False
         self.reached_target = False

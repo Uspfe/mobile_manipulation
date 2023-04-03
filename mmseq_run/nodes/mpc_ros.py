@@ -12,7 +12,8 @@ import rospy
 from spatialmath.base import rotz
 
 from visualization_msgs.msg import Marker
-from geometry_msgs.msg import Point
+from geometry_msgs.msg import Point, Transform, Twist
+from trajectory_msgs.msg import MultiDOFJointTrajectory, MultiDOFJointTrajectoryPoint
 
 from mmseq_control.HTMPC import HTMPC, HTMPCLex
 from mmseq_simulator import simulation
@@ -85,7 +86,9 @@ class ControllerROSNode:
         self.robot_interface = MobileManipulatorROSInterface()
         # self.vicon_tool_interface = ViconObjectInterface("ThingWoodTray")
         self.vicon_tool_interface = ViconObjectInterface("tool")
-        self.visualization_pub = rospy.Publisher("mpc_visualization", Marker)
+        self.visualization_pub = rospy.Publisher("mpc_visualization", Marker, queue_size=10)
+        self.plan_visualization_pub = rospy.Publisher("plan_visualization", Marker, queue_size=10)
+        self.tracking_point_pub = rospy.Publisher("mpc_tracking_pt", MultiDOFJointTrajectory, queue_size=5)
         self.mpc_plan = None
         self.mpc_plan_time_stamp = 0
         self.cmd_vel = np.zeros(9)
@@ -93,7 +96,9 @@ class ControllerROSNode:
         dt_pub_sec = int(dt_pub)
         dt_pub_nsec = int((dt_pub - dt_pub_sec) * 1e9)
         rospy.Timer(rospy.Duration(dt_pub_sec, dt_pub_nsec), self._publish_cmd_vel)
+
         self.lock = threading.Lock()
+        self.sot_lock = threading.Lock()
 
         rospy.on_shutdown(self.shutdownhook)
         self.ctrl_c = False
@@ -118,6 +123,46 @@ class ControllerROSNode:
 
         self.robot_interface.publish_cmd_vel(self.cmd_vel)
 
+    def _publish_trajectory_tracking_pt(self, t, robot_states, planners):
+
+        msg = MultiDOFJointTrajectory()
+        msg.header.stamp = rospy.Time.now()
+
+        for planner in planners:
+            p, v = planner.getTrackingPoint(t, robot_states)
+
+            msg.joint_names.append(planner.type)
+            pt_msg = MultiDOFJointTrajectoryPoint()
+
+            if planner.ref_data_type == "Vec3":
+                transform = Transform()
+                transform.translation.x = p[0]
+                transform.translation.y = p[1]
+                transform.translation.z = p[2]
+
+                velocity = Twist()
+                velocity.linear.x = v[0]
+                velocity.linear.y = v[1]
+                velocity.linear.z = v[2]
+
+                pt_msg.transforms.append(transform)
+                pt_msg.velocities.append(velocity)
+            elif planner.ref_data_type == "Vec2":
+                transform = Transform()
+                transform.translation.x = p[0]
+                transform.translation.y = p[1]
+
+                velocity = Twist()
+                velocity.linear.x = v[0]
+                velocity.linear.y = v[1]
+
+                pt_msg.transforms.append(transform)
+                pt_msg.velocities.append(velocity)
+
+            msg.points.append(pt_msg)
+
+        self.tracking_point_pub.publish(msg)
+
     def _make_marker(self, marker_type, id, rgba, scale):
         # make a visualization marker array for the occupancy grid
         m = Marker()
@@ -139,6 +184,25 @@ class ControllerROSNode:
         m.pose.orientation.w = 1
 
         return m
+
+    def _publish_planner_data(self, event):
+
+        self.sot_lock.acquire()
+        for pid, planner in enumerate(self.sot.planners):
+            if planner.ref_type == "waypoint":
+                color = [0] * 3
+                color[pid % 3] = 1
+                if planner.ref_data_type == "Vec3":
+                    marker_plan = self._make_marker(Marker.SPHERE, pid, rgba=color + [1], scale=[0.1, 0.1, 0.1])
+                    marker_plan.pose.position = Point(*planner.target_pos)
+                elif planner.ref_data_type == "Vec2":
+                    marker_plan = self._make_marker(Marker.CYLINDER, pid, rgba=color + [1], scale=[0.1, 0.1, 0.5])
+                    marker_plan.pose.position = Point(*planner.target_pos, 0)
+                marker_plan.lifetime = rospy.Duration.from_sec(0.1)
+
+            self.plan_visualization_pub.publish(marker_plan)
+
+        self.sot_lock.release()
 
     def _publish_mpc_data(self, controller):
         # ee prediction
@@ -175,6 +239,7 @@ class ControllerROSNode:
         print("Controller received joint states. Proceed ... ")
         self.planner_coord_transform(self.robot_interface.q, self.planner_config)
         self.sot = SoTStatic(self.planner_config)
+        rospy.Timer(rospy.Duration(0, int(1e8)), self._publish_planner_data)
 
         print("robot coord: {}".format(self.robot_interface.q))
         for planner in self.sot.planners:
@@ -192,10 +257,12 @@ class ControllerROSNode:
 
             # open-loop command
             robot_states = (self.robot_interface.q, self.robot_interface.v)
+            self.sot_lock.acquire()
             planners = self.sot.getPlanners(num_planners=2)
+            self.sot_lock.release()
+
             tc1_ros = rospy.Time.now().to_sec()
             u, acc, u_bar = self.controller.control(t-t0, robot_states, planners)
-
             tc2_ros = rospy.Time.now().to_sec()
 
             self.lock.acquire()
@@ -203,9 +270,16 @@ class ControllerROSNode:
             self.mpc_plan_time_stamp = t
             self.lock.release()
 
+            # publish data
+            self._publish_mpc_data(self.controller)
+            self._publish_trajectory_tracking_pt(t-t0, robot_states, planners)
+
             # Update Task Manager
             states = {"base": robot_states[0][:3], "EE": (self.vicon_tool_interface.position, self.vicon_tool_interface.orientation)}
+
+            self.sot_lock.acquire()
             self.sot.update(t, states)
+            self.sot_lock.release()
 
             # log
             self.logger.append("ts", t)
@@ -224,7 +298,6 @@ class ControllerROSNode:
                 self.logger.append("r_bw_w_ds", r_bw_wd)
             self.logger.append("cmd_vels", u)
 
-            self._publish_mpc_data(self.controller)
             rate.sleep()
 
         # robot_interface.brake()
