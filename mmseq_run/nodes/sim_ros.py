@@ -64,7 +64,7 @@ def main():
     ros_interface = SimulatedMobileManipulatorROSInterface()
     ros_interface.publish_time(t)
 
-    vicon_tool_interface = SimulatedViconObjectInterface("tool")
+    vicon_tool_interface = SimulatedViconObjectInterface("ThingWoodTray")
     while not ros_interface.ready():
         q, v = robot.joint_states()
         ros_interface.publish_feedback(t, q, v)

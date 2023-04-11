@@ -84,8 +84,8 @@ class ControllerROSNode:
 
         # ROS Related
         self.robot_interface = MobileManipulatorROSInterface()
-        # self.vicon_tool_interface = ViconObjectInterface("ThingWoodTray")
-        self.vicon_tool_interface = ViconObjectInterface("tool")
+        self.vicon_tool_interface = ViconObjectInterface("ThingWoodTray")
+        # self.vicon_tool_interface = ViconObjectInterface("tool")
         self.visualization_pub = rospy.Publisher("mpc_visualization", Marker, queue_size=10)
         self.plan_visualization_pub = rospy.Publisher("plan_visualization", Marker, queue_size=10)
         self.tracking_point_pub = rospy.Publisher("mpc_tracking_pt", MultiDOFJointTrajectory, queue_size=5)
@@ -95,7 +95,7 @@ class ControllerROSNode:
         dt_pub = 1./ self.cmd_vel_pub_rate
         dt_pub_sec = int(dt_pub)
         dt_pub_nsec = int((dt_pub - dt_pub_sec) * 1e9)
-        rospy.Timer(rospy.Duration(dt_pub_sec, dt_pub_nsec), self._publish_cmd_vel)
+        self.cmd_vel_timer = rospy.Timer(rospy.Duration(dt_pub_sec, dt_pub_nsec), self._publish_cmd_vel)
 
         self.lock = threading.Lock()
         self.sot_lock = threading.Lock()
@@ -347,6 +347,8 @@ if __name__ == "__main__":
     try:
         node.run()
     except rospy.ROSInterruptException:
+        node.cmd_vel_timer.shutdown()
+        node.robot_interface.brake()
         node.robot_interface.brake()
         timestamp = datetime.datetime.now()
         node.logger.save(timestamp, "ctrl")

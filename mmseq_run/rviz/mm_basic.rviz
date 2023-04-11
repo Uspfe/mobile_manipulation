@@ -8,9 +8,10 @@ Panels:
         - /Status1
         - /RobotModel1
         - /TF1
+        - /TF1/Frames1
         - /TF1/Tree1
       Splitter Ratio: 0.4646194875240326
-    Tree Height: 1371
+    Tree Height: 476
   - Class: rviz/Selection
     Name: Selection
   - Class: rviz/Tool Properties
@@ -25,6 +26,7 @@ Panels:
     Name: Views
     Splitter Ratio: 0.5
   - Class: rviz/Time
+    Experimental: false
     Name: Time
     SyncMode: 0
     SyncSource: ""
@@ -103,6 +105,11 @@ Visualization Manager:
           Show Trail: false
           Value: false
         front_rocker_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: false
+        gripped_object:
           Alpha: 1
           Show Axes: false
           Show Trail: false
@@ -221,77 +228,109 @@ Visualization Manager:
       Enabled: true
       Frame Timeout: 15
       Frames:
-        All Enabled: true
+        All Enabled: false
         arch_link:
           Value: true
         axle_link:
-          Value: true
+          Value: false
+        base:
+          Value: false
         base_link:
           Value: true
         chassis_link:
-          Value: true
+          Value: false
         front_cover_link:
-          Value: true
+          Value: false
+        front_laser:
+          Value: false
+        front_left_wheel_link:
+          Value: false
         front_lights_link:
+          Value: false
+        front_right_wheel_link:
+          Value: false
+        front_rocker_link:
+          Value: false
+        gripped_object:
           Value: true
         gripper:
-          Value: true
+          Value: false
         imu_link:
-          Value: true
+          Value: false
         left_side_cover_link:
-          Value: true
+          Value: false
         mid_mount:
-          Value: true
+          Value: false
         odom:
-          Value: true
+          Value: false
         rear_cover_link:
-          Value: true
+          Value: false
+        rear_left_wheel_link:
+          Value: false
         rear_lights_link:
-          Value: true
+          Value: false
+        rear_right_wheel_link:
+          Value: false
         rear_rocker_link:
-          Value: true
+          Value: false
         right_side_cover_link:
-          Value: true
+          Value: false
+        tool0_controller:
+          Value: false
         top_link:
-          Value: true
+          Value: false
         ur10_arm_base:
-          Value: true
+          Value: false
         ur10_arm_base_link:
-          Value: true
+          Value: false
         ur10_arm_base_link_inertia:
-          Value: true
+          Value: false
         ur10_arm_flange:
-          Value: true
+          Value: false
         ur10_arm_forearm_link:
-          Value: true
+          Value: false
         ur10_arm_shoulder_link:
-          Value: true
+          Value: false
         ur10_arm_tool0:
-          Value: true
+          Value: false
         ur10_arm_upper_arm_link:
-          Value: true
+          Value: false
         ur10_arm_wrist_1_link:
-          Value: true
+          Value: false
         ur10_arm_wrist_2_link:
-          Value: true
+          Value: false
         ur10_arm_wrist_3_link:
+          Value: false
+        vicon/ThingBase/ThingBase:
+          Value: true
+        vicon/ThingWoodTray/ThingWoodTray:
           Value: true
         world:
-          Value: true
+          Value: false
       Marker Alpha: 1
       Marker Scale: 1
       Name: TF
       Show Arrows: true
-      Show Axes: false
+      Show Axes: true
       Show Names: false
       Tree:
         world:
           base_link:
             chassis_link:
               axle_link:
+                front_rocker_link:
+                  front_left_wheel_link:
+                    {}
+                  front_right_wheel_link:
+                    {}
                 rear_rocker_link:
-                  {}
+                  rear_left_wheel_link:
+                    {}
+                  rear_right_wheel_link:
+                    {}
               front_cover_link:
+                {}
+              front_laser:
                 {}
               front_lights_link:
                 {}
@@ -320,10 +359,15 @@ Visualization Manager:
                                   ur10_arm_flange:
                                     ur10_arm_tool0:
                                       gripper:
-                                        {}
+                                        gripped_object:
+                                          {}
             mid_mount:
               {}
           odom:
+            {}
+          vicon/ThingBase/ThingBase:
+            {}
+          vicon/ThingWoodTray/ThingWoodTray:
             {}
       Update Interval: 0
       Value: true
@@ -367,7 +411,7 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz/Orbit
-      Distance: 7.336185455322266
+      Distance: 3.5812478065490723
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
@@ -375,25 +419,25 @@ Visualization Manager:
         Value: false
       Field of View: 0.7853981852531433
       Focal Point:
-        X: 0
-        Y: 0
-        Z: 0
+        X: 0.5408674478530884
+        Y: 0.3835377097129822
+        Z: 1.0390334129333496
       Focal Shape Fixed Size: true
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.6453979015350342
+      Pitch: 0.005398520268499851
       Target Frame: <Fixed Frame>
-      Yaw: 1.855398178100586
+      Yaw: 4.230404853820801
     Saved: ~
 Window Geometry:
   Displays:
     collapsed: true
-  Height: 2032
+  Height: 1016
   Hide Left Dock: true
   Hide Right Dock: true
-  QMainWindow State: 000000ff00000000fd0000000400000000000002b300000754fc0200000005fb0000001200530065006c0065006300740069006f006e000000006e000000f5000000b000fffffffb0000001e0054006f006f006c002000500072006f007000650072007400690065007302000001ed000001df00000185000000b0fb000000120056006900650077007300200054006f006f02000001df000002110000018500000122fb000000200054006f006f006c002000500072006f0070006500720074006900650073003203000002880000011d000002210000017afb000000100044006900730070006c006100790073000000016f000006530000018200ffffff000000010000015f00000754fc0200000003fb0000001e0054006f006f006c002000500072006f00700065007200740069006500730100000041000000780000000000000000fb0000000a00560069006500770073000000006e000007540000013200fffffffb0000001200530065006c0065006300740069006f006e010000025a000000b200000000000000000000000200000490000000a9fc0100000001fb0000000a00560069006500770073030000004e00000080000002e10000019700000003000004a00000003efc0100000002fb0000000800540069006d00650000000000000004a00000077d00fffffffb0000000800540069006d0065010000000000000450000000000000000000000e600000075400000004000000040000000800000008fc0000000100000002000000010000000a0054006f006f006c00730100000000ffffffff0000000000000000
+  QMainWindow State: 000000ff00000000fd0000000400000000000002b30000039efc0200000005fb0000001200530065006c0065006300740069006f006e000000003d000000f50000005c00fffffffb0000001e0054006f006f006c002000500072006f007000650072007400690065007302000001ed000001df00000185000000b0fb000000120056006900650077007300200054006f006f02000001df000002110000018500000122fb000000200054006f006f006c002000500072006f0070006500720074006900650073003203000002880000011d000002210000017afb000000100044006900730070006c0061007900730000000138000002a3000000c900ffffff000000010000015f00000754fc0200000003fb0000001e0054006f006f006c002000500072006f00700065007200740069006500730100000041000000780000000000000000fb0000000a00560069006500770073000000006e00000754000000a400fffffffb0000001200530065006c0065006300740069006f006e010000025a000000b200000000000000000000000200000490000000a9fc0100000001fb0000000a00560069006500770073030000004e00000080000002e10000019700000003000004a00000003efc0100000002fb0000000800540069006d00650000000000000004a0000004f300fffffffb0000000800540069006d00650100000000000004500000000000000000000003990000039e00000004000000040000000800000008fc0000000100000002000000010000000a0054006f006f006c00730100000000ffffffff0000000000000000
   Selection:
     collapsed: true
   Time:
@@ -402,6 +446,6 @@ Window Geometry:
     collapsed: false
   Views:
     collapsed: true
-  Width: 3680
-  X: 2320
-  Y: 1263
+  Width: 921
+  X: 78
+  Y: 27
