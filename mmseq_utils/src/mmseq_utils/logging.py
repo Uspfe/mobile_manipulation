@@ -5,8 +5,13 @@ import numpy as np
 import matplotlib.pyplot as plt
 from pathlib import Path
 import yaml
+import rosbag
+from spatialmath.base import rotz
 from mmseq_utils.parsing import parse_path
 from matplotlib.backends.backend_pdf import PdfPages
+from mobile_manipulation_central import ros_utils
+
+VICON_TOOL_NAME = "ThingWoodLumber"
 
 def multipage(filename, figs=None, dpi=200):
     pp = PdfPages(filename)
@@ -584,5 +589,222 @@ class DataPlotter:
         self.plot_base_position()
         self.plot_tracking_err()
         self.plot_cmd_vs_real_vel()
+
+class ROSBagPlotter:
+    def __init__(self, bag_file):
+        self.data = {"ur10": {}, "ridgeback": {}, "mpc": {}, "vicon": {}}
+        self.bag = rosbag.Bag(bag_file)
+
+        self.parse_joint_states(self.bag)
+        self.parse_cmd_vels(self.bag)
+        self.parse_mpc_tracking_pt(self.bag)
+        self.parse_vicon_msgs(self.bag)
+        self._set_zero_time()
+
+    def parse_joint_states(self, bag):
+
+        ur10_msgs = [msg for _, msg, _ in bag.read_messages("/ur10/joint_states")]
+        ridgeback_msgs = [msg for _, msg, _ in bag.read_messages("/ridgeback/joint_states")]
+
+        tas, qas, vas = ros_utils.parse_ur10_joint_state_msgs(ur10_msgs, False)
+        tbs, qbs, vbs = ros_utils.parse_ridgeback_joint_state_msgs(ridgeback_msgs, False)
+        self.data["ur10"]["joint_states"] = {"ts": tas, "qs": qas, "vs": vas}
+        self.data["ridgeback"]["joint_states"] = {"ts": tbs, "qs": qbs, "vs": vbs}
+
+        # Reconstruct body-frame ridgeback velocity
+        vb_bs = [rotz(qbs[i, 2]).T @  vbs[i, :] for i in range(len(tbs))]
+        self.data["ridgeback"]["joint_states"]["vbs"] = np.array(vb_bs)
+
+    def parse_cmd_vels(self, bag):
+        # cmd_vel messages do not have header.
+        # we use the time received by the bag recording node for plotting
+
+        # UR 10
+        ur10_ts = np.array([t.to_sec() for _, _, t in bag.read_messages("/ur10/cmd_vel")])
+        ur10_cmd_msgs = [msg for _, msg, _ in bag.read_messages("/ur10/cmd_vel")]
+        ur10_cmd_vels = ros_utils.parse_ur10_cmd_vel_msgs(ur10_cmd_msgs)
+
+        # ridgeback
+        ridgeback_ts = np.array([t.to_sec() for _, _, t in bag.read_messages("/ridgeback/cmd_vel")])
+        ridgeback_cmd_msgs = [msg for _, msg, _ in bag.read_messages("/ridgeback/cmd_vel")]
+        # ridgeback cmd_vels are in body frame
+        ridgeback_cmd_vels = ros_utils.parse_ridgeback_cmd_vel_msgs(ridgeback_cmd_msgs)
+
+        self.data["ur10"]["cmd_vels"] = {"ts": ur10_ts, "vcs": ur10_cmd_vels}
+        self.data["ridgeback"]["cmd_vels"] = {"ts": ridgeback_ts, "vc_bs": ridgeback_cmd_vels}
+
+    def parse_mpc_tracking_pt(self, bag):
+        tracking_pt_msgs = [msg for _, msg, _ in bag.read_messages("/mpc_tracking_pt")]
+        t_rs, pose_rs = ros_utils.parse_multidofjointtrajectory_msg(tracking_pt_msgs, False)
+        self.data["mpc"]["tracking_pt"] = {"ts": t_rs,
+                                           "rees": pose_rs.get("EE", []),
+                                           "rbs": pose_rs.get("base", [])}
+
+    def parse_vicon_msgs(self, bag):
+        topics = bag.get_type_and_topic_info()[1].keys()
+        vicon_topics = [topic for topic in topics if topic[1:6] == "vicon"]
+
+        for topic in vicon_topics:
+            name = topic.split("/")[-1]
+            if name == 'markers':
+                continue
+            msgs = [msg for _, msg, _ in bag.read_messages(topic)]
+            if name == "ThingBase":
+                ts, qs = ros_utils.parse_ridgeback_vicon_msgs(msgs)
+            else:
+                ts, qs = ros_utils.parse_transform_stamped_msgs(msgs, False)
+            self.data["vicon"][name] = {"ts": ts, "qs": qs}
+
+    def _set_zero_time(self):
+        t0 = self.data["ridgeback"]["cmd_vels"]["ts"][0]
+        for k1 in self.data.keys():
+            if type(self.data[k1]) is dict:
+                for k2 in self.data[k1].keys():
+                    self.data[k1][k2]["ts"] -= t0
+            else:
+                self.data[k1]["ts"] -= t0
+
+    def plot_joint_states(self, axes=None, legend=""):
+        if axes is None:
+            axes = []
+            for i in range(4):
+                f = plt.figure()
+                axes.append(f.gca())
+
+        ax = axes[0]
+        ax.plot(self.data["ridgeback"]["joint_states"]["ts"],
+                self.data["ridgeback"]["joint_states"]["qs"], '-', label=["x", "y", "θ"])
+        ax.set_title("Ridgeback Joint Positions")
+        ax.set_xlabel("Time (s)")
+        ax.set_ylabel("Joint position")
+        ax.legend()
+        ax.grid()
+
+        ax = axes[1]
+        ax.plot(self.data["ridgeback"]["joint_states"]["ts"],
+                self.data["ridgeback"]["joint_states"]["vs"], '-', label=[r"$v_x$", r"$v_y$", r"$\omega$"])
+        ax.set_title("Ridgeback Twist (World frame)")
+        ax.set_xlabel("Time (s)")
+        ax.set_ylabel("Twist")
+        ax.legend()
+        ax.grid()
+
+        ax = axes[2]
+        ax.plot(self.data["ur10"]["joint_states"]["ts"],
+                self.data["ur10"]["joint_states"]["qs"], '-', label=[r"$\theta_{}$".format(i+1) for i in range(6)])
+        ax.set_title("UR10 Joint Positions")
+        ax.set_xlabel("Time (s)")
+        ax.set_ylabel("Joint position")
+        ax.legend()
+        ax.grid()
+
+        ax = axes[3]
+        ax.plot(self.data["ur10"]["joint_states"]["ts"],
+                self.data["ur10"]["joint_states"]["vs"], '-', label=[r"$\dot\theta_{}$".format(i+1) for i in range(6)])
+        ax.set_title("UR10 Joint Velocities")
+        ax.set_xlabel("Time (s)")
+        ax.set_ylabel("Joint Velocity")
+        ax.legend()
+        ax.grid()
+
+    def plot_joint_vel_tracking(self, axes=None, legend=""):
+        if axes is None:
+            f1, ax1 = plt.subplots(6, 1, sharex=True)
+            f2, ax2 = plt.subplots(3, 1, sharex=True)
+            axes = [ax1, ax2]
+
+        ax = axes[0]
+        for i in range(6):
+            ax[i].plot(self.data["ur10"]["joint_states"]["ts"],
+                    self.data["ur10"]["joint_states"]["vs"][:, i], '-',
+                    label=r"$\dot\theta_{}$".format(i + 1))
+            ax[i].plot(self.data["ur10"]["cmd_vels"]["ts"],
+                    self.data["ur10"]["cmd_vels"]["vcs"][:, i], '-',
+                    label=r"${\dot\theta_d}" + "_{}$".format(i + 1))
+            ax[i].legend()
+            ax[i].grid()
+        ax[0].set_title("UR10 Joint Velocity Tracking")
+        ax[-1].set_xlabel("Time (s)")
+
+        ax = axes[1]
+        labels_v = [r"$v_x$", r"$v_y$", r"$\omega$"]
+        labels_vc = [r"$v_{c,x}$", r"$v_{c, y}$", r"$\omega_c$"]
+        for i in range(3):
+            ax[i].plot(self.data["ridgeback"]["joint_states"]["ts"],
+                   self.data["ridgeback"]["joint_states"]["vbs"][:, i], '-',
+                   label=labels_v[i])
+
+            ax[i].plot(self.data["ridgeback"]["cmd_vels"]["ts"],
+                   self.data["ridgeback"]["cmd_vels"]["vc_bs"][:, i], '--',
+                   label=labels_vc[i])
+        for i in range(3):
+            ax[i].legend()
+        ax[0].set_title("Ridgeback Velocity Tracking (Body Frame)")
+        ax[2].set_xlabel("Time (s)")
+
+
+    def plot_tracking(self, axes=None, subscript=""):
+        t_ref = self.data["mpc"]["tracking_pt"]["ts"]
+        rees = self.data["mpc"]["tracking_pt"].get("rees", [])
+        rbs  = self.data["mpc"]["tracking_pt"].get("rbs", [])
+
+        plot_ee_tracking = True if len(rees) > 0 else False
+        plot_base_tracking = True if len(rbs) > 0 else False
+
+        if axes is None:
+            axes = []
+
+            for i in range(int(plot_ee_tracking + plot_base_tracking)):
+                fi = plt.figure()
+                axes.append(fi.gca())
+
+        curr_axes_indx = 0
+        if plot_ee_tracking:
+            ax = axes[curr_axes_indx]
+            curr_axes_indx += 1
+            prop_cycle = plt.rcParams["axes.prop_cycle"]
+            colors = prop_cycle.by_key()["color"]
+            labels = ['x', 'y', 'z']
+            for i in range(3):
+                ax.plot(t_ref, rees[:, i], '--', label=labels[i] + "d" +subscript, color=colors[i])
+                ax.plot(self.data["vicon"][VICON_TOOL_NAME]["ts"],
+                    self.data["vicon"][VICON_TOOL_NAME]["qs"][:, i], '-',
+                    label=labels[i] + subscript, color=colors[i])
+            ax.set_xlabel("Time (s)")
+            ax.set_ylabel("Positions")
+            ax.set_title("EE Tracking Performance")
+            ax.legend()
+            ax.grid()
+
+        if plot_base_tracking:
+            ax = axes[curr_axes_indx]
+            curr_axes_indx += 1
+            prop_cycle = plt.rcParams["axes.prop_cycle"]
+            colors = prop_cycle.by_key()["color"]
+            labels = ['x', 'y']
+            for i in range(2):
+                ax.plot(t_ref, rbs[:, i], '--', label=labels[i] + "d" + subscript, color=colors[i])
+                ax.plot(self.data["ridgeback"]["joint_states"]["ts"],
+                    self.data["ridgeback"]["joint_states"]["qs"][:, i], '-',
+                    label=labels[i] + subscript, color=colors[i])
+
+            ax.set_xlabel("Time (s)")
+            ax.set_ylabel("Positions")
+            ax.set_title("Base Tracking Performance")
+            ax.legend()
+            ax.grid()
+
+        return axes
+
+    def plot_show(self):
+        plt.show()
+
+
+
+
+
+
+
+
 
 

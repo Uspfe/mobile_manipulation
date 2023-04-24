@@ -15,5 +15,6 @@ catkin_package(
 catkin_install_python(PROGRAMS
    scripts/plot_logger_ros.py
    scripts/plot_logger_pybullet.py
+   scripts/plot_rosbag.py
    DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
  )
