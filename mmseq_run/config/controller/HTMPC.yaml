@@ -10,17 +10,20 @@ controller:
 
   mpc_rate: 10 #hz
   cmd_vel_pub_rate: 100 # hz
-  slack: False
   soft_cst: True
   penalize_du: True
+  self_collision_avoidance_enabled: False
+  static_obstacles_collision_avoidance_enabled: False
+
+  collision_safety_margin: 0.05
 
   # soft constraints parameters
   xu_soft:
-    mu: 0.00001
-    zeta: 0.00008
+    mu: 0.001
+    zeta: 0.008
   collision_soft:
-    mu: 0.00001
-    zeta: 0.00008
+    mu: 0.001
+    zeta: 0.008
 
   # weights for each cost function
   cost_params:
@@ -38,7 +41,7 @@ controller:
       Qua: 0.01
       Qub: 0.01
       Qdua: 0.
-      Qdub: 0.1
+      Qdub: 0.
 
   # line search parameters
   beta: 0.5

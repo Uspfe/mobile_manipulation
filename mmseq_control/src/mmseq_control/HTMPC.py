@@ -8,7 +8,7 @@ from cvxopt import solvers, matrix
 from mosek import iparam, dparam
 
 from mmseq_control.MPCCostFunctions import EEPos3CostFunction, BasePos2CostFunction, ControlEffortCostFunciton, SoftConstraintsRBFCostFunction
-from mmseq_control.MPCConstraints import HierarchicalTrackingConstraint, MotionConstraint, StateControlBoxConstraint, StateControlBoxConstraintNew
+from mmseq_control.MPCConstraints import HierarchicalTrackingConstraint, MotionConstraint, StateControlBoxConstraint, StateControlBoxConstraintNew, SignedDistanceCollisionConstraint
 from mmseq_control.robot import MobileManipulator3D as MM
 from mmseq_control.robot import CasadiModelInterface as ModelInterface
 from mmseq_utils.math import wrap_pi_array
@@ -47,7 +47,23 @@ class MPC():
         else:
             self.xuCst = StateControlBoxConstraint(self.dt, self.robot, self.N, tol=1e-5)
         self.MotionCst = MotionConstraint(self.dt, self.N, self.robot)
+
+        self.collision_link_names = ["self"] if self.params["self_collision_avoidance_enabled"] else []
+        self.collision_link_names += self.model_interface.scene.collision_link_names["static_obstacles"] \
+            if self.params["static_obstacles_collision_avoidance_enabled"] else []
+
+        self.collisionCsts = {}
+        for name in self.collision_link_names:
+            sd_fcn = self.model_interface.getSignedDistanceSymMdls(name)
+            sd_cst = SignedDistanceCollisionConstraint(self.robot, sd_fcn, self.dt, self.N,
+                                                       self.params["collision_safety_margin"], name)
+            self.collisionCsts[name] = sd_cst
+
         self.xuSoftCst = SoftConstraintsRBFCostFunction(self.params["xu_soft"]["mu"], self.params["xu_soft"]["zeta"], self.xuCst, "xuSoftCst")
+        self.collisionSoftCsts = {name: SoftConstraintsRBFCostFunction(self.params["collision_soft"]["mu"],
+                                                                       self.params["collision_soft"]["zeta"],
+                                                                       sd_cst, name+"CollisionSoftCst")
+                                                                       for name, sd_cst in self.collisionCsts.items()}
 
         self.x_bar_sym = cs.MX.sym('x_bar', self.nx, self.N + 1)
         self.u_bar_sym = cs.MX.sym('u_bar', self.nu, self.N)
@@ -198,6 +214,7 @@ class HTMPC(MPC):
                     csts = {"eq": [self.MotionCst], "ineq": []}
                     csts_params = {"eq": [[xo]], "ineq": []}
 
+                    # state control soft constraint function
                     if self.params["penalize_du"]:
                         xuSoft_param = [[self.u_prev]]
                     else:
@@ -205,6 +222,10 @@ class HTMPC(MPC):
 
                     st_cost_fcn = cost_fcn + [self.xuSoftCst]
                     st_cost_fcn_params = r_bars[task_id] + xuSoft_param
+
+                    for name, soft_cst in self.collisionSoftCsts.items():
+                        st_cost_fcn += [soft_cst]
+                        st_cost_fcn_params += [[]]
 
                 else:
                     csts = {"eq": [self.MotionCst], "ineq": [self.xuCst]}
@@ -233,7 +254,7 @@ class HTMPC(MPC):
                 ubar_l = ubar_lopt.copy()
 
         for task_id, cost_fcn in enumerate(cost_fcns):
-            self.cost_final[task_id] = self._eval_cost_functions(st_cost_fcn, xbar_l, ubar_l, st_cost_fcn_params)
+            self.cost_final[task_id] = self._eval_cost_functions(cost_fcn, xbar_l, ubar_l, r_bars[task_id])
             # if self.params["soft_cst"]:
             #     self.cost_final[task_id] += self.xuSoftCst.evaluate(xbar_l, ubar_l, *xuSoft_param[0])
         return xbar_l, ubar_l
@@ -460,6 +481,7 @@ class HTMPC(MPC):
         for id, f in enumerate(cost_fcn):
             Ji = f.evaluate(xbar, ubar, *cost_fcn_params[id])
             J += Ji
+            self.py_logger.log(4, f.__class__.__name__+" value:{}".format(Ji))
         return J
 
 

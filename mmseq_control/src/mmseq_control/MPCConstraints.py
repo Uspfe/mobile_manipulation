@@ -220,7 +220,7 @@ class SignedDistanceCollisionConstraint(NonlinearConstraint):
 
         Constraint.__init__(self, dt, nx, nu, N, name+"_collision")
 
-        g_sym_list = [- signed_distance_fcn(self.x_bar_sym[:nq][k]) + d_safe for k in range(N+1)]
+        g_sym_list = [- signed_distance_fcn(self.x_bar_sym[:nq, k]) + d_safe for k in range(N+1)]
         g_sym = cs.vertcat(*g_sym_list)
         ng = g_sym.size()[0]
 
@@ -240,6 +240,7 @@ def testCollisionConstraint(config):
     nu = robot_mdl.ssSymMdl["nu"]
     x_bar = np.ones((N + 1, nx)) * 0.0
     u_bar = np.ones((N, nu)) * 0
+    print(const.g_fcn(x_bar.T, u_bar.T))
 
     mu = config["controller"]["collision_soft"]["mu"]
     zeta = config["controller"]["collision_soft"]["zeta"]
@@ -257,8 +258,8 @@ def testSoftConstraint(config):
     nx = robot.ssSymMdl["nx"]
     nu = robot.ssSymMdl["nu"]
     Qpsize = (N + 1) * nx + N * nu
-    x_bar = np.ones((N + 1, nx))*0.1
-    u_bar = np.ones((N, nu)) * 0
+    x_bar = np.ones((N + 1, nx))*0.0
+    u_bar = np.ones((N, nu)) * 0.0
     z_bar = np.hstack((x_bar.flatten(), u_bar.flatten()))
     e_bar = np.ones((N+1) * 2) * 2
     r_bar = np.ones((N+1, 2))
@@ -291,7 +292,7 @@ def testSoftConstraint(config):
     xu_cst_new = StateControlBoxConstraintNew(dt, robot, N)
     xu_cst_soft = SoftConstraintsRBFCostFunction(mu, zeta, xu_cst_new, "xu")
 
-    u_prev = np.hstack((np.ones(2)*0., np.zeros(7)))
+    u_prev = np.hstack((np.ones(3)*0.6, np.zeros(6)))
     J_soft = xu_cst_soft.evaluate(x_bar, u_bar, u_prev)
     print(xu_cst_soft.h_fcn(x_bar.T, u_bar.T, u_prev))
     print(J_soft)
@@ -462,5 +463,5 @@ if __name__ == "__main__":
     # testNonlinearConstraint()
     # testHiearchicalConstraint()
     # testBoxConstraintNew(config)
-    # testSoftConstraint(config)
-    testCollisionConstraint(config)
+    testSoftConstraint(config)
+    # testCollisionConstraint(config)

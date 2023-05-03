@@ -199,32 +199,26 @@ class CasadiModelInterface:
         return pairs
 
     def _setupCollisionPair(self):
-        self.collision_pairs["self"] = [["ur10_arm_forearm_collision_link", "base_collision_link"],
-                                       ["gripped_object_collision_link", "base_collision_link"]]
+        # base
+        self.collision_pairs["self"] = [["ur10_arm_forearm_collision_link", "base_collision_link"]]
+        self.collision_pairs["self"] += self._addCollisionPairFromTwoGroups(self.robot.collision_link_names["base"],
+                                                                            self.robot.collision_link_names["wrist"] +
+                                                                            self.robot.collision_link_names["tool"])
+        # upper arm
+        self.collision_pairs["self"] += self._addCollisionPairFromTwoGroups(self.robot.collision_link_names["upper_arm"],
+                                                                            self.robot.collision_link_names["wrist"] +
+                                                                            self.robot.collision_link_names["tool"])
+        # forearm
+        self.collision_pairs["self"] += self._addCollisionPairFromTwoGroups(self.robot.collision_link_names["forearm"][:2],
+                                                                            self.robot.collision_link_names["tool"])
 
         for obstacle in self.scene.collision_link_names.get("static_obstacles", []):
-            self.collision_pairs["static_obstacles"][obstacle] = self._addCollisionPairFromTwoGroups(
-                                    [obstacle], ["gripped_object_collision_link", "base_collision_link"])
+            self.collision_pairs["static_obstacles"][obstacle] = self._addCollisionPairFromTwoGroups([obstacle],
+                                                                            self.robot.collision_link_names["base"] +
+                                                                            self.robot.collision_link_names["wrist"] +
+                                                                            self.robot.collision_link_names["forearm"] +
+                                                                            self.robot.collision_link_names["upper_arm"])
 
-        for obstacle in self.scene.collision_link_names.get("dynamic_obstacles", []):
-            self.collision_pairs["dynamic_obstacles"][obstacle] = self._addCollisionPairFromTwoGroups(
-                [obstacle], ["gripped_object_collision_link", "base_collision_link"])
-
-        # self.collision_pair += self._addCollisionPairFromTwoGroups(self.collision_link_names["base"],
-        #                                                            [self.collision_link_names["forearm"][0]] +
-        #                                                            self.collision_link_names["wrist"] +
-        #                                                            self.collision_link_names["tool"])
-        #
-        # self.collision_pair += self._addCollisionPairFromTwoGroups(self.collision_link_names["upper_arm"][:2],
-        #                                                            self.collision_link_names["wrist"])
-        #
-        # self.collision_pair += self._addCollisionPairFromTwoGroups(self.collision_link_names["tool"],
-        #                                                            self.collision_link_names["upper_arm"] +
-        #                                                            self.collision_link_names["forearm"])
-        #
-        # self.collision_pair += self._addCollisionPairFromTwoGroups(["plane"],
-        #                                                            self.collision_link_names["tool"] +
-        #                                                            self.collision_link_names["wrist"])
 
     def _setupSelfCollisionSymMdl(self):
         sd_syms = []
@@ -272,7 +266,7 @@ class CasadiModelInterface:
             for group, name_list in self.scene.collision_link_names.items():
                 if name in name_list:
                     return self.signedDistanceSymMdlsPerGroup[group][name]
-
+        print(name + " signed distance function does not exist")
         return None
 
 

@@ -223,8 +223,10 @@ class ControlEffortCostFunciton(CostFunctions):
         # du penalization
         Qdu = [params["Qdub"]] * (nu - robot_mdl.numjoint) + [params["Qdua"]] * robot_mdl.numjoint
         Qdu = np.diag(Qdu * N)
-        Lambda = np.eye(N*nu)
+        Lambda = np.zeros((N*nu, N*nu))
         Lambda[nu:, :-nu] = -np.eye((N-1)*nu)
+        Lambda += np.eye(N*nu)
+
         ll_params_du = {}
         ll_params_du["W"] = Qdu
         ll_params_du["A"] = np.hstack((np.zeros((N*nu, (N+1)*nx)), Lambda))
