@@ -20,7 +20,7 @@ controller:
   # soft constraints parameters
   xu_soft:
     mu: 0.001
-    zeta: 0.008
+    zeta: 0.005
   collision_soft:
     mu: 0.001
     zeta: 0.008
