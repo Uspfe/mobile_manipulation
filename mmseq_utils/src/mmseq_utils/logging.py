@@ -2,16 +2,20 @@
 # ref: https://github.com/utiasDSL/dsl__projects__tray_balance/blob/master/upright_core/src/upright_core/logging.py
 
 import numpy as np
+from scipy.interpolate import interp1d
+
 import matplotlib.pyplot as plt
 from pathlib import Path
 import yaml
 import rosbag
-from spatialmath.base import rotz
-from mmseq_utils.parsing import parse_path
+from spatialmath.base import rotz, r2q
+
+from mmseq_utils.parsing import parse_path, load_config
+from mmseq_control.robot import MobileManipulator3D
 from matplotlib.backends.backend_pdf import PdfPages
 from mobile_manipulation_central import ros_utils
 
-VICON_TOOL_NAME = "ThingWoodLumber"
+VICON_TOOL_NAME = "ThingContainer"
 
 def multipage(filename, figs=None, dpi=200):
     pp = PdfPages(filename)
@@ -215,14 +219,21 @@ class DataPlotter:
         return axes
 
     def plot_tracking_err(self, axes=None, index=0, legend=None):
-        ts = self.data["ts"]
-        r_bw_w_ds = self.data["r_bw_w_ds"]
-        r_bw_ws = self.data["r_bw_ws"]
-        err_base = np.linalg.norm(r_bw_ws - r_bw_w_ds, axis=1)
+        plot_base_err = False
+        plot_ee_err = False
 
-        r_ew_w_ds = self.data["r_ew_w_ds"]
-        r_ew_ws = self.data["r_ew_ws"]
-        err_ee = np.linalg.norm(r_ew_ws - r_ew_w_ds, axis=1)
+        ts = self.data["ts"]
+        r_bw_w_ds = self.data.get("r_bw_w_ds", [])
+        r_bw_ws = self.data.get("r_bw_ws", [])
+        if len(r_bw_ws) > 0 and len(r_bw_w_ds) > 0:
+            plot_base_err = True
+            err_base = np.linalg.norm(r_bw_ws - r_bw_w_ds, axis=1)
+
+        r_ew_w_ds = self.data.get("r_ew_w_ds", [])
+        r_ew_ws = self.data.get("r_ew_ws", [])
+        if len(r_ew_ws) > 0 and len(r_ew_w_ds) > 0:
+            plot_ee_err = True
+            err_ee = np.linalg.norm(r_ew_ws - r_ew_w_ds, axis=1)
 
         if axes is None:
             axes = []
@@ -231,8 +242,10 @@ class DataPlotter:
         if legend is None:
             legend = self.data["name"]
 
-        axes.plot(ts, err_base, label=legend+"$err_{base}$", linestyle="--")
-        axes.plot(ts, err_ee, label=legend+"$err_{ee}$",  linestyle="--")
+        if plot_base_err:
+            axes.plot(ts, err_base, label=legend+"$err_{base}$", linestyle="--")
+        if plot_ee_err:
+            axes.plot(ts, err_ee, label=legend+"$err_{ee}$",  linestyle="--")
         axes.grid()
         axes.legend()
         axes.set_xlabel("Time (s)")
@@ -569,7 +582,7 @@ class DataPlotter:
 
         self.plot_cost_htmpc()
         self.plot_solver_status_htmpc()
-        # self.plot_run_time()
+        self.plot_run_time()
 
         figs = [plt.figure(n) for n in plt.get_fignums()]
         print(self.data["dir_path"])
@@ -591,14 +604,18 @@ class DataPlotter:
         self.plot_cmd_vs_real_vel()
 
 class ROSBagPlotter:
-    def __init__(self, bag_file):
-        self.data = {"ur10": {}, "ridgeback": {}, "mpc": {}, "vicon": {}}
+    def __init__(self, bag_file, config_file="/home/tracy/Projects/mm_catkin_ws/src/mm_sequential_tasks/mmseq_run/config/robot/thing.yaml"):
+        self.data = {"ur10": {}, "ridgeback": {}, "mpc": {}, "vicon": {}, "model":{}}
         self.bag = rosbag.Bag(bag_file)
+        self.config = load_config(config_file)
+        self.robot = MobileManipulator3D(self.config["controller"])
 
         self.parse_joint_states(self.bag)
         self.parse_cmd_vels(self.bag)
         self.parse_mpc_tracking_pt(self.bag)
         self.parse_vicon_msgs(self.bag)
+        self.compute_values_from_robot_model()
+
         self._set_zero_time()
 
     def parse_joint_states(self, bag):
@@ -608,12 +625,18 @@ class ROSBagPlotter:
 
         tas, qas, vas = ros_utils.parse_ur10_joint_state_msgs(ur10_msgs, False)
         tbs, qbs, vbs = ros_utils.parse_ridgeback_joint_state_msgs(ridgeback_msgs, False)
-        self.data["ur10"]["joint_states"] = {"ts": tas, "qs": qas, "vs": vas}
-        self.data["ridgeback"]["joint_states"] = {"ts": tbs, "qs": qbs, "vs": vbs}
+        self.data["ur10"]["joint_states"] = {"ts": tas, "qs": qas, "vs": vas}           # 125hz
+        self.data["ridgeback"]["joint_states"] = {"ts": tbs, "qs": qbs, "vs": vbs}      # 50hz
 
         # Reconstruct body-frame ridgeback velocity
         vb_bs = [rotz(qbs[i, 2]).T @  vbs[i, :] for i in range(len(tbs))]
         self.data["ridgeback"]["joint_states"]["vbs"] = np.array(vb_bs)
+
+        fqa_interp = interp1d(tas, qas, axis=0, fill_value="extrapolate")
+        fva_interp = interp1d(tas, vas, axis=0, fill_value="extrapolate")
+        qas_interp = fqa_interp(tbs)
+        vas_interp = fva_interp(tbs)
+        self.data["ur10"]["joint_states_interpolated"] = {"ts": tbs, "qs": qas_interp, "vs": vas_interp}
 
     def parse_cmd_vels(self, bag):
         # cmd_vel messages do not have header.
@@ -643,20 +666,57 @@ class ROSBagPlotter:
     def parse_vicon_msgs(self, bag):
         topics = bag.get_type_and_topic_info()[1].keys()
         vicon_topics = [topic for topic in topics if topic[1:6] == "vicon"]
-
+        print(topics)
         for topic in vicon_topics:
             name = topic.split("/")[-1]
             if name == 'markers':
                 continue
             msgs = [msg for _, msg, _ in bag.read_messages(topic)]
             if name == "ThingBase":
-                ts, qs = ros_utils.parse_ridgeback_vicon_msgs(msgs)
+                ts, qs = ros_utils.parse_ridgeback_vicon_msgs(msgs)         # q is a 3-element vector x, y, theta
+                self.data["vicon"][name] = {"ts": ts, "pos": qs[:, :2], "orn": qs[:, 2]}
             else:
-                ts, qs = ros_utils.parse_transform_stamped_msgs(msgs, False)
-            self.data["vicon"][name] = {"ts": ts, "qs": qs}
+                ts, qs = ros_utils.parse_transform_stamped_msgs(msgs, False)    # q is a 7-element vector x, y, z for position followed by a unit quaternion
+                self.data["vicon"][name] = {"ts": ts, "pos": qs[:, :3], "orn": qs[:, 3:]}
+
+    def compute_values_from_robot_model(self):
+        f_base = self.robot.kinSymMdls[self.robot.base_link_name]
+        f_ee = self.robot.kinSymMdls[self.robot.tool_link_name]
+
+        r_base_s = []
+        yaw_base_s = []
+        r_ee_s = []
+        quat_ee_s = []
+
+
+        for i in range(len(self.data["ur10"]["joint_states_interpolated"]["ts"])):
+            qa = self.data["ur10"]["joint_states_interpolated"]["qs"][i]
+            qb = self.data["ridgeback"]["joint_states"]["qs"][i]
+            q = np.hstack((qb, qa))
+            r_b, theta_b = f_base(q)
+            r_ee, rot_ee = f_ee(q)
+            quat_ee = r2q(np.array(rot_ee), order="xyzs")
+
+            r_base_s.append(r_b)
+            yaw_base_s.append(theta_b)
+
+            r_ee_s.append(r_ee)
+            quat_ee_s.append(quat_ee)
+
+        self.data["model"]["EE"] = {"ts": self.data["ur10"]["joint_states_interpolated"]["ts"].copy(),
+                                    "pos": np.array(r_ee_s),
+                                    "orn": np.array(quat_ee_s)}
+
+        self.data["model"]["base"] = {"ts": self.data["ur10"]["joint_states_interpolated"]["ts"].copy(),
+                                      "pos": np.array(r_base_s),
+                                      "orn": np.array(yaw_base_s).flatten()}
 
     def _set_zero_time(self):
-        t0 = self.data["ridgeback"]["cmd_vels"]["ts"][0]
+        if len(self.data["ridgeback"]["cmd_vels"]["ts"]) > 0:
+            t0 = self.data["ridgeback"]["cmd_vels"]["ts"][0]
+        else:
+            t0 = 0
+
         for k1 in self.data.keys():
             if type(self.data[k1]) is dict:
                 for k2 in self.data[k1].keys():
@@ -795,6 +855,51 @@ class ROSBagPlotter:
             ax.grid()
 
         return axes
+
+    def plot_model_vs_groundtruth(self):
+        f1 = plt.figure()
+        pos_label = ['x', 'y', 'z']
+        prop_cycle = plt.rcParams["axes.prop_cycle"]
+        colors = prop_cycle.by_key()["color"]
+        for i in range(3):
+            plt.plot(self.data["model"]["EE"]["ts"], self.data["model"]["EE"]["pos"][:, i],
+                     label=pos_label[i] + "_model", color=colors[i])
+            plt.plot(self.data["vicon"][VICON_TOOL_NAME]["ts"], self.data["vicon"][VICON_TOOL_NAME]["pos"][:, i], '--',
+                     label=pos_label[i] + "_meas", color=colors[i])
+
+        plt.title("End Effector Position")
+        plt.legend()
+
+        f2 = plt.figure()
+        orn_label = ['x', 'y', 'z', 'w']
+        prop_cycle = plt.rcParams["axes.prop_cycle"]
+        colors = prop_cycle.by_key()["color"]
+        for i in range(4):
+            plt.plot(self.data["model"]["EE"]["ts"], self.data["model"]["EE"]["orn"][:, i],
+                     label=orn_label[i] + "_model", color=colors[i])
+            plt.plot(self.data["vicon"][VICON_TOOL_NAME]["ts"], self.data["vicon"][VICON_TOOL_NAME]["orn"][:, i], '--',
+                     label=orn_label[i] + "_meas", color=colors[i])
+
+        plt.title("End Effector Orientation (Quaternion)")
+        plt.legend()
+
+        # f3 = plt.figure()
+        # label = ['x', 'y', 'Θ']
+        # prop_cycle = plt.rcParams["axes.prop_cycle"]
+        # colors = prop_cycle.by_key()["color"]
+        # for i in range(2):
+        #     plt.plot(self.data["model"]["base"]["ts"], self.data["model"]["base"]["pos"][:, i],
+        #              label=label[i] + "_model", color=colors[i])
+        #     plt.plot(self.data["vicon"]["ThingBase"]["ts"], self.data["vicon"]["ThingBase"]["pos"][:, i], '--',
+        #              label=label[i] + "_meas", color=colors[i])
+        #
+        # plt.plot(self.data["model"]["base"]["ts"], self.data["model"]["base"]["orn"],
+        #          label=label[2] + "_model", color=colors[2])
+        # plt.plot(self.data["vicon"]["ThingBase"]["ts"], self.data["vicon"]["ThingBase"]["orn"], '--',
+        #          label=label[2] + "_meas", color=colors[2])
+        #
+        # plt.title("Base Pose")
+        # plt.legend()
 
     def plot_show(self):
         plt.show()

@@ -334,6 +334,7 @@ class MobileManipulator3D:
 
         self.link_names = config["robot"]["link_names"]
         self.tool_link_name = config["robot"]["tool_link_name"]
+        self.base_link_name = config["robot"]["base_link_name"]
         self.collision_link_names = config["robot"]["collision_link_names"]
 
         self.qb_sym = cs.MX.sym('qb', 3)
@@ -421,7 +422,7 @@ class MobileManipulator3D:
 
         """
         # TODO: Should we handle base through pinocchio by adopting the cartesian base urdf file?
-        if link_name == "base":
+        if link_name == self.base_link_name:
             return cs.Function(link_name + "_fcn", [self.q_sym], [self.qb_sym[:2], self.qb_sym[2]], ["q"], ["pos2", "heading"])
 
         Hwb = cs.MX.eye(4)
@@ -735,10 +736,10 @@ if __name__ == "__main__":
         help="Record video. Optionally specify prefix for video directory.",
     )
     args = parser.parse_args()
-    # test_robot_mdl(args)
+    test_robot_mdl(args)
     # test_obstacle_mdl(args)
     # test_pinocchio_interface(args)
-    test_casadi_interface(args)
+    # test_casadi_interface(args)
 
             
         

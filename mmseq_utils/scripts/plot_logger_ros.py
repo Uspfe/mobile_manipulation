@@ -29,7 +29,7 @@ def construct_logger(path_to_folder):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--folder", required=True, help="Path to data folder.")
+    parser.add_argument('-f', "--folder", required=True, help="Path to data folder.")
     parser.add_argument("--htmpc", action="store_true", help="plot htmpc info")
     parser.add_argument("--tracking", action="store_true",
                         help="plot tracking data")

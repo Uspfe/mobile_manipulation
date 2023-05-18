@@ -75,6 +75,7 @@ controller:
       - "ur10_arm_wrist_3_link"
       - "gripped_object"
     tool_link_name: "gripped_object"
+    base_link_name: "base"
     base_type: omnidirectional
 
     tool_vicon_name: "ThingContainer"
