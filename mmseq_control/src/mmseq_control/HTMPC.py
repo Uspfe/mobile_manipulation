@@ -6,9 +6,9 @@ import numpy as np
 import casadi as cs
 from cvxopt import solvers, matrix
 from mosek import iparam, dparam
-
+import mmseq_control.MPCConstraints as MPCConstraint
 from mmseq_control.MPCCostFunctions import EEPos3CostFunction, BasePos2CostFunction, ControlEffortCostFunciton, SoftConstraintsRBFCostFunction
-from mmseq_control.MPCConstraints import HierarchicalTrackingConstraint, MotionConstraint, StateControlBoxConstraint, StateControlBoxConstraintNew, SignedDistanceCollisionConstraint
+from mmseq_control.MPCConstraints import HierarchicalTrackingConstraint, HierarchicalTrackingConstraintCostValue, MotionConstraint, StateControlBoxConstraint, StateControlBoxConstraintNew, SignedDistanceCollisionConstraint, EEUpwardConstraint
 from mmseq_control.robot import MobileManipulator3D as MM
 from mmseq_control.robot import CasadiModelInterface as ModelInterface
 from mmseq_utils.math import wrap_pi_array
@@ -59,12 +59,16 @@ class MPC():
                                                        self.params["collision_safety_margin"], name)
             self.collisionCsts[name] = sd_cst
 
+        self.eeUpwardCst = EEUpwardConstraint(self.robot, self.params["ee_upward_deviation_angle_max"], self.dt, self.N)
+
         self.xuSoftCst = SoftConstraintsRBFCostFunction(self.params["xu_soft"]["mu"], self.params["xu_soft"]["zeta"], self.xuCst, "xuSoftCst")
         self.collisionSoftCsts = {name: SoftConstraintsRBFCostFunction(self.params["collision_soft"]["mu"],
                                                                        self.params["collision_soft"]["zeta"],
                                                                        sd_cst, name+"CollisionSoftCst")
                                                                        for name, sd_cst in self.collisionCsts.items()}
-
+        self.eeUpwardSoftCst = SoftConstraintsRBFCostFunction(self.params["ee_upward_soft"]["mu"],
+                                                              self.params["ee_upward_soft"]["zeta"],
+                                                              self.eeUpwardCst, "eeUpwardSoftCst")
         self.x_bar_sym = cs.MX.sym('x_bar', self.nx, self.N + 1)
         self.u_bar_sym = cs.MX.sym('u_bar', self.nu, self.N)
         self.z_bar_sym = cs.vertcat(cs.vec(self.x_bar_sym), cs.vec(self.u_bar_sym))
@@ -117,10 +121,8 @@ class MPC():
 class HTMPC(MPC):
     def __init__(self, config):
         super().__init__(config)
-
-        self.EEPos3HCst = HierarchicalTrackingConstraint(self.EEPos3Cost, "EEPos3")
-        self.BasePos2HCst = HierarchicalTrackingConstraint(self.BasePos2Cost, "BasePos2")
         self.MotionCst = MotionConstraint(self.dt, self.N, self.robot, "DI Motion Model")
+        self.hierarchy_cst_type = getattr(MPCConstraint, self.params["hierarchy_constraint_type"])
 
     def control(self, t, robot_states, planners):
         self.py_logger.debug("control time {}".format(t))
@@ -156,7 +158,7 @@ class HTMPC(MPC):
                 self.py_logger.warning("unknown cost type, planner # %d", id)
 
             if id < num_plans - 1:
-                hier_csts.append(HierarchicalTrackingConstraint(cost_fcns[-1][0], planner.type))
+                hier_csts.append(self.hierarchy_cst_type(cost_fcns[-1][0], planner.type))
 
             if planner.type == "EE":
                 self.ree_bar = r_bar
@@ -205,6 +207,7 @@ class HTMPC(MPC):
 
         for i in range(self.params["HT_MaxIntvl"]):
             e_bars = []
+            J_bars = []
             if self.params["type"] == "SQP_TOL_SCHEDULE":
                 for cst in hier_csts:
                     cst.tol = self.tol_schedule[i]
@@ -227,6 +230,10 @@ class HTMPC(MPC):
                         st_cost_fcn += [soft_cst]
                         st_cost_fcn_params += [[]]
 
+                    if self.params["ee_upward_constraint_enabled"]:
+                        st_cost_fcn += [self.eeUpwardSoftCst]
+                        st_cost_fcn_params += [[]]
+
                 else:
                     csts = {"eq": [self.MotionCst], "ineq": [self.xuCst]}
                     csts_params = {"eq": [[xo]], "ineq": [[]]}
@@ -237,7 +244,11 @@ class HTMPC(MPC):
                 if task_id > 0:
                     csts["ineq"] += hier_csts[:task_id]
                     for prev_task_id in range(task_id):
-                        csts_params["ineq"].append([r_bars[prev_task_id][0][0].T, e_bars[prev_task_id]])
+                        if self.params["hierarchy_constraint_type"] == "HierarchicalTrackingConstraint":
+                            csts_params["ineq"].append([r_bars[prev_task_id][0][0].T, e_bars[prev_task_id]])
+                        elif self.params["hierarchy_constraint_type"] == "HierarchicalTrackingConstraintCostValue":
+                            csts_params["ineq"].append([r_bars[prev_task_id][0][0].T, J_bars[prev_task_id]])
+
 
 
 
@@ -250,6 +261,10 @@ class HTMPC(MPC):
                 if task_id < task_num - 1:
                     e_bars_l = cost_fcn[0].e_bar_fcn(xbar_lopt.T, ubar_lopt.T, r_bars[task_id][0][0].T)
                     e_bars.append(e_bars_l.toarray().flatten())
+
+                    J_bar_l = cost_fcn[0].J_bar_fcn(xbar_lopt.T, ubar_lopt.T, r_bars[task_id][0][0].T)
+                    J_bars.append(J_bar_l)
+
                 xbar_l = xbar_lopt.copy()
                 ubar_l = ubar_lopt.copy()
 
@@ -481,7 +496,7 @@ class HTMPC(MPC):
         for id, f in enumerate(cost_fcn):
             Ji = f.evaluate(xbar, ubar, *cost_fcn_params[id])
             J += Ji
-            self.py_logger.log(4, f.__class__.__name__+" value:{}".format(Ji))
+            self.py_logger.log(4, f.name+" value:{}".format(Ji))
         return J
 
 

@@ -7,15 +7,17 @@ controller:
   prediction_horizon: 1.
   HT_MaxIntvl: 1
   ST_MaxIntvl: 1
-
+  hierarchy_constraint_type: "HierarchicalTrackingConstraint"    # error, cost_value, cost_value_sum
   mpc_rate: 10 #hz
   cmd_vel_pub_rate: 100 # hz
   soft_cst: True
   penalize_du: True
   self_collision_avoidance_enabled: True
   static_obstacles_collision_avoidance_enabled: True
+  ee_upward_constraint_enabled: False
 
   collision_safety_margin: 0.05
+  ee_upward_deviation_angle_max: 0.26    #rad, 0.26 rad ~ 15 degree
 
   # soft constraints parameters
   xu_soft:
@@ -24,6 +26,9 @@ controller:
   collision_soft:
     mu: 0.001
     zeta: 0.008
+  ee_upward_soft:
+    mu: 0.001
+    zeta: 0.005
 
   # weights for each cost function
   cost_params:

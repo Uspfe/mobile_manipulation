@@ -132,18 +132,20 @@ class TrackingCostFunction(CostFunctions):
         self._setupSymMdl()
 
     def _setupSymMdl(self):
-        self.J_eqn, self.e_bar_eqn = self._getCostSymEqn(self.f_fcn, self.x_bar_sym, self.u_bar_sym, self.r_bar_sym)
+        self.J_eqn, self.e_bar_eqn, self.J_bar_eqn = self._getCostSymEqn(self.f_fcn, self.x_bar_sym, self.u_bar_sym, self.r_bar_sym)
         self.hess_eqn, self.grad_eqn = cs.hessian(self.J_eqn, self.z_bar_sym)
         self.debardz_eqn = cs.jacobian(self.e_bar_eqn, self.z_bar_sym)
         self.hess_approx_eqn = self.debardz_eqn.T @ self.W @self.debardz_eqn
 
         self.J_fcn = cs.Function('J', [self.x_bar_sym, self.u_bar_sym, self.r_bar_sym], [self.J_eqn], ["x_bar", "u_bar", "r_bar"], ["J"]).expand()
+        self.J_bar_fcn = cs.Function('J_vec', [self.x_bar_sym, self.u_bar_sym, self.r_bar_sym], [self.J_bar_eqn], ["x_bar", "u_bar", "r_bar"], ["J"]).expand()
         self.e_bar_fcn = cs.Function('e_bar', [self.x_bar_sym, self.u_bar_sym, self.r_bar_sym], [self.e_bar_eqn], ["x_bar", "u_bar", "r_bar"], ["e_bar"]).expand()
         self.grad_fcn = cs.Function('dJdz', [self.z_bar_sym, self.r_bar_sym], [self.grad_eqn]).expand()
         self.hess_fcn = cs.Function('ddJddz', [self.z_bar_sym, self.r_bar_sym], [self.hess_eqn]).expand()
         self.hess_approx_fcn = cs.Function('dJdzdJdzT', [self.z_bar_sym, self.r_bar_sym], [self.hess_approx_eqn]).expand()
 
     def _getCostSymEqn(self, f_fcn, x_bar_sym, u_bar_sym, r_bar_sym):
+        J_list = []
         J = cs.MX.zeros(1)
         e_bar_eqn = cs.MX([])
 
@@ -155,11 +157,14 @@ class TrackingCostFunction(CostFunctions):
             e_bar_eqn = cs.vertcat(e_bar_eqn, ek)
 
             if k < self.N:
-                J += 0.5 * ek.T @ self.Qk @ ek
+                # J += 0.5 * ek.T @ self.Qk @ ek
+                J_list.append(0.5 * ek.T @ self.Qk @ ek)
             else:
-                J += 0.5 * ek.T @ self.P @ ek
+                # J += 0.5 * ek.T @ self.P @ ek
+                J_list.append(0.5 * ek.T @ self.P @ ek)
 
-        return J, e_bar_eqn
+
+        return sum(J_list)[0], e_bar_eqn, cs.vertcat(*J_list)
 
     def evaluate(self, x_bar, u_bar, *params):
         return self.J_fcn(x_bar.T, u_bar.T, params[0].T).toarray()[0][0]
@@ -173,6 +178,7 @@ class TrackingCostFunction(CostFunctions):
 
 class EEPos3CostFunction(TrackingCostFunction):
     def __init__(self, dt, N, robot_mdl, params):
+        self.name = "EEPos3"
         ss_mdl = robot_mdl.ssSymMdl
         nx = ss_mdl["nx"]
         nu = ss_mdl["nu"]
@@ -187,6 +193,7 @@ class EEPos3CostFunction(TrackingCostFunction):
 
 class BasePos2CostFunction(TrackingCostFunction):
     def __init__(self, dt, N, robot_mdl, params):
+        self.name = "BasePos2"
         ss_mdl = robot_mdl.ssSymMdl
         nx = ss_mdl["nx"]
         nu = ss_mdl["nu"]
@@ -201,6 +208,7 @@ class BasePos2CostFunction(TrackingCostFunction):
 
 class ControlEffortCostFunciton(CostFunctions):
     def __init__(self, dt, N, robot_mdl, params):
+        self.name = "ControlEffort"
 
         ss_mdl = robot_mdl.ssSymMdl
         nx = ss_mdl["nx"]
@@ -341,22 +349,24 @@ if __name__ == "__main__":
     cost_base = BasePos2CostFunction(dt, N, robot, config["controller"]["cost_params"]["BasePos2"])
     cost_ee = EEPos3CostFunction(dt, N, robot, config["controller"]["cost_params"]["EEPos3"])
     cost_eff = ControlEffortCostFunciton(dt, N, robot, config["controller"]["cost_params"]["Effort"])
-    cost_fcn = cost_eff
+    cost_fcn = cost_ee
 
     q = [0.0, 0.0, 0.0] + [0.0, -2.3562, -1.5708, -2.3562, -1.5708, 1.5708]
     v = np.zeros(9)
     x = np.hstack((np.array(q), v))
     x_bar = np.tile(x, (N+1, 1))
     u_bar = np.zeros((N, 9))
-    # r_bar = np.array([1] * cost_fcn.nr)
-    # r_bar = np.tile(r_bar, (N+1, 1))
-    r_bar = np.ones(9)
+    r_bar = np.array([1] * cost_fcn.nr)
+    r_bar = np.tile(r_bar, (N+1, 1))
+    # r_bar = np.ones(9)
 
     J_sym = cost_fcn.evaluate(x_bar, u_bar, r_bar)
     H_sym, g_sym = cost_fcn.quad(x_bar, u_bar, r_bar)
     g_num = np.zeros(cost_fcn.QPsize)
 
     eps = 1e-7
+
+    J_vec = cost_fcn.J_vec_fcn(x_bar.T, u_bar.T, r_bar.T)
     for i in range(x_bar.shape[0]):
         for j in range(x_bar.shape[1]):
             x_bar_p = x_bar.copy()
