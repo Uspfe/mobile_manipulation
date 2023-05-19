@@ -116,10 +116,10 @@ class IKCPrioritized:
 
         else:
             control_inputs = solve_qp(H, g, Cbar, dbar, Abar, bbar, initvals=self.prev_control, solver='osqp',
-                                      verbose=True, eps_abs=1e-3)
+                                      verbose=False, eps_abs=1e-3)
             if control_inputs is None:
                 control_inputs = solve_qp(H, g, Cbar, dbar, Abar, bbar, initvals=self.prev_control, solver='osqp',
-                                          verbose=True, eps_abs=1e-2)
+                                          verbose=False, eps_abs=1e-2)
 
             # P = matrix(H)
             # q = matrix(g)

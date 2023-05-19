@@ -11,8 +11,9 @@ import rospy
 from spatialmath.base import rotz
 
 from mmseq_control.HTMPC import HTMPC, HTMPCLex
+from mmseq_control.IDKC import IKCPrioritized
 from mmseq_simulator import simulation
-from mmseq_plan.TaskManager import SoTStatic
+import mmseq_plan.TaskManager as TaskManager
 from mmseq_utils import parsing
 from mmseq_utils.logging import DataLogger, DataPlotter
 from mobile_manipulation_central.ros_interface import MobileManipulatorROSInterface, ViconObjectInterface
@@ -49,8 +50,10 @@ class ControllerROSNode:
             self.controller = HTMPC(ctrl_config)
         elif ctrl_config["type"] == "lex":
             self.controller = HTMPCLex(ctrl_config)
+        elif ctrl_config["type"] == "TP-IDKC":
+            self.controller = IKCPrioritized(ctrl_config)
 
-        self.ctrl_rate = ctrl_config["rate"]
+        self.ctrl_rate = ctrl_config["ctrl_rate"]
 
         # set py logger level
         ch = logging.StreamHandler()
@@ -77,8 +80,8 @@ class ControllerROSNode:
 
         # ROS Related
         self.robot_interface = MobileManipulatorROSInterface()
-        self.vicon_tool_interface = ViconObjectInterface("ThingWoodTray")
-        # self.vicon_tool_interface = ViconObjectInterface("tool")
+        # self.vicon_tool_interface = ViconObjectInterface("ThingWoodTray")
+        self.vicon_tool_interface = ViconObjectInterface(ctrl_config["robot"]["tool_vicon_name"])
 
         rospy.on_shutdown(self.shutdownhook)
         self.ctrl_c = False
@@ -102,8 +105,9 @@ class ControllerROSNode:
                 return
 
         print("Controller received joint states. Proceed ... ")
-        self.planner_coord_transform(self.robot_interface.q, self.planner_config)
-        self.sot = SoTStatic(self.planner_config)
+        planner_class = getattr(TaskManager, self.planner_config["sot_type"])
+        self.sot = planner_class(self.planner_config)
+        self.planner_coord_transform(self.robot_interface.q, self.vicon_tool_interface.position, self.sot.planners)
 
         print("robot coord: {}".format(self.robot_interface.q))
         for planner in self.sot.planners:
@@ -121,16 +125,11 @@ class ControllerROSNode:
 
             # open-loop command
             robot_states = (self.robot_interface.q, self.robot_interface.v)
-            # print("Msg Oldness Base: {}s, Arm: {}s".format(t - robot_interface.base.last_msg_time, t - robot_interface.arm.last_msg_time))
-            # print("q: {}, v:{}, u: {}, acc:{}".format(robot_states[0][0], robot_states[1][0], u[0], acc))
-            # tc1 = time.perf_counter()
             planners = self.sot.getPlanners(num_planners=2)
-            tc1_ros = rospy.Time.now().to_sec()
+            tc1 = time.perf_counter()
             u, acc = self.controller.control(t-t0, robot_states, planners)
-            tc2_ros = rospy.Time.now().to_sec()
-            # print("Controller Time (ROS): {}s ".format(tc2_ros - tc1_ros))
-            # tc2 = time.perf_counter()
-            # print(tc2 - tc1)
+            tc2 = time.perf_counter()
+            self.controller_log.log(5, "Controller Run Time: {}".format(tc2 - tc1))
 
             self.robot_interface.publish_cmd_vel(u)
 
@@ -139,8 +138,7 @@ class ControllerROSNode:
             self.sot.update(t, states)
             # log
             self.logger.append("ts", t)
-            self.log_mpc_info(self.logger, self.controller)
-            self.logger.append("controller_run_time", tc2_ros - tc1_ros)
+            self.logger.append("controller_run_time", tc2 - tc1)
             r_ew_wd = []
             r_bw_wd = []
             for planner in planners:
@@ -160,19 +158,28 @@ class ControllerROSNode:
         # timestamp = datetime.datetime.now()
         # logger.save(timestamp, "ctrl")
 
-    def log_mpc_info(self, logger, controller):
-        logger.append("mpc_solver_statuss", controller.solver_status)
-        logger.append("mpc_cost_iters", controller.cost_iter)
-        logger.append("mpc_cost_finals", controller.cost_final)
-        logger.append("mpc_step_sizes", controller.step_size)
-
-    def planner_coord_transform(self, q, planner_config):
+    def planner_coord_transform(self, q, ree, planners):
         R_wb = rotz(q[2])
-        for task in planner_config["tasks"]:
-            if task["planner_type"] == "EESimplePlanner":
-                task["target_pos"] = R_wb @ task["target_pos"] + np.hstack((q[:2],0))
-            elif task["planner_type"] == "BaseSingleWaypoint":
-                task["target_pos"] = (R_wb @ np.hstack((task["target_pos"], 1)))[:2] + q[:2]
+        for planner in planners:
+            P = np.zeros(3)
+            if planner.frame_id == "base":
+                P = np.hstack((q[:2], 0))
+            elif planner.frame_id == "EE":
+                P = ree
+
+            if planner.__class__.__name__ == "EESimplePlanner":
+                planner.target_pos = R_wb @ planner.target_pos + P
+            elif planner.__class__.__name__ == "EEPosTrajectoryCircle":
+                planner.c = R_wb @ planner.c + P
+                planner.plan = planner.plan @ R_wb.T + P
+
+            elif planner.__class__.__name__ == "BaseSingleWaypoint":
+                planner.target_pos = (R_wb @ np.hstack((planner.target_pos, 0)))[:2] + P[:2]
+            elif planner.__class__.__name__ == "BasePosTrajectoryCircle":
+                planner.c = R_wb[:2, :2] @ planner.c + P[:2]
+                planner.plan = planner.plan @ R_wb[:2, :2].T + P[:2]
+            elif planner.__class__.__name__ == "BasePosTrajectoryLine":
+                planner.plan = planner.plan @ R_wb[:2, :2].T + P[:2]
 
 if __name__ == "__main__":
     rospy.init_node("controller_ros")
