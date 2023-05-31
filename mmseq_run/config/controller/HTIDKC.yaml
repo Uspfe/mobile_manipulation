@@ -1,0 +1,16 @@
+controller:
+  # HT-MPC Solver Type, lex vs SQP
+  type: "HTIDKC"
+
+  # regularization parameter
+  ρ: 0.01
+  ctrl_rate: 100
+
+
+  # task parameters
+  base_tracking:
+    κ: 0.5
+  ee_tracking:
+    κ: 0.5
+  joint_angle_bound_task:
+    κ: 0.5

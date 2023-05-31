@@ -12,6 +12,7 @@ from spatialmath.base import rotz
 
 from mmseq_control.HTMPC import HTMPC, HTMPCLex
 from mmseq_control.IDKC import IKCPrioritized
+from mmseq_control.HTIDKC import IDKC, HTIDKC
 from mmseq_simulator import simulation
 import mmseq_plan.TaskManager as TaskManager
 from mmseq_utils import parsing
@@ -52,6 +53,10 @@ class ControllerROSNode:
             self.controller = HTMPCLex(ctrl_config)
         elif ctrl_config["type"] == "TP-IDKC":
             self.controller = IKCPrioritized(ctrl_config)
+        elif ctrl_config["type"] == "IDKC":
+            self.controller = IDKC(ctrl_config)
+        elif ctrl_config["type"] == "HTIDKC":
+            self.controller = HTIDKC(ctrl_config)
 
         self.ctrl_rate = ctrl_config["ctrl_rate"]
 
@@ -141,9 +146,9 @@ class ControllerROSNode:
             r_bw_wd = []
             for planner in planners:
                 if planner.type == "EE":
-                    r_ew_wd, _ = planner.getTrackingPoint(t, robot_states)
+                    r_ew_wd, _ = planner.getTrackingPoint(t-t0, robot_states)
                 elif planner.type == "base":
-                    r_bw_wd, _ = planner.getTrackingPoint(t, robot_states)
+                    r_bw_wd, _ = planner.getTrackingPoint(t-t0, robot_states)
             if len(r_ew_wd) > 0:
                 self.logger.append("r_ew_w_ds", r_ew_wd)
             if len(r_bw_wd) > 0:
@@ -176,15 +181,15 @@ class ControllerROSNode:
                 planner.target_pos = R_wb @ planner.target_pos + P
             elif planner.__class__.__name__ == "EEPosTrajectoryCircle":
                 planner.c = R_wb @ planner.c + P
-                planner.plan = planner.plan @ R_wb.T + P
+                planner.plan['p'] = planner.plan['p'] @ R_wb.T + P
 
             elif planner.__class__.__name__ == "BaseSingleWaypoint":
                 planner.target_pos = (R_wb @ np.hstack((planner.target_pos, 0)))[:2] + P[:2]
             elif planner.__class__.__name__ == "BasePosTrajectoryCircle":
                 planner.c = R_wb[:2, :2] @ planner.c + P[:2]
-                planner.plan = planner.plan @ R_wb[:2, :2].T + P[:2]
+                planner.plan['p'] = planner.plan['p'] @ R_wb[:2, :2].T + P[:2]
             elif planner.__class__.__name__ == "BasePosTrajectoryLine":
-                planner.plan = planner.plan @ R_wb[:2, :2].T + P[:2]
+                planner.plan['p'] = planner.plan['p'] @ R_wb[:2, :2].T + P[:2]
 
 if __name__ == "__main__":
     rospy.init_node("controller_ros")
@@ -194,5 +199,3 @@ if __name__ == "__main__":
         node.run()
     except rospy.ROSInterruptException:
         node.robot_interface.brake()
-        timestamp = datetime.datetime.now()
-        node.logger.save(timestamp, "ctrl")

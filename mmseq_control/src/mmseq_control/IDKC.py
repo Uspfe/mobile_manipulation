@@ -7,6 +7,7 @@ Created on Wed Aug 11 22:16:32 2021
 """
 
 from mmseq_control.robot import MobileManipulator3D as MM
+from mmseq_control.IDKCTasks import EEPositionTracking, BasePositionTracking, JointVelocityBound
 from mmseq_utils import parsing
 
 import numpy as np
@@ -56,6 +57,10 @@ class IKCPrioritized:
         self.params = config
         self.prev_control = np.zeros(9)
 
+        self.ee_pos_tracking = EEPositionTracking(self.robot, config)
+        self.base_pos_tracking = BasePositionTracking(self.robot, config)
+        self.qdot_bound = JointVelocityBound(self.robot, config)
+
     def control(self, t, robot_states, planners):
         q, _ = robot_states
 
@@ -80,16 +85,24 @@ class IKCPrioritized:
                 #
                 # elif planner.ref_type == "pos":
                 Pee_d, Vee_d = planner.getTrackingPoint(t)
-                vee = self.params["lambda_ee"] * (Pee_d - Pee) + Vee_d
-                Jee = self.Jee(q).toarray()
+                vee_old = self.params["lambda_ee"] * (Pee_d - Pee) + Vee_d
+                Jee_old = self.Jee(q).toarray()
+                Jee, vee = self.ee_pos_tracking.linearize(q, Pee_d, Vee_d)
+                Jee = Jee.toarray()
+                vee = vee.toarray().flatten()
 
-                (Abar, bbar, Cbar, dbar), z = PLSN.getSubsetEq(Jee, vee, Abar, bbar, Cbar, dbar, 1e-3,
+                (Abar, bbar, Cbar, dbar), z = PLSN.getSubsetEq(Jee, vee, Abar, bbar, Cbar, dbar, 1e-2,
                                                                init_vals=self.prev_control)
             else:
                 Pb_d, Vb_d = planner.getTrackingPoint(t)
-                vb = self.params["lambda_base"] * (Pb_d - q[:2]) + Vb_d
-                Jb = np.hstack((np.eye(2), np.zeros((2, 7))))
-                (Abar, bbar, Cbar, dbar), z = PLSN.getSubsetEq(Jb, vb, Abar, bbar, Cbar, dbar, 1e-3,
+                vb_old = self.params["lambda_base"] * (Pb_d - q[:2]) + Vb_d
+                Jb_old = np.hstack((np.eye(2), np.zeros((2, 7))))
+
+                Jb, vb = self.base_pos_tracking.linearize(q, Pb_d, Vb_d)
+                Jb = Jb.toarray()
+                vb = vb.toarray().flatten()
+                print(np.linalg.norm(Jb - Jb_old), np.linalg.norm(vb - vb_old))
+                (Abar, bbar, Cbar, dbar), z = PLSN.getSubsetEq(Jb, vb, Abar, bbar, Cbar, dbar, 1e-2,
                                                                init_vals=self.prev_control)
         H = np.eye(9)
         H[:3, :3] = np.eye(3) * self.params["wb"]
