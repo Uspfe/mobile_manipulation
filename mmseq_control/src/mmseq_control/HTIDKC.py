@@ -94,24 +94,51 @@ class HTIDKC():
         eds = []
         task_types = []
 
-        # initial joint angle
-        Jq, eq = self.q_bound.linearize(q, [])
-        Js.append(Jq)
-        eds.append(eq)
-        task_types.append("Ineq")
+        # # joint angle bound
+        # Jq, eq = self.q_bound.linearize(q, [])
+        # Js.append(Jq)
+        # eds.append(eq)
+        # task_types.append("Ineq")
+        #
+        # # joint velocity bound
+        # Jqdot, eqdot = self.qdot_bound.linearize(q, [])
+        # Js.append(Jqdot)
+        # eds.append(eqdot)
+        # task_types.append("Ineq")
+
+        Js_ineq = []
+        eds_ineq = []
+
+        J_joint = cs.DM.zeros((0, self.QPsize))
+        ed_joint = cs.DM.zeros(0)
+        joint_tasks = [self.qdot_bound, self.q_bound]
+        for task in joint_tasks:
+            Jq, edq = task.linearize(q, [])
+            J_joint = cs.vertcat(J_joint, Jq)
+            ed_joint = cs.vertcat(ed_joint, edq)
+
+        Js_ineq.append(J_joint)
+        eds_ineq.append(ed_joint)
 
         if self.params["self_collision_avoidance_enabled"] or self.params["static_obstacles_collision_avoidance_enabled"]:
             Jcol, edcol = self.collision_avoidance.linearize(q, [])
-
-            Js.append(Jcol)
-            eds.append(edcol)
-            task_types.append("Ineq")
+            Js_ineq.append(Jcol)
+            eds_ineq.append(edcol)
 
         if self.params["joint_acc_bound_enabled"]:
             Jqddot, edqddot = self.qddot_bound.linearize(q, self.qdot_prev)
-            Js.append(Jqddot)
-            eds.append(edqddot)
+            Js_ineq.append(Jqddot)
+            eds_ineq.append(edqddot)
+
+        if self.params["one_inequality_constraint_enabled"]:
+            Js.append(cs.vertcat(*Js_ineq))
+            eds.append(cs.vertcat(*eds_ineq))
             task_types.append("Ineq")
+        else:
+            for J, ed in zip(Js_ineq, eds_ineq):
+                Js.append(J)
+                eds.append(ed)
+                task_types.append("Ineq")
 
         for pid, planner in enumerate(planners):
             rd, vd = planner.getTrackingPoint(t, robot_states)
@@ -146,16 +173,16 @@ class HTIDKC():
         """
         Abar = cs.DM.zeros(0, self.QPsize)
         bbar = cs.DM.zeros(0)
-        if task_types[0] == "Ineq":
-            Cbar = Js[0]
-            dbar = eds[0]
-        else:
-            Cbar = cs.DM.zeros(0, self.QPsize)
-            dbar = cs.DM.zeros(0)
+        # if task_types[0] == "Ineq":
+        #     Cbar = Js[0]
+        #     dbar = eds[0]
+        # else:
+        Cbar = cs.DM.zeros(0, self.QPsize)
+        dbar = cs.DM.zeros(0)
 
         for tid in range(len(task_types)):
-            if tid == 0 and task_types[0] == "Ineq":
-                continue
+            # if tid == 0 and task_types[0] == "Ineq":
+            #     continue
             J = Js[tid]
             ed = eds[tid]
 
@@ -164,7 +191,7 @@ class HTIDKC():
             w = opti.variable(J.shape[0])
 
             opti.minimize(0.5 * w.T @ w + 0.5 * self.params["ρ"] * qdot.T @ qdot)
-            opti.subject_to(opti.bounded(-self.qdot_bound.ub[self.QPsize:], qdot, self.qdot_bound.ub[:self.QPsize]))
+            # opti.subject_to(opti.bounded(-self.qdot_bound.ub[self.QPsize:], qdot, self.qdot_bound.ub[:self.QPsize]))
             if Abar.shape[0] > 0:
                 opti.subject_to(Abar @ qdot == bbar)
             if Cbar.shape[0] > 0:
@@ -179,7 +206,12 @@ class HTIDKC():
                                "OptimalityTol": 1e-6}
             opti.solver('gurobi', p_opts, s_opts)
 
-            sol = opti.solve()
+            try:
+                sol = opti.solve()
+            except RuntimeError:
+                print(tid)
+                print(dbar)
+                print(dbar.toarray().flatten().reshape((2, 9)))
 
             w_opt = sol.value(w)
             qdot_opt = sol.value(qdot)
