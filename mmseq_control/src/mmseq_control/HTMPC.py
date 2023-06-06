@@ -367,7 +367,7 @@ class HTMPC(MPC):
                 results['status_val'] = 1
                 results['status'] = 'optimal'
             except RuntimeError:
-                if not self.xuCst.check(xbar_i, ubar_i):
+                if not self.xuCst.check(xbar_i, ubar_i)[0]:
                     results = {}
                     results['status'] = 'infeasible'
                     results['status_val'] = -1
@@ -464,7 +464,7 @@ class HTMPC(MPC):
 
             feas = True
             for cst_id, cst in enumerate(csts["ineq"]):
-                feas_i = cst.check(xbar_new, ubar_new, *csts_params["ineq"][cst_id])
+                feas_i = cst.check(xbar_new, ubar_new, *csts_params["ineq"][cst_id])[0]
                 if not feas_i:
                     feas = False
                     # print(xbar_new[:, 9])
