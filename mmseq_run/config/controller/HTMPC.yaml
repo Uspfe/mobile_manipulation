@@ -1,6 +1,6 @@
 controller:
   # HT-MPC Solver Type, lex vs SQP
-  type: "SQP_TOL_SCHEDULE"
+  type: "HTMPCSQP"
 
   # MPC params
   dt: 0.1
@@ -8,7 +8,7 @@ controller:
   HT_MaxIntvl: 1
   ST_MaxIntvl: 1
   hierarchy_constraint_type: "HierarchicalTrackingConstraint"    # error, cost_value, cost_value_sum
-  mpc_rate: 10 #hz
+  ctrl_rate: 10 #hz
   cmd_vel_pub_rate: 100 # hz
   soft_cst: True
   penalize_du: True

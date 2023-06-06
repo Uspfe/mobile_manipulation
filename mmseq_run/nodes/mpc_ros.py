@@ -6,7 +6,6 @@ import logging
 import time
 import threading
 import sys
-
 import numpy as np
 import rospy
 from spatialmath.base import rotz
@@ -15,11 +14,10 @@ from visualization_msgs.msg import Marker
 from geometry_msgs.msg import Point, Transform, Twist
 from trajectory_msgs.msg import MultiDOFJointTrajectory, MultiDOFJointTrajectoryPoint
 
-from mmseq_control.HTMPC import HTMPC, HTMPCLex
-from mmseq_simulator import simulation
+import mmseq_control.HTMPC as HTMPC
 import mmseq_plan.TaskManager as TaskManager
 from mmseq_utils import parsing
-from mmseq_utils.logging import DataLogger, DataPlotter
+from mmseq_utils.logging import DataLogger
 from mobile_manipulation_central.ros_interface import MobileManipulatorROSInterface, ViconObjectInterface
 
 class ControllerROSNode:
@@ -30,34 +28,29 @@ class ControllerROSNode:
         argv = rospy.myargv(argv=sys.argv)
         parser = argparse.ArgumentParser()
         parser.add_argument("--config", required=True, help="Path to configuration file.")
-        parser.add_argument("--priority", type=str, default=None, help="priority, EE or base")
-        parser.add_argument("--stmpctype", type=str, default=None,
-                            help="STMPC type, SQP or lex. This overwrites the yaml settings")
+        parser.add_argument("--type", type=str, default=None,
+                            help="controller type, HTMPCSQP or HTMPCLex. This overwrites the yaml settings")
         args = parser.parse_args(argv[1:])
 
 
         # load configuration and overwrite with args
         config = parsing.load_config(args.config)
-        if args.stmpctype is not None:
-            config["controller"]["type"] = args.stmpctype
-        if args.priority is not None:
-            config["planner"]["priority"] = args.priority
+        if args.type is not None:
+            config["controller"]["type"] = args.type
 
-        if config["controller"]["type"] == "lex":
+        if config["controller"]["type"] == "HTMPCLex":
             config["controller"]["HT_MaxIntvl"] = 1
 
-        ctrl_config = config["controller"]
+        self.ctrl_config = config["controller"]
         self.planner_config = config["planner"]
 
         # controller
-        if ctrl_config["type"] == "SQP" or ctrl_config["type"] == "SQP_TOL_SCHEDULE":
-            self.controller = HTMPC(ctrl_config)
-        elif ctrl_config["type"] == "lex":
-            self.controller = HTMPCLex(ctrl_config)
+        control_class = getattr(HTMPC, self.ctrl_config["type"], None)
+        self.controller = control_class(self.ctrl_config)
 
-        self.mpc_rate = ctrl_config["mpc_rate"]
-        self.cmd_vel_pub_rate = ctrl_config["cmd_vel_pub_rate"]
-        self.mpc_dt = ctrl_config["dt"]
+        self.ctrl_rate = self.ctrl_config["ctrl_rate"]
+        self.cmd_vel_pub_rate = self.ctrl_config["cmd_vel_pub_rate"]
+        self.mpc_dt = self.ctrl_config["dt"]
 
         # set py logger level
         ch = logging.StreamHandler()
@@ -77,20 +70,22 @@ class ControllerROSNode:
         self.logger.add("sim_timestep", config["simulation"]["timestep"])
         self.logger.add("duration", config["simulation"]["duration"])
 
-        self.logger.add("nq", ctrl_config["robot"]["dims"]["q"])
-        self.logger.add("nv", ctrl_config["robot"]["dims"]["v"])
-        self.logger.add("nx", ctrl_config["robot"]["dims"]["x"])
-        self.logger.add("nu", ctrl_config["robot"]["dims"]["u"])
+        self.logger.add("nq", self.ctrl_config["robot"]["dims"]["q"])
+        self.logger.add("nv", self.ctrl_config["robot"]["dims"]["v"])
+        self.logger.add("nx", self.ctrl_config["robot"]["dims"]["x"])
+        self.logger.add("nu", self.ctrl_config["robot"]["dims"]["u"])
 
         # ROS Related
         self.robot_interface = MobileManipulatorROSInterface()
-        self.vicon_tool_interface = ViconObjectInterface(ctrl_config["robot"]["tool_vicon_name"])
-        self.visualization_pub = rospy.Publisher("mpc_visualization", Marker, queue_size=10)
+        self.vicon_tool_interface = ViconObjectInterface(self.ctrl_config["robot"]["tool_vicon_name"])
+        self.controller_visualization_pub = rospy.Publisher("controller_visualization", Marker, queue_size=10)
         self.plan_visualization_pub = rospy.Publisher("plan_visualization", Marker, queue_size=10)
-        self.tracking_point_pub = rospy.Publisher("mpc_tracking_pt", MultiDOFJointTrajectory, queue_size=5)
+        self.tracking_point_pub = rospy.Publisher("controller_tracking_pt", MultiDOFJointTrajectory, queue_size=5)
+
+        # publish mpc predicted input trajectory at a higher rate
+        self.cmd_vel = np.zeros(9)
         self.mpc_plan = None
         self.mpc_plan_time_stamp = 0
-        self.cmd_vel = np.zeros(9)
         dt_pub = 1./ self.cmd_vel_pub_rate
         dt_pub_sec = int(dt_pub)
         dt_pub_nsec = int((dt_pub - dt_pub_sec) * 1e9)
@@ -178,7 +173,7 @@ class ControllerROSNode:
         m.color.g = rgba[1]
         m.color.b = rgba[2]
         m.color.a = rgba[3]
-        m.lifetime = rospy.Duration.from_sec(1./self.mpc_rate)
+        m.lifetime = rospy.Duration.from_sec(1./self.ctrl_rate)
 
         m.pose.orientation.w = 1
 
@@ -214,25 +209,25 @@ class ControllerROSNode:
         # ee prediction
         marker_ee = self._make_marker(Marker.POINTS, 0, rgba=[1.0, 1.0, 1.0, 1], scale=[0.1, 0.1, 0.1])
         marker_ee.points = [Point(*pt) for pt in controller.ee_bar]
-        self.visualization_pub.publish(marker_ee)
+        self.controller_visualization_pub.publish(marker_ee)
 
         # base prediction
         marker_base = self._make_marker(Marker.POINTS, 1, rgba=[1.0, 1.0, 1.0, 1], scale=[0.1, 0.1, 0.1])
         marker_base.points = [Point(*pt[:2], 0) for pt in controller.base_bar]
-        self.visualization_pub.publish(marker_base)
+        self.controller_visualization_pub.publish(marker_base)
 
         # ee tracking points
         marker_ree = self._make_marker(Marker.POINTS, 2, rgba=[1.0, 0, 0, 1], scale=[0.1, 0.1, 0.1])
         marker_ree.points = [Point(*pt) for pt in controller.ree_bar]
-        self.visualization_pub.publish(marker_ree)
+        self.controller_visualization_pub.publish(marker_ree)
 
         # base tracking points
         marker_rbase = self._make_marker(Marker.POINTS, 3, rgba=[0.0, 0.0, 1, 1], scale=[0.1]*3)
         marker_rbase.points = [Point(*pt[:2], 0) for pt in controller.rbase_bar]
-        self.visualization_pub.publish(marker_rbase)
+        self.controller_visualization_pub.publish(marker_rbase)
 
     def run(self):
-        rate = rospy.Rate(self.mpc_rate)
+        rate = rospy.Rate(self.ctrl_rate)
 
 
         while not self.robot_interface.ready() or not self.vicon_tool_interface.ready():
@@ -259,10 +254,7 @@ class ControllerROSNode:
         t0 = t
 
         while not self.ctrl_c:
-            t1 = rospy.Time.now().to_sec()
-            if t1 - t > (1./ self.mpc_rate)*5:
-                self.controller_log.debug("Controller running slow. Last interval {}".format(t1 -t))
-            t = t1
+            t = rospy.Time.now().to_sec()
 
             # open-loop command
             robot_states = (self.robot_interface.q, self.robot_interface.v)

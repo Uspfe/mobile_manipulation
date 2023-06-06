@@ -33,7 +33,7 @@ class MPC():
         self.BasePos2Cost = BasePos2CostFunction(self.dt, self.N, self.robot, config["cost_params"]["BasePos2"])
         self.CtrlEffCost = ControlEffortCostFunciton(self.dt, self.N, self.robot, config["cost_params"]["Effort"])
 
-        self.rate = self.params["mpc_rate"]
+        self.rate = self.params["ctrl_rate"]
 
         self.x_bar = np.zeros((self.N + 1, self.nx))  # current best guess x0,...,xN
         self.u_bar = np.zeros((self.N, self.nu))  # current best guess u0,...,uN-1
@@ -118,7 +118,7 @@ class MPC():
         self.v_cmd = np.zeros(self.nx - self.DoF)
 
 
-class HTMPC(MPC):
+class HTMPCSQP(MPC):
     def __init__(self, config):
         super().__init__(config)
         self.MotionCst = MotionConstraint(self.dt, self.N, self.robot, "DI Motion Model")
@@ -500,7 +500,7 @@ class HTMPC(MPC):
         return J
 
 
-class HTMPCLex(HTMPC):
+class HTMPCLex(HTMPCSQP):
     def __init__(self, config):
         super().__init__(config)
 
