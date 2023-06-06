@@ -12,7 +12,8 @@ import os
 from spatialmath.base import rotz, r2q
 
 from mmseq_utils.parsing import parse_path, load_config
-from mmseq_control.robot import MobileManipulator3D
+from mmseq_control.robot import CasadiModelInterface
+from mmseq_utils import parsing
 from matplotlib.backends.backend_pdf import PdfPages
 from mobile_manipulation_central import ros_utils
 
@@ -88,9 +89,12 @@ class DataLogger:
 
 
 class DataPlotter:
-    def __init__(self, data):
+    def __init__(self, data, config=None):
         self.data = data
         self.data["name"] = self.data.get('name', 'data')
+        self.config = config
+        if config is not None:
+            self.model_interface = CasadiModelInterface(config["controller"])
 
     @classmethod
     def from_logger(cls, logger):
@@ -114,12 +118,17 @@ class DataPlotter:
     @classmethod
     def from_ROS_results(cls, folder_path):
         data_decoupled = {}
+        config = None
         for filename in os.listdir(folder_path):
             d = os.path.join(folder_path, filename)
             key = filename.split("_")[0]
             if os.path.isdir(d):
                 path_to_npz = os.path.join(d, "data.npz")
                 data_decoupled[key] = dict(np.load(path_to_npz))
+
+            if key == 'control':
+                path_to_config = os.path.join(d, "config.yaml")
+                config = parsing.load_config(path_to_config)
 
         data = data_decoupled["control"]
 
@@ -134,7 +143,7 @@ class DataPlotter:
                 data[key] = f_interp(t)
         data["ts"] -= data["ts"][0]
         data["name"] = folder_path.split("/")[-1]
-        return cls(data)
+        return cls(data, config)
 
     def plot_ee_position(self, axes=None, index=0, legend=None):
         ts = self.data["ts"]
@@ -285,6 +294,21 @@ class DataPlotter:
         axes.set_title("Tracking Error vs Time")
 
         return axes
+
+    def plot_collision(self):
+        nq = int(self.data["nq"])
+        ts = self.data["ts"]
+        qs = self.data["xs"][:, :nq]
+        sds = self.model_interface.evaluteSignedDistance(qs)
+
+        f, ax = plt.subplots(1, 1)
+        for name, sd in sds.items():
+            ax.plot(ts, sd, label=name)
+        ax.plot(ts, [0.05]*len(ts), 'r--', linewidth=2, label="minimum clearance")
+        ax.set_title("Signed Distance vs Time")
+        ax.set_xlabel("Time (s)")
+        ax.set_ylabel("Sd(q) (m)")
+        ax.legend()
 
     def plot_cmds(self, axes=None, index=0, legend=None):
         ts = self.data["ts"]
@@ -447,6 +471,20 @@ class DataPlotter:
         ax = plt.gca()
         return ax
 
+    def plot_state_control_constraints_violations(self, axes=None):
+        ts = self.data["ts"]
+        state_sat, acc_sat = self.model_interface.robot.checkBounds(self.data["xs"], self.data["cmd_accs"], tol=-1e-3)
+
+        if axes is None:
+            fig = plt.figure()
+            axes = plt.gca()
+        axes.set_xlabel("Time (s)")
+        axes.set_ylabel("# Saturation")
+        axes.plot(ts, state_sat, label="state")
+        axes.plot(ts, acc_sat, label="input")
+
+        axes.set_title("State and Control Constraint Saturation")
+
     def plot_state(self):
         self.plot_value_vs_time(
             "xs",
@@ -601,6 +639,63 @@ class DataPlotter:
 
         return axes
 
+    def plot_task_performance(self, axes=None, index=0, legend=None):
+        if axes is None:
+            f, axes = plt.subplots(4, 1, sharex=True)
+        else:
+            if len(axes) != 4:
+                raise ValueError("Given axes number ({}) does not match task number ({}).".format(len(axes), 4))
+
+        if legend is None:
+            legend = self.data["name"]
+
+        prop_cycle = plt.rcParams["axes.prop_cycle"]
+        colors = prop_cycle.by_key()["color"]
+
+        t_sim = self.data["ts"]
+        nq = int(self.data["nq"])
+        xs_sat, us_sat = self.model_interface.robot.checkBounds(self.data["xs"], self.data["cmd_accs"], -1e-3)
+        axes[0].plot(t_sim, xs_sat + us_sat, label=legend, color=colors[index])
+        axes[0].set_ylabel("# x,u saturated")
+
+        qs = self.data["xs"][:, :nq]
+        sds_dict = self.model_interface.evaluteSignedDistance(qs)
+        sds = np.array([sd for sd in sds_dict.values()])
+        sds = np.min(sds, axis=0)
+        axes[1].plot(t_sim, sds, label=legend, color=colors[index])
+        axes[1].set_ylabel("Sd(q) (m)")
+
+        ts = self.data["ts"]
+        r_bw_w_ds = self.data.get("r_bw_w_ds", [])
+        r_bw_ws = self.data.get("r_bw_ws", [])
+        if len(r_bw_ws) > 0 and len(r_bw_w_ds) > 0:
+            plot_base_err = True
+            err_base = np.linalg.norm(r_bw_ws - r_bw_w_ds, axis=1)
+            rms_base = np.mean(err_base * err_base) ** 0.5
+
+        r_ew_w_ds = self.data.get("r_ew_w_ds", [])
+        r_ew_ws = self.data.get("r_ew_ws", [])
+        if len(r_ew_ws) > 0 and len(r_ew_w_ds) > 0:
+            plot_ee_err = True
+            err_ee = np.linalg.norm(r_ew_ws - r_ew_w_ds, axis=1)
+            rms_ee = np.mean(err_ee * err_ee) ** 0.5
+
+        if plot_ee_err:
+            axes[2].plot(t_sim, err_ee, label=legend, color=colors[index])
+            axes[2].set_ylabel("EE Err (m)")
+
+        if plot_base_err:
+            axes[3].plot(t_sim, err_base, label=legend, color=colors[index])
+            axes[3].set_ylabel("Base Err (m)")
+
+        axes[3].set_xlabel("Time (s)")
+
+        for a in axes:
+            a.legend()
+
+        return axes
+
+
     def plot_task_violation(self, axes=None, index=0, legend=None):
         task_names = self.data.get("task_names")
         if task_names is None:
@@ -669,12 +764,15 @@ class DataPlotter:
         self.plot_state()
         self.plot_cmds()
         self.plot_du()
+        self.plot_collision()
+        self.plot_state_control_constraints_violations()
 
     def plot_tracking(self):
         self.plot_ee_position()
         self.plot_base_position()
         self.plot_tracking_err()
         self.plot_cmd_vs_real_vel()
+        self.plot_task_performance()
 
 class ROSBagPlotter:
     def __init__(self, bag_file, config_file="/home/tracy/Projects/mm_catkin_ws/src/mm_sequential_tasks/mmseq_run/config/robot/thing.yaml"):

@@ -121,8 +121,6 @@ class ControllerROSNode:
         input("Press Enter to continue...")
         t = rospy.Time.now().to_sec()
         t0 = t
-        t_prev = t
-        u_prev = 0
         while not self.ctrl_c:
             t = rospy.Time.now().to_sec()
 
@@ -154,13 +152,14 @@ class ControllerROSNode:
             if len(r_bw_wd) > 0:
                 self.logger.append("r_bw_w_ds", r_bw_wd)
             self.logger.append("cmd_vels", u)
-            if t - t_prev != 0:
-                self.logger.append("cmd_accs", (u - u_prev) / (t - t_prev))
-            else:
-                self.logger.append("cmd_accs", (u - u_prev) / self.ctrl_rate)
+            self.logger.append("cmd_accs", acc)
 
-            u_prev = u
-            t_prev = t
+            if self.controller.__class__.__name__ == "HTIDKC":
+                for id, name in enumerate(self.controller.task_names):
+                    self.logger.append("task_violations_" + name, self.controller.ws[id])
+                # only log once at the beginning.
+                if not self.logger.data.get("task_names"):
+                    self.logger.append("task_names", self.controller.task_names)
 
             rate.sleep()
 

@@ -280,6 +280,22 @@ class CasadiModelInterface:
         print(name + " signed distance function does not exist")
         return None
 
+    def evaluteSignedDistance(self, qs):
+        sd = {}
+        names = ["self"]
+        names += [n for n in self.collision_pairs["static_obstacles"].keys()]
+
+        N = len(qs)
+        for name in names:
+            sd_fcn = self.getSignedDistanceSymMdls(name)
+            sdn_fcn = sd_fcn.map(N, 'thread', 2)
+            # sds dimension: num collision pairs x num time step
+            sds = sdn_fcn(qs.T).toarray()
+            sd_mins = np.min(sds, axis=0)
+            sd[name] = sd_mins
+
+        return sd
+
 
 class Scene:
     def __init__(self, config):
@@ -484,6 +500,30 @@ class MobileManipulator3D:
             x_bar = np.hstack((np.expand_dims(xo, -1), x_bar)).T
 
         return x_bar
+
+    def checkBounds(self, xs, us, tol=1e-2):
+        """
+
+        :param xs:
+        :param us:
+        :return:
+        """
+
+        # check state
+        ub_x_check = xs < self.ub_x + tol
+        lb_x_check = xs > self.lb_x - tol
+        xs_num_violation = np.sum(1 - ub_x_check * lb_x_check, axis=1)
+        print(lb_x_check.shape)
+
+        # check input
+        ub_u_check = us < self.ub_u + tol
+        lb_u_check = us > self.lb_u - tol
+        us_num_violation = np.sum(1-ub_u_check * lb_u_check, axis=1)
+        print(lb_u_check.shape)
+
+        return xs_num_violation, us_num_violation
+
+
 
 def verify_link_transforms(robot_sim, sysMdls, link_names):
     for name in link_names:

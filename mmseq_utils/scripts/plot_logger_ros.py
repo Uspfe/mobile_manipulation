@@ -5,14 +5,6 @@ import os
 from mmseq_utils.logging import DataLogger, DataPlotter
 import matplotlib.pyplot as plt
 
-def plot_tracking(plotters):
-    # ee_axes = plotters["control"].plot_ee_position()
-    # base_axes = plotters["control"].plot_base_position()
-    # plotters["sim"].plot_ee_position(ee_axes)
-    # plotters["sim"].plot_base_position(base_axes)
-    plotters.plot_ee_position()
-    plotters.plot_base_position()
-    plotters.plot_tracking_err()
 
 def construct_logger(path_to_folder):
     return DataPlotter.from_ROS_results(path_to_folder)
@@ -44,6 +36,11 @@ def plot_comparisons(args):
     for id, p in enumerate(plotters):
         axes = p.plot_cmds(axes, id)
 
+    # plot Task performance
+    axes = None
+    for id, p in enumerate(plotters):
+        axes = p.plot_task_performance(axes, id)
+
     plt.show()
 
 
@@ -67,8 +64,7 @@ if __name__ == "__main__":
         if args.htmpc:
             data_plotter.plot_mpc()
         if args.tracking:
-            plot_tracking(data_plotter)
-            data_plotter.plot_task_violation()
+            data_plotter.plot_tracking()
         if args.robot:
             data_plotter.plot_robot()
 
