@@ -7,7 +7,11 @@ import matplotlib.pyplot as plt
 
 
 def construct_logger(path_to_folder):
-    return DataPlotter.from_ROS_results(path_to_folder)
+    folder_num = len(os.listdir(args.folder))
+    if folder_num > 1:
+        return DataPlotter.from_ROS_results(path_to_folder)
+    elif folder_num == 1:
+        return DataPlotter.from_PYSIM_results(path_to_folder)
     # data = {}
     # for filename in os.listdir(path_to_folder):
     #     d = os.path.join(path_to_folder, filename)

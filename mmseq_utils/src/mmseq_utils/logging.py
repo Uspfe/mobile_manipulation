@@ -116,7 +116,28 @@ class DataPlotter:
         return cls(data)
 
     @classmethod
+    def from_PYSIM_results(cls, folder_path):
+        """ For data obtained from running controller in the simulation loop
+
+        :param folder_path:
+        :return:
+        """
+        npz_file_path = os.path.join(folder_path, "data.npz")
+        data = dict(np.load(npz_file_path))
+        config_file_path = os.path.join(folder_path, "config.yaml")
+        config = parsing.load_config(config_file_path)
+        folder_name = folder_path.split("/")[-1]
+        data["name"] = folder_name.split("_")[0]
+        return cls(data, config)
+
+
+    @classmethod
     def from_ROS_results(cls, folder_path):
+        """ for data obtained from running simulation and controller as two nodes
+
+        :param folder_path:
+        :return:
+        """
         data_decoupled = {}
         config = None
         for filename in os.listdir(folder_path):
