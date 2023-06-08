@@ -676,23 +676,23 @@ class DataPlotter:
         t_sim = self.data["ts"]
         nq = int(self.data["nq"])
         xs_sat, us_sat = self.model_interface.robot.checkBounds(self.data["xs"], self.data["cmd_accs"], -1e-3)
-        axes[0].plot(t_sim, xs_sat + us_sat, label=legend, color=colors[index])
+        axes[0].plot(t_sim, xs_sat + us_sat, label=legend + " " + "mean = " + str(np.mean(xs_sat + us_sat)), color=colors[index])
         axes[0].set_ylabel("# x,u saturated")
 
         qs = self.data["xs"][:, :nq]
         sds_dict = self.model_interface.evaluteSignedDistance(qs)
         sds = np.array([sd for sd in sds_dict.values()])
         sds = np.min(sds, axis=0)
-        axes[1].plot(t_sim, sds, label=legend, color=colors[index])
+        axes[1].plot(t_sim, sds, label=legend + " " + "mean = {:.3f}".format(np.mean(sds)), color=colors[index])
         axes[1].set_ylabel("Sd(q) (m)")
 
-        ts = self.data["ts"]
         r_bw_w_ds = self.data.get("r_bw_w_ds", [])
         r_bw_ws = self.data.get("r_bw_ws", [])
         if len(r_bw_ws) > 0 and len(r_bw_w_ds) > 0:
             plot_base_err = True
             err_base = np.linalg.norm(r_bw_ws - r_bw_w_ds, axis=1)
             rms_base = np.mean(err_base * err_base) ** 0.5
+            err_base_acc = np.sum(err_base) / self.config["controller"]["ctrl_rate"]
 
         r_ew_w_ds = self.data.get("r_ew_w_ds", [])
         r_ew_ws = self.data.get("r_ew_ws", [])
@@ -700,13 +700,14 @@ class DataPlotter:
             plot_ee_err = True
             err_ee = np.linalg.norm(r_ew_ws - r_ew_w_ds, axis=1)
             rms_ee = np.mean(err_ee * err_ee) ** 0.5
+            err_ee_acc = np.sum(err_ee) / self.config["controller"]["ctrl_rate"]
 
         if plot_ee_err:
-            axes[2].plot(t_sim, err_ee, label=legend, color=colors[index])
+            axes[2].plot(t_sim, err_ee, label=legend + " sum = {:.3f} RMS = {:.3f}".format(err_ee_acc, rms_ee), color=colors[index])
             axes[2].set_ylabel("EE Err (m)")
 
         if plot_base_err:
-            axes[3].plot(t_sim, err_base, label=legend, color=colors[index])
+            axes[3].plot(t_sim, err_base, label=legend + " sum = {:.3f} RMS = {:.3f}".format(err_base_acc, rms_base), color=colors[index])
             axes[3].set_ylabel("Base Err (m)")
 
         axes[3].set_xlabel("Time (s)")
