@@ -13,7 +13,7 @@ from spatialmath.base import rotz, r2q
 
 from mmseq_utils.parsing import parse_path, load_config
 from mmseq_control.robot import CasadiModelInterface
-from mmseq_utils import parsing
+from mmseq_utils import parsing, math
 from matplotlib.backends.backend_pdf import PdfPages
 from mobile_manipulation_central import ros_utils
 
@@ -96,6 +96,9 @@ class DataPlotter:
         if config is not None:
             self.model_interface = CasadiModelInterface(config["controller"])
 
+        self._post_processing()
+        self._get_statistics()
+
     @classmethod
     def from_logger(cls, logger):
         # convert logger data to numpy format
@@ -165,6 +168,124 @@ class DataPlotter:
         data["ts"] -= data["ts"][0]
         data["name"] = folder_path.split("/")[-1]
         return cls(data, config)
+
+    def _get_tracking_err(self, ref_name, robot_traj_name):
+        N = len(self.data["ts"])
+        rs = self.data.get(robot_traj_name, np.zeros((N,0)))
+        rds = self.data.get(ref_name, rs)
+
+        errs = np.linalg.norm(rds - rs, axis=1)
+        return errs
+
+    def _get_mean_violation(self, data_normalized):
+        vio_mask = data_normalized > 1
+        vio = np.sum((data_normalized - 1) * vio_mask, axis=1)
+        vio_num = np.sum(vio_mask, axis=1)
+        vio_mean = np.where(vio_num > 0, vio/vio_num, 0)
+        return vio_mean
+
+    def _post_processing(self):
+        # tracking error
+        self.data["err_ee"] = self._get_tracking_err("r_ew_w_ds", "r_ew_ws")
+        self.data["err_base"] = self._get_tracking_err("r_bw_w_ds", "r_bw_ws")
+        self.data["err_ee_normalized"] = self.data["err_ee"]/self.data["err_ee"][0]
+        self.data["err_base_normalized"] = self.data["err_base"]/self.data["err_base"][0]
+
+        # signed distance
+        nq = self.data["nq"]
+        qs = self.data["xs"][:, :nq]
+        # keyed by obstacle names or "self"
+        sds_dict = self.model_interface.evaluteSignedDistance(qs)
+        sds = np.array([sd for sd in sds_dict.values()])
+        self.data["signed_distance"] = np.min(sds, axis=0)
+
+        # normalized state and input w.r.t bounds
+        # -1 --> saturate lower bounds
+        # 1  --> saturate upper bounds
+        # 0  --> in middle
+        bounds = self.config["controller"]["robot"]["limits"]
+        self.data["xs_normalized"] = math.normalize_wrt_bounds(parsing.parse_array(bounds["state"]["lower"]),
+                                                               parsing.parse_array(bounds["state"]["upper"]),
+                                                               self.data["xs"])
+        self.data["cmd_vels_normalized"] = math.normalize_wrt_bounds(parsing.parse_array(bounds["state"]["lower"])[nq:],
+                                                                     parsing.parse_array(bounds["state"]["upper"])[nq:],
+                                                                     self.data["cmd_vels"])
+        self.data["cmd_accs_normalized"] = math.normalize_wrt_bounds(parsing.parse_array(bounds["input"]["lower"]),
+                                                                     parsing.parse_array(bounds["input"]["upper"]),
+                                                                     self.data["cmd_accs"])
+
+        # self.data["xs_violation"] = self._get_mean_violation(np.abs(self.data["xs_normalized"]))
+        # self.data["cmd_vels_violation"] = self._get_mean_violation(np.abs(self.data["cmd_vels_normalized"]))
+        # self.data["cmd_accs_violation"] = self._get_mean_violation(np.abs(self.data["cmd_accs_normalized"]))
+        # self.data["collision_violation"] = np.abs((self.data["signed_distance"] - 0.05)) / 0.05 * (self.data["signed_distance"] < 0.05)
+
+        # box constraints
+        constraints_violation = np.abs(np.hstack((self.data["xs_normalized"], self.data["cmd_accs_normalized"])))
+        constraints_violation = np.hstack((constraints_violation, np.expand_dims(0.05 - self.data["signed_distance"], axis=1) / 0.05))
+        self.data["constraints_violation"] = self._get_mean_violation(constraints_violation)
+
+    def _get_statistics(self):
+        self.data["statistics"] = {}
+        # EE tracking error
+        err_ee_stats = math.statistics(self.data["err_ee"])
+        self.data["statistics"]["err_ee"] = {"rms": math.rms_continuous(self.data["ts"], self.data["err_ee"]),
+                                             "integral": math.integrate_zoh(self.data["ts"], self.data["err_ee"]),
+                                             "mean": err_ee_stats[0], "max": err_ee_stats[1], "min": err_ee_stats[2]}
+        # base tracking error
+        err_base_stats = math.statistics(self.data["err_base"])
+        self.data["statistics"]["err_base"] = {"rms": math.rms_continuous(self.data["ts"], self.data["err_base"]),
+                                               "integral": math.integrate_zoh(self.data["ts"], self.data["err_base"]),
+                                               "mean": err_base_stats[0], "max": err_base_stats[1], "min": err_base_stats[2]}
+
+        # EE tracking error (Normalized)
+        err_ee_normalized_stats = math.statistics(self.data["err_ee_normalized"])
+        self.data["statistics"]["err_ee_normalized"] = {"rms": math.rms_continuous(self.data["ts"], self.data["err_ee_normalized"]),
+                                             "integral": math.integrate_zoh(self.data["ts"], self.data["err_ee_normalized"]),
+                                             "mean": err_ee_normalized_stats[0], "max": err_ee_normalized_stats[1], "min": err_ee_normalized_stats[2]}
+        # base tracking error (Normalized)
+        err_base_normalized_stats = math.statistics(self.data["err_base_normalized"])
+        self.data["statistics"]["err_base_normalized"] = {"rms": math.rms_continuous(self.data["ts"], self.data["err_base_normalized"]),
+                                               "integral": math.integrate_zoh(self.data["ts"], self.data["err_base_normalized"]),
+                                               "mean": err_base_normalized_stats[0], "max": err_base_normalized_stats[1], "min": err_base_normalized_stats[2]}
+
+        # signed distance
+        sd_stats = math.statistics(self.data["signed_distance"])
+        self.data["statistics"]["signed_distance"] = {"mean": sd_stats[0], "max": sd_stats[1], "min": sd_stats[2]}
+
+        # bounds saturation
+        nq = self.data["nq"]
+        q_stats = math.statistics(np.abs(self.data["xs_normalized"][:, :nq].flatten()))
+        self.data["statistics"]["q_saturation"] = {"mean": q_stats[0], "max": q_stats[1], "min": q_stats[2]}
+
+        qdot_stats = math.statistics(np.abs(self.data["xs_normalized"][:, nq:].flatten()))
+        self.data["statistics"]["qdot_saturation"] = {"mean": qdot_stats[0], "max": qdot_stats[1], "min": qdot_stats[2]}
+
+        cmd_vels_stats = math.statistics(np.abs(self.data["cmd_vels_normalized"].flatten()))
+        self.data["statistics"]["cmd_vels_saturation"] = {"mean": cmd_vels_stats[0], "max": cmd_vels_stats[1], "min": cmd_vels_stats[2]}
+
+        cmd_accs_stats = math.statistics(np.abs(self.data["cmd_accs_normalized"].flatten()))
+        self.data["statistics"]["cmd_accs_saturation"] = {"mean": cmd_accs_stats[0], "max": cmd_accs_stats[1], "min": cmd_accs_stats[2]}
+
+        violation_stats = math.statistics(self.data["constraints_violation"])
+        self.data["statistics"]["constraints_violation"] = {"mean": violation_stats[0], "max": violation_stats[1], "min": violation_stats[2]}
+
+        run_time_states = math.statistics(self.data["controller_run_time"])
+        self.data["statistics"]["run_time"] = {"mean": run_time_states[0], "max": run_time_states[1], "min": run_time_states[2]}
+    def summary(self, stat_names):
+        """ get a summary of statistics
+
+        :param stat_names: list of stats of interests, (key, value) pairs
+        :return: array
+        """
+
+        stats = []
+        stats_dict = self.data["statistics"]
+
+        # Return None if either key or val doesn't exist
+        for (key, val) in stat_names:
+            stats.append(stats_dict.get(key, {}).get(val, None))
+
+        return stats
 
     def plot_ee_position(self, axes=None, index=0, legend=None):
         ts = self.data["ts"]
@@ -275,25 +396,7 @@ class DataPlotter:
         return axes
 
     def plot_tracking_err(self, axes=None, index=0, legend=None):
-        plot_base_err = False
-        plot_ee_err = False
-
         ts = self.data["ts"]
-        r_bw_w_ds = self.data.get("r_bw_w_ds", [])
-        r_bw_ws = self.data.get("r_bw_ws", [])
-        if len(r_bw_ws) > 0 and len(r_bw_w_ds) > 0:
-            plot_base_err = True
-            err_base = np.linalg.norm(r_bw_ws - r_bw_w_ds, axis=1)
-            rms_base = np.mean(err_base * err_base) ** 0.5
-
-
-        r_ew_w_ds = self.data.get("r_ew_w_ds", [])
-        r_ew_ws = self.data.get("r_ew_ws", [])
-        if len(r_ew_ws) > 0 and len(r_ew_w_ds) > 0:
-            plot_ee_err = True
-            err_ee = np.linalg.norm(r_ew_ws - r_ew_w_ds, axis=1)
-            rms_ee = np.mean(err_ee * err_ee) ** 0.5
-
         if axes is None:
             axes = []
             f, axes = plt.subplots(1, 1, sharex=True)
@@ -304,10 +407,9 @@ class DataPlotter:
         prop_cycle = plt.rcParams["axes.prop_cycle"]
         colors = prop_cycle.by_key()["color"]
 
-        if plot_base_err:
-            axes.plot(ts, err_base, label=legend+" $err_{base}, rms_{base} = $" + str(rms_base), linestyle="--", color=colors[index])
-        if plot_ee_err:
-            axes.plot(ts, err_ee, label=legend+" $err_{ee}, rms_{ee} = $" + str(rms_ee),  linestyle="-", color=colors[index])
+        axes.plot(ts, self.data["err_base"], label=legend+" $err_{base}, rms_{base} = $" + str(self.data["statistics"]["err_base"]["rms"]), linestyle="--", color=colors[index])
+        axes.plot(ts, self.data["err_ee"], label=legend+" $err_{ee}, rms_{ee} = $" + str(self.data["statistics"]["err_ee"]["rms"]), linestyle="-", color=colors[index])
+
         axes.grid()
         axes.legend()
         axes.set_xlabel("Time (s)")
@@ -341,7 +443,7 @@ class DataPlotter:
         if axes is None:
             axes = []
             for i in range(2):
-                f, ax = plt.subplots(nv, 1, sharex=True)
+                f, ax = plt.subplots(nv, 1, sharex=True, figsize=(13, 23))
                 axes.append(ax)
         if legend is None:
             legend = self.data["name"]
@@ -381,6 +483,57 @@ class DataPlotter:
                 ax[i].legend()
             ax[-1].set_xlabel("Time (s)")
             ax[0].set_title("Commanded joint acceleration (rad/s^2)")
+
+        return axes
+
+    def plot_cmds_normalized(self, axes=None, index=0, legend=None):
+        ts = self.data["ts"]
+        cmd_vels = self.data["cmd_vels_normalized"]
+        cmd_accs = self.data.get("cmd_accs_normalized")
+        nv = int(self.data["nv"])
+
+        if axes is None:
+            axes = []
+            for i in range(2):
+                f, ax = plt.subplots(nv, 1, sharex=True)
+                axes.append(ax)
+        if legend is None:
+            legend = self.data["name"]
+
+        prop_cycle = plt.rcParams["axes.prop_cycle"]
+        colors = prop_cycle.by_key()["color"]
+
+        ax = axes[0]
+        for i in range(nv):
+            ax[i].plot(
+                ts,
+                cmd_vels[:, i],
+                '-x',
+                label=legend + f"$v_{{cmd_{i + 1}}}$",
+                linestyle="--",
+                color=colors[index],
+            )
+
+            ax[i].grid()
+            ax[i].legend()
+        ax[-1].set_xlabel("Time (s)")
+        ax[0].set_title("Commanded joint velocity Normalized")
+
+        ax = axes[1]
+        for i in range(nv):
+            ax[i].plot(
+                ts,
+                cmd_accs[:, i],
+                '-x',
+                label=legend + f"$a_{{cmd_{i + 1}}}$",
+                linestyle="--",
+                color=colors[index],
+            )
+
+            ax[i].grid()
+            ax[i].legend()
+        ax[-1].set_xlabel("Time (s)")
+        ax[0].set_title("Commanded joint acceleration Normalized")
 
         return axes
 
@@ -492,20 +645,6 @@ class DataPlotter:
         ax = plt.gca()
         return ax
 
-    def plot_state_control_constraints_violations(self, axes=None):
-        ts = self.data["ts"]
-        state_sat, acc_sat = self.model_interface.robot.checkBounds(self.data["xs"], self.data["cmd_accs"], tol=-1e-3)
-
-        if axes is None:
-            fig = plt.figure()
-            axes = plt.gca()
-        axes.set_xlabel("Time (s)")
-        axes.set_ylabel("# Saturation")
-        axes.plot(ts, state_sat, label="state")
-        axes.plot(ts, acc_sat, label="input")
-
-        axes.set_title("State and Control Constraint Saturation")
-
     def plot_state(self):
         self.plot_value_vs_time(
             "xs",
@@ -521,25 +660,23 @@ class DataPlotter:
             ylabel="Joint Velocity (rad/s)",
             title="Joint Velocities vs. Time",
         )
-        # self.plot_value_vs_time(
-        #     "xs",
-        #     indices=range(
-        #         self.data["nq"] + self.data["nv"], self.data["nq"] + 2 * self.data["nv"]
-        #     ),
-        #     legend_prefix="a",
-        #     ylabel="Joint Acceleration (rad/s^2)",
-        #     title="Joint Accelerations vs. Time",
-        # )
-        #
-        # # plot the obstacle position if available
-        # if self.data["xs"].shape[1] > self.data["nx"]:
-        #     self.plot_value_vs_time(
-        #         "xs",
-        #         indices=range(self.data["nx"], self.data["nx"] + 3),
-        #         legend_prefix="r",
-        #         ylabel="Obstacle position (m)",
-        #         title="Obstacle Position",
-        #     )
+
+    def plot_state_normalized(self):
+        self.plot_value_vs_time(
+            "xs_normalized",
+            indices=range(self.data["nq"]),
+            legend_prefix="q",
+            ylabel="Joint Position Normalized (range: [-1, 1])",
+            title="Joint Positions Normalized vs. Time",
+        )
+        self.plot_value_vs_time(
+            "xs_normalized",
+            indices=range(self.data["nq"], self.data["nq"] + self.data["nv"]),
+            legend_prefix="v",
+            ylabel="Joint Velocity Normalized (range: [-1, 1])",
+            title="Joint Velocities Normalized vs. Time",
+        )
+
     def plot_run_time(self, axes=None, index=0, block=True, legend=None):
         # Time x HT-Iter x Task x ST-ITer+1
         t_sim = self.data["ts"]
@@ -662,9 +799,9 @@ class DataPlotter:
 
     def plot_task_performance(self, axes=None, index=0, legend=None):
         if axes is None:
-            f, axes = plt.subplots(4, 1, sharex=True)
+            f, axes = plt.subplots(3, 1, sharex=True)
         else:
-            if len(axes) != 4:
+            if len(axes) != 3:
                 raise ValueError("Given axes number ({}) does not match task number ({}).".format(len(axes), 4))
 
         if legend is None:
@@ -676,47 +813,30 @@ class DataPlotter:
         t_sim = self.data["ts"]
         nq = int(self.data["nq"])
         xs_sat, us_sat = self.model_interface.robot.checkBounds(self.data["xs"], self.data["cmd_accs"], -1e-3)
-        axes[0].plot(t_sim, xs_sat + us_sat, label=legend + " " + "mean = " + str(np.mean(xs_sat + us_sat)), color=colors[index])
-        axes[0].set_ylabel("# x,u saturated")
+        # axes[0].plot(t_sim, xs_sat + us_sat, label=legend + " " + "mean = " + str(np.mean(xs_sat + us_sat)), color=colors[index])
+        axes[0].plot(t_sim, self.data["constraints_violation"]*100, label=legend + " mean = {:.3f}".format(self.data["statistics"]["constraints_violation"]["mean"]*100), color=colors[index])
+        axes[0].set_ylabel("constraints violation (%)")
 
-        qs = self.data["xs"][:, :nq]
-        sds_dict = self.model_interface.evaluteSignedDistance(qs)
-        sds = np.array([sd for sd in sds_dict.values()])
-        sds = np.min(sds, axis=0)
-        axes[1].plot(t_sim, sds, label=legend + " " + "mean = {:.3f}".format(np.mean(sds)), color=colors[index])
-        axes[1].set_ylabel("Sd(q) (m)")
+        # axes[1].plot(t_sim, self.data["err_ee"],
+        #              label=legend + " sum = {:.3f} RMS = {:.3f}".format(self.data["statistics"]["err_ee"]["integral"],
+        #                                                                 self.data["statistics"]["err_ee"]["rms"]), color=colors[index])
+        axes[1].plot(t_sim, self.data["err_ee"],
+                     label=legend + " acc = {:.3f}".format(self.data["statistics"]["err_ee"]["integral"]), color=colors[index])
+        axes[1].set_ylabel("EE Err (m)")
 
-        r_bw_w_ds = self.data.get("r_bw_w_ds", [])
-        r_bw_ws = self.data.get("r_bw_ws", [])
-        if len(r_bw_ws) > 0 and len(r_bw_w_ds) > 0:
-            plot_base_err = True
-            err_base = np.linalg.norm(r_bw_ws - r_bw_w_ds, axis=1)
-            rms_base = np.mean(err_base * err_base) ** 0.5
-            err_base_acc = np.sum(err_base) / self.config["controller"]["ctrl_rate"]
-
-        r_ew_w_ds = self.data.get("r_ew_w_ds", [])
-        r_ew_ws = self.data.get("r_ew_ws", [])
-        if len(r_ew_ws) > 0 and len(r_ew_w_ds) > 0:
-            plot_ee_err = True
-            err_ee = np.linalg.norm(r_ew_ws - r_ew_w_ds, axis=1)
-            rms_ee = np.mean(err_ee * err_ee) ** 0.5
-            err_ee_acc = np.sum(err_ee) / self.config["controller"]["ctrl_rate"]
-
-        if plot_ee_err:
-            axes[2].plot(t_sim, err_ee, label=legend + " sum = {:.3f} RMS = {:.3f}".format(err_ee_acc, rms_ee), color=colors[index])
-            axes[2].set_ylabel("EE Err (m)")
-
-        if plot_base_err:
-            axes[3].plot(t_sim, err_base, label=legend + " sum = {:.3f} RMS = {:.3f}".format(err_base_acc, rms_base), color=colors[index])
-            axes[3].set_ylabel("Base Err (m)")
-
-        axes[3].set_xlabel("Time (s)")
+        # axes[2].plot(t_sim, self.data["err_base"],
+        #              label=legend + " sum = {:.3f} RMS = {:.3f}".format(self.data["statistics"]["err_base"]["integral"],
+        #                                                                 self.data["statistics"]["err_base"]["rms"]),
+        #              color=colors[index])
+        axes[2].plot(t_sim, self.data["err_base"],
+                     label=legend + " acc = {:.3f}".format(self.data["statistics"]["err_base"]["integral"]), color=colors[index])
+        axes[2].set_ylabel("Base Err (m)")
+        axes[2].set_xlabel("Time (s)")
 
         for a in axes:
             a.legend()
 
         return axes
-
 
     def plot_task_violation(self, axes=None, index=0, legend=None):
         task_names = self.data.get("task_names")
@@ -745,7 +865,8 @@ class DataPlotter:
         for tid in range(task_num):
             w = ws[tid]
 
-            if tid == 0:
+            # if tid == 0:
+            if False:
                 saturation_num = np.sum(w > 1e-3, axis=1)
                 axes[tid].plot(t_sim, saturation_num, color=colors[index], label=legend)
                 axes[tid].set_ylabel("# Inequalities Saturated \n out of {}".format(w.shape[1]))
@@ -783,11 +904,12 @@ class DataPlotter:
 
     def plot_robot(self):
         self.plot_cmd_vs_real_vel()
-        self.plot_state()
-        self.plot_cmds()
+        # self.plot_state()
+        self.plot_state_normalized()
+        # self.plot_cmds()
+        self.plot_cmds_normalized()
         self.plot_du()
         self.plot_collision()
-        self.plot_state_control_constraints_violations()
 
     def plot_tracking(self):
         self.plot_ee_position()
@@ -795,6 +917,7 @@ class DataPlotter:
         self.plot_tracking_err()
         self.plot_cmd_vs_real_vel()
         self.plot_task_performance()
+        self.plot_task_violation()
 
 class ROSBagPlotter:
     def __init__(self, bag_file, config_file="/home/tracy/Projects/mm_catkin_ws/src/mm_sequential_tasks/mmseq_run/config/robot/thing.yaml"):
