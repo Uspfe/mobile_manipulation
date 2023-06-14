@@ -157,23 +157,29 @@ class BasePosTrajectoryLine(Planner):
     def _generatePlan(self):
         ts = np.linspace(0, self.T, int(self.T/self.dt)).reshape((-1, 1))
         n = (self.final_pos - self.initial_pos) / np.linalg.norm(self.initial_pos - self.final_pos)
-        plan = n * ts * self.cruise_speed + self.initial_pos
+        plan_pos = n * ts * self.cruise_speed + self.initial_pos
 
-        return plan
+        plan_vel = np.tile(n * self.cruise_speed, (int(self.T/self.dt), 1))
+
+        return {'p': plan_pos, 'v': plan_vel}
 
     def _interpolate(self, t, plan, dt):
+        plan_len = len(plan["p"])
         indx = int(t / dt)
-        if indx > len(plan)-2:
-            return plan[-1]
+        if indx > plan_len - 2:
+            return plan['p'][-1], np.zeros_like(plan['p'][-1])
         elif indx < 0:
-            return plan[0]
+            return plan['p'][0], np.zeros_like(plan['p'][0])
 
-        p0 = plan[indx]
-        p1 = plan[indx + 1]
-
+        p0 = plan["p"][indx]
+        p1 = plan["p"][indx + 1]
         p = (p1 - p0) / dt * (t - indx * dt) + p0
 
-        return p
+        v0 = plan["v"][indx]
+        v1 = plan["v"][indx + 1]
+        v = (v1 - v0) / dt * (t - indx * dt) + v0
+
+        return p, v
 
     def getTrackingPoint(self, t, robot_states=None):
 
@@ -182,12 +188,12 @@ class BasePosTrajectoryLine(Planner):
 
         te = t - self.start_time
 
-        p = self._interpolate(te, self.plan, self.dt)
+        p,v = self._interpolate(te, self.plan, self.dt)
 
-        return p, np.zeros(3)
+        return p, v
 
     def checkFinished(self, t, base_curr_pos):
-        if np.linalg.norm(base_curr_pos - self.plan[-1]) < self.tracking_err_tol:
+        if np.linalg.norm(base_curr_pos - self.plan['p'][-1]) < self.tracking_err_tol:
             self.finished = True
             self.py_logger.info(self.name + " Planner Finished")
         return self.finished
