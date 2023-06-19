@@ -3,8 +3,8 @@ controller:
   type: "HTIDKC"
 
   # regularization parameter
-  ρ: 0.01
-  ctrl_rate: 80
+  ρ: 0.03
+  ctrl_rate: 50
 
   # options
   joint_acc_bound_enabled: True
@@ -14,11 +14,11 @@ controller:
 
   # task parameters
   base_tracking:
-    κ: 1.
+    κ: 0.3
   ee_tracking:
-    κ: 1.
+    κ: 1.0
   joint_angle_bound:
-    κ: 0.01
+    κ: 0.02
   collision_avoidance:
-    κ: 0.01
+    κ: 0.02
     safety_margin: 0.05
