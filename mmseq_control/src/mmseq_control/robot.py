@@ -365,6 +365,8 @@ class MobileManipulator3D:
         self._setupSSSymMdlDI()
         # create self.jacSymMdls dict:{robot links name: cs functions of its jacobian}
         self._setupJacobianSymMdl()
+        # create self.manipulability_fcn
+        self._setupManipulabilitySymMdl()
 
     def _setupSSSymMdlDI(self):
         """ Create State-space symbolic model for MM
@@ -430,6 +432,16 @@ class MobileManipulator3D:
             fk_pos_eqn, _ = fk_fcn(self.q_sym)
             Jk_eqn = cs.jacobian(fk_pos_eqn, self.q_sym)
             self.jacSymMdls[name] = cs.Function(name + "_jac_fcn", [self.q_sym], [Jk_eqn], ["q"], ["J(q)"])
+
+    def _setupManipulabilitySymMdl(self):
+        Jee_fcn = self.jacSymMdls[self.tool_link_name]
+        qsym = cs.SX.sym("qsx", self.DoF)
+        Jee_eqn = Jee_fcn(qsym)
+        man_eqn = cs.det(Jee_eqn @ Jee_eqn.T) ** 0.5
+
+        self.manipulability_fcn = cs.Function("manipulability_fcn", [qsym], [man_eqn])
+        arm_man_eqn = cs.det(Jee_eqn[:, 3:] @ Jee_eqn[:, 3:].T) ** 0.5
+        self.arm_manipulability_fcn = cs.Function("arm_manipulability_fcn", [qsym], [arm_man_eqn])
 
     def _getFk(self, link_name, base_frame=False):
         """ Create symbolic function for a link named link_name
@@ -695,7 +707,8 @@ def test_robot_mdl(args):
     # mm.command_velocity(np.zeros(9))
     # sim.settle(1.0)
     # verify_link_transforms(mm, robot.kinSymMdlsBaseFrame, collision_link_names)
-
+    # verify manipulability
+    m = robot.manipulability_fcn(mm.home)
     print("Testing motion model integrator")
     dt = 0.1
     a = 1.
@@ -725,6 +738,8 @@ def test_robot_mdl(args):
     plt.show()
 
     print("finished")
+
+
 
 
 def test_pinocchio_interface(args):
@@ -793,11 +808,11 @@ if __name__ == "__main__":
         help="Record video. Optionally specify prefix for video directory.",
     )
     args = parser.parse_args()
-    # test_robot_mdl(args)
+    test_robot_mdl(args)
     # test_obstacle_mdl(args)
     # test_pinocchio_interface(args)
     # test_casadi_interface(args)
-    check_maximum_reach(args)
+    # check_maximum_reach(args)
 
             
         
