@@ -86,7 +86,7 @@ def generate_squarewave_tasks(args):
         configs.append({"planner": planner_config})
         base_peaks.append(base_target_pos)
 
-    save_configs(configs, args.folder)
+    save_configs(configs, os.path.join(args.folder, "test_cases"))
     base_peaks = np.array(base_peaks)
 
     f = plt.figure()
