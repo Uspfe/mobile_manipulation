@@ -212,7 +212,8 @@ class CasadiModelInterface:
                                                                             self.robot.collision_link_names["tool"])
         # forearm
         self.collision_pairs["self"] += self._addCollisionPairFromTwoGroups(self.robot.collision_link_names["forearm"][:2],
-                                                                            self.robot.collision_link_names["tool"])
+                                                                            self.robot.collision_link_names["tool"] +
+                                                                            self.robot.collision_link_names["rack"])
 
         for obstacle in self.scene.collision_link_names.get("static_obstacles", []):
             if obstacle == "ground":

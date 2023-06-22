@@ -83,6 +83,8 @@ controller:
     collision_link_names:
       base:
         - "base_collision_link"
+      rack:
+        - "rack_collision_link"
       upper_arm:
         - "ur10_arm_upper_arm_collision_link"
         - "ur10_arm_upper_arm_collision_sphere_link1"
