@@ -7,7 +7,7 @@ import casadi as cs
 from cvxopt import solvers, matrix
 from mosek import iparam, dparam
 import mmseq_control.MPCConstraints as MPCConstraint
-from mmseq_control.MPCCostFunctions import EEPos3CostFunction, BasePos2CostFunction, ControlEffortCostFunciton, SoftConstraintsRBFCostFunction
+from mmseq_control.MPCCostFunctions import EEPos3CostFunction, BasePos2CostFunction, ControlEffortCostFunciton, SoftConstraintsRBFCostFunction, ControlEffortCostFuncitonNew, SumOfCostFunctions
 from mmseq_control.MPCConstraints import HierarchicalTrackingConstraint, HierarchicalTrackingConstraintCostValue, MotionConstraint, StateControlBoxConstraint, StateControlBoxConstraintNew, SignedDistanceCollisionConstraint, EEUpwardConstraint
 from mmseq_control.robot import MobileManipulator3D as MM
 from mmseq_control.robot import CasadiModelInterface as ModelInterface
@@ -31,7 +31,10 @@ class MPC():
 
         self.EEPos3Cost = EEPos3CostFunction(self.dt, self.N, self.robot, config["cost_params"]["EEPos3"])
         self.BasePos2Cost = BasePos2CostFunction(self.dt, self.N, self.robot, config["cost_params"]["BasePos2"])
-        self.CtrlEffCost = ControlEffortCostFunciton(self.dt, self.N, self.robot, config["cost_params"]["Effort"])
+        if self.params["penalize_du"]:
+            self.CtrlEffCost = ControlEffortCostFuncitonNew(self.dt, self.N, self.robot, config["cost_params"]["Effort"])
+        else:
+            self.CtrlEffCost = ControlEffortCostFunciton(self.dt, self.N, self.robot, config["cost_params"]["Effort"])
 
         self.rate = self.params["ctrl_rate"]
 
@@ -208,7 +211,7 @@ class HTMPCSQP(MPC):
         for i in range(self.params["HT_MaxIntvl"]):
             e_bars = []
             J_bars = []
-            if self.params["type"] == "SQP_TOL_SCHEDULE":
+            if self.params["cst_tol_schedule_enabled"]:
                 for cst in hier_csts:
                     cst.tol = self.tol_schedule[i]
 
