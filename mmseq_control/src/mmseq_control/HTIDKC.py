@@ -9,16 +9,9 @@ Created on Wed May 31 10:16:00 2023
 from mmseq_control.robot import MobileManipulator3D as MM
 from mmseq_control.robot import CasadiModelInterface as ModelInterface
 from mmseq_control.IDKCTasks import EEPositionTracking, BasePositionTracking, JointVelocityBound, JointAngleBound, JointAccelerationBound, CollisionAvoidance
-from mmseq_control.HQP import PrioritizedLinearSystemsNew as PLSN
-
-from mmseq_utils import parsing
 
 import numpy as np
 import casadi as cs
-import time
-from mmseq_control.HQP import PrioritizedLinearSystemsNew as PLSN
-# from mmseq_control.HQP import PrioritizedLinearSystems as PLS
-from qpsolvers import solve_qp, qpoases_solve_qp
 
 class IDKC():
 
