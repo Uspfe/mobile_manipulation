@@ -24,7 +24,6 @@ catkin_install_python(PROGRAMS
    scripts/generate_random_tests.py
    scripts/simple_sim.py
    nodes/sim_ros.py
-   nodes/controller_ros_simple_demo.py
    nodes/controller_ros.py
    nodes/mpc_ros.py
    DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
