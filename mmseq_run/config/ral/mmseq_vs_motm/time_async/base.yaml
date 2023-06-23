@@ -14,5 +14,5 @@ include:
     path: "config/scene/empty.yaml"
 
 logging:
-  log_dir: "/home/tracy/Documents/PhD/data/htmpc_vs_motm_failure_recovery"
+  log_dir: "/home/tracy/Documents/PhD/data/mmseq_vs_motm_time_async"
   log_level: 20 # 0 - not set, 10 - debug, 20 - info
