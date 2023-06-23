@@ -240,7 +240,7 @@ class DataPlotter:
 
         # box constraints
         constraints_violation = np.abs(np.hstack((self.data["xs_normalized"], self.data["cmd_accs_normalized"])))
-        constraints_violation = np.hstack((constraints_violation, np.expand_dims(0.05 - self.data["signed_distance"], axis=1) / 0.05))
+        constraints_violation = np.hstack((constraints_violation, np.expand_dims(0.05 - self.data["signed_distance"], axis=1) / 0.05 + 1))
         self.data["constraints_violation"] = self._get_mean_violation(constraints_violation)
 
         # singularity
@@ -1115,6 +1115,10 @@ class DataPlotter:
         self.plot_cmd_vs_real_vel()
         self.plot_task_performance()
         self.plot_task_violation()
+
+    def plot_quick_check(self):
+        self.plot_task_performance()
+        self.plot_collision()
 
 class ROSBagPlotter:
     def __init__(self, bag_file, config_file="/home/tracy/Projects/mm_catkin_ws/src/mm_sequential_tasks/mmseq_run/config/robot/thing.yaml"):

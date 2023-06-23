@@ -8,8 +8,8 @@ from mmseq_utils.logging import DataLogger, DataPlotter, multipage, construct_lo
 from mmseq_utils import math
 import matplotlib.pyplot as plt
 
-EE_POS_Target0 = np.array([2, -2])
-EE_POS_Target1 = np.array([5.48985, 0.17431])     # home position + 4m in x direciton
+EE_POS_Target0 = np.array([1.5, -2.0])
+EE_POS_Target1 = np.array([4., 0.])     # home position + 4m in x direciton
 Rc = 0.5 + 0.25         # robot radius + padding
 
 def closet_approaching_pose(curr_base_pos, curr_ee_pos, next_ee_pos, rc):
@@ -47,7 +47,7 @@ def path_comparison(folder_path):
     axes.arrow(approach_pose[0], approach_pose[1],
                arrow_length*np.cos(approach_pose[2]), arrow_length*np.sin(approach_pose[2]), width=0.01, facecolor='r', edgecolor='r')
 
-    circle1 = plt.Circle((2, -2), Rc, facecolor=[1,0,0,0.25], edgecolor='r')
+    circle1 = plt.Circle(EE_POS_Target0, Rc, facecolor=[1,0,0,0.25], edgecolor='r')
     axes.add_patch(circle1)
     axes.set_aspect("equal")
     plt.legend()

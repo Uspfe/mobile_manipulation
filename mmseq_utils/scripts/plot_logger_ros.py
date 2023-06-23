@@ -121,6 +121,8 @@ if __name__ == "__main__":
                         help="plot tracking data")
     parser.add_argument("--robot", action="store_true",
                         help="plot tracking data")
+    parser.add_argument("--check", action="store_true",
+                        help="check collision, constraint violation, tracking")
 
     parser.add_argument("--compare", action="store_true",
                         help="plot comparisons")
@@ -138,9 +140,10 @@ if __name__ == "__main__":
             data_plotter.plot_mpc()
         if args.tracking:
             data_plotter.plot_tracking()
-            data_plotter.plot_task_performance()
         if args.robot:
             data_plotter.plot_robot()
+        if args.check:
+            data_plotter.plot_quick_check()
 
         plt.show()
 
