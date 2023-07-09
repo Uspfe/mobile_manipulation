@@ -250,9 +250,26 @@ class DataPlotter:
         N = len(self.data["ts"])
         rs = self.data.get(robot_traj_name, np.zeros((N,0)))
         rds = self.data.get(ref_name, rs)
-
-        errs = np.linalg.norm(rds - rs, axis=1)
+        if len(rs) == len(rds):
+            errs = np.linalg.norm(rds - rs, axis=1)
+        else:
+            errs = np.zeros(len(rs))
         return errs
+
+    def _transform_w2b_SE3(self, qb, r_w):
+        Rbw = rotz(-qb[2])
+        rbw = np.array([qb[0], qb[1], 0])
+        r_b = (Rbw @ (r_w - rbw).T).T    
+
+        return r_b
+
+    def _transform_w2b_SE2(self, qb, r_w):
+        Rbw = rotz(-qb[2])[:2, :2]
+        rbw = np.array(qb[:2])
+        r_b = (Rbw @ (r_w - rbw).T).T    
+
+        return r_b
+
 
     def _get_mean_violation(self, data_normalized):
         vio_mask = data_normalized > 1
@@ -315,6 +332,16 @@ class DataPlotter:
         # jerk
         self.data["cmd_jerks"] = (self.data["cmd_accs"][1:, :] - self.data["cmd_accs"][:-1, :]) / \
                                  np.expand_dims(self.data["ts"][1:] - self.data["ts"][:-1], axis=1)
+
+        # coordinate transform
+        qb = self.data["xs"][0, :3]
+
+        self.data["r_ew_bs"] = self._transform_w2b_SE3(qb, self.data["r_ew_ws"])
+        self.data["r_ew_b_ds"] = self._transform_w2b_SE3(qb, self.data["r_ew_w_ds"])
+
+
+        self.data["r_bw_bs"] = self._transform_w2b_SE2(qb, self.data["r_bw_ws"])
+        self.data["r_bw_b_ds"] = self._transform_w2b_SE2(qb, self.data["r_bw_w_ds"])
 
 
     def _get_statistics(self):
@@ -425,9 +452,13 @@ class DataPlotter:
 
         return axes
 
-    def plot_base_path(self, axes=None, index=0, legend=None):
-        r_ew_ws = self.data.get("r_bw_ws", [])
-        if len(r_ew_ws) == 0:
+    def plot_base_path(self, axes=None, index=0, legend=None, worldframe=True):
+        if worldframe:
+            r_b = self.data.get("r_bw_ws", [])
+        else:
+            r_b = self.data.get("r_bw_bs", [])
+
+        if len(r_b) == 0:
             return
 
         if axes is None:
@@ -436,10 +467,13 @@ class DataPlotter:
 
         if legend is None:
             legend = self.data["name"]
+
+        # if legend == "baseline h = 0.8m":
+        #     r_ew_ws += [0, 1]
         prop_cycle = plt.rcParams["axes.prop_cycle"]
         colors = prop_cycle.by_key()["color"]
-        if len(r_ew_ws) > 0:
-            axes.plot(r_ew_ws[:, 0], r_ew_ws[:, 1], label=legend + " base path", color=colors[index])
+        if len(r_b) > 0:
+            axes.plot(r_b[:, 0], r_b[:, 1], label=legend, color=colors[index])
 
         axes.grid()
         axes.legend()
@@ -448,9 +482,13 @@ class DataPlotter:
 
         return axes
 
-    def plot_base_ref_path(self, axes=None, index=0, legend=None):
-        r_bw_w_ds = self.data.get("r_bw_w_ds", [])
-        if len(r_bw_w_ds) == 0:
+    def plot_base_ref_path(self, axes=None, index=0, legend=None, worldframe=True):
+        if worldframe:
+            r_b = self.data.get("r_bw_w_ds", [])
+        else:
+            r_b = self.data.get("r_bw_b_ds", [])
+
+        if len(r_b) == 0:
             return
 
         if axes is None:
@@ -461,8 +499,8 @@ class DataPlotter:
             legend = self.data["name"]
         prop_cycle = plt.rcParams["axes.prop_cycle"]
         colors = prop_cycle.by_key()["color"]
-        if len(r_bw_w_ds) > 0:
-            axes.plot(r_bw_w_ds[:, 0], r_bw_w_ds[:, 1], label=legend + " base ref", color=colors[index], linestyle="--")
+        if len(r_b) > 0:
+            axes.plot(r_b[:, 0], r_b[:, 1], label=legend, color=colors[index], linestyle="--")
 
         axes.grid()
         axes.legend()
@@ -825,12 +863,12 @@ class DataPlotter:
         colors = prop_cycle.by_key()["color"]
 
         for i in range(nv):
-            axes[i].plot(ts, xs[:, nq + i], label=f"$v_{i+1}$", color=colors[i])
+            axes[i].plot(ts, xs[:, nq + i],'.', label=f"$v_{i+1}$", color=colors[i])
             axes[i].plot(
                 ts,
-                cmd_vels[:, i],
+                cmd_vels[:, i], '-x',
                 label=f"$v_{{cmd_{i + 1}}}$",
-                linestyle="--",
+                # linestyle="-x",
                 color=colors[i],
             )
 
@@ -1179,7 +1217,7 @@ class DataPlotter:
         self.plot_collision()
 
 class ROSBagPlotter:
-    def __init__(self, bag_file, config_file="/home/tracy/Projects/mm_catkin_ws/src/mm_sequential_tasks/mmseq_run/config/robot/thing.yaml"):
+    def __init__(self, bag_file, config_file="/home/tracy/Project/catkin_ws/src/mm_sequential_tasks/mmseq_run/config/robot/thing.yaml"):
         self.data = {"ur10": {}, "ridgeback": {}, "mpc": {}, "vicon": {}, "model":{}}
         self.bag = rosbag.Bag(bag_file)
         self.config = load_config(config_file)
@@ -1250,6 +1288,10 @@ class ROSBagPlotter:
             if name == "ThingBase":
                 ts, qs = ros_utils.parse_ridgeback_vicon_msgs(msgs)         # q is a 3-element vector x, y, theta
                 self.data["vicon"][name] = {"ts": ts, "pos": qs[:, :2], "orn": qs[:, 2]}
+
+                dts = ts[1:] - ts[:-1]
+                vel = (qs[1:, :2] - qs[:-1, :2]) / np.expand_dims(dts, axis=-1)
+                self.data["vicon"][name]["vel"] = vel  
             else:
                 ts, qs = ros_utils.parse_transform_stamped_msgs(msgs, False)    # q is a 7-element vector x, y, z for position followed by a unit quaternion
                 self.data["vicon"][name] = {"ts": ts, "pos": qs[:, :3], "orn": qs[:, 3:]}
@@ -1298,6 +1340,16 @@ class ROSBagPlotter:
                     self.data[k1][k2]["ts"] -= t0
             else:
                 self.data[k1]["ts"] -= t0
+
+    def plot_base_velocity_estimation(self, axes=None, legend=""):
+        f = plt.figure()
+        axes = f.gca()
+        axes.plot(self.data["vicon"]["ThingBase"]["ts"][:-1], self.data["vicon"]["ThingBase"]["vel"][:, 0], '--', label="v_x_vicon")
+        axes.plot(self.data["vicon"]["ThingBase"]["ts"][:-1], self.data["vicon"]["ThingBase"]["vel"][:, 1], '--', label="v_y_vicon")
+        axes.plot(self.data["ridgeback"]["joint_states"]["ts"], self.data["ridgeback"]["joint_states"]["vs"][:, 0], '-', label="v_x_filtered")
+        axes.plot(self.data["ridgeback"]["joint_states"]["ts"], self.data["ridgeback"]["joint_states"]["vs"][:, 1], '--', label="v_y_filtered")
+        axes.legend()
+        axes.grid()
 
     def plot_joint_states(self, axes=None, legend=""):
         if axes is None:
