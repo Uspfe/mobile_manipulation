@@ -70,6 +70,125 @@ class SoTStatic(SoTBase):
             else:
                 self.logger.info("SoT finished %d/%d tasks.", self.curr_task_id+1, self.planner_num)
 
+class SoTSequentialTasks(SoTStatic):
+    def __init__(self, config):
+        self.target_num = len(config["initial_waypoints_index"])
+        self.ee_target_pos_xy = config["ee_target_pos_xy"]
+        self.base_target_pos = config["base_target_pos"]
+        self.base_tracking_err_tol = config["base_tracking_err_tol"]
+        self.base_cruise_speed = config["base_cruise_speed"]
+        self.curr_waypoints_index = config["initial_waypoints_index"]
+        self.curr_ee_target_pos_z = config["initial_ee_target_pos_z"]
+        self.seat_pos = np.array(config["seat_pos"])
+
+        ee_target_pos, base_target_pos = self._get_waypoints(self.curr_waypoints_index,
+                                                             self.curr_ee_target_pos_z)
+        task_list = self._get_task_config_list(ee_target_pos, base_target_pos, config["initial_base_pos"])
+        config["tasks"] = task_list
+
+        super().__init__(config)
+
+    def update_planner(self, human_pos, robot_states):
+        base_pos = robot_states["base"][:2]
+        if len(human_pos) != self.target_num:
+            print("human_pos length isn't correct expected {} got {}".format(self.target_num, len(human_pos)))
+            return
+
+        new_waypoints_index = self._get_new_waypoints_index(human_pos)
+        new_ee_target_pos_z = self._get_new_ee_target_pos_z(human_pos)
+        new_ee_target_pos, new_base_target_pos = self._get_waypoints(new_waypoints_index, new_ee_target_pos_z)
+
+        for i in range(self.target_num):
+            prev_base_task_index = i*2
+            ee_task_index = prev_base_task_index + 1
+            next_base_task_index = prev_base_task_index + 2
+            if new_waypoints_index[i] != self.curr_waypoints_index[i]:
+                # Future/Current task changed
+                if ee_task_index >= self.curr_task_id:
+                    self.curr_waypoints_index[i] = new_waypoints_index[i]
+                    self.curr_ee_target_pos_z[i] = new_ee_target_pos_z[i]
+                    self.planners[ee_task_index].target_pos = new_ee_target_pos[i]
+
+                    # Corresponding base task hasn't been executed yet
+                    if prev_base_task_index > self.curr_task_id:
+                        self.planners[prev_base_task_index].target_pos = new_base_target_pos[i]
+                        self.planners[prev_base_task_index].regeneratePlan()
+
+                        if next_base_task_index < self.planner_num:
+                            self.planners[next_base_task_index].initial_pos = new_base_target_pos[i]
+                            self.planners[next_base_task_index].regeneratePlan()
+
+                    elif prev_base_task_index ==  self.curr_task_id:
+                        self.planners[prev_base_task_index].initial_pos = base_pos
+                        self.planners[prev_base_task_index].target_pos = new_base_target_pos[i]
+                        self.planners[prev_base_task_index].regeneratePlan()
+
+                        if next_base_task_index < self.planner_num:
+                            self.planners[next_base_task_index].initial_pos = new_base_target_pos[i]
+                            self.planners[next_base_task_index].regeneratePlan()
+                    elif prev_base_task_index == self.curr_task_id - 1:
+                        if next_base_task_index < self.planner_num:
+                            self.planners[next_base_task_index].initial_pos = base_pos
+                            self.planners[next_base_task_index].regeneratePlan()
+            else:
+                if np.abs(new_ee_target_pos_z[i] - self.curr_ee_target_pos_z[i]) > 0.2:
+                    if ee_task_index >= self.curr_task_id:
+                        self.curr_ee_target_pos_z[i] = new_ee_target_pos_z[i]
+                        self.planners[ee_task_index].target_pos = new_ee_target_pos[i]
+
+    def _get_new_waypoints_index(self, human_pos):
+        human_pos_xy = np.expand_dims(human_pos[:, :2], axis=1)
+        seat_pos = np.expand_dims(self.seat_pos, axis=0)
+        human_seat_dist = np.linalg.norm(human_pos_xy - seat_pos, axis=-1)
+        new_waypoints_index = np.argmin(human_seat_dist, axis=1)
+
+        return new_waypoints_index
+
+    def _get_new_ee_target_pos_z(self, human_pos):
+        ee_pos_z = human_pos[:, 2] - 0.5
+        ee_pos_z = np.where(ee_pos_z < 0.6, 0.6, ee_pos_z)
+        ee_pos_z = np.where(ee_pos_z > 1.8, 1.8, ee_pos_z)
+
+        return ee_pos_z
+
+    def _get_waypoints(self, wpt_index, ee_target_pos_z):
+        if max(wpt_index) < len(self.ee_target_pos_xy):
+            ee_target_xy = [self.ee_target_pos_xy[i] for i in wpt_index]
+            ee_target_pos = np.hstack((ee_target_xy, np.expand_dims(ee_target_pos_z, axis=-1)))
+
+            base_target_pos = [self.base_target_pos[i] for i in wpt_index]
+
+            return ee_target_pos, base_target_pos
+        else:
+            raise ValueError("EE wpt index {} out of bounds".format(wpt_index))
+
+    def _get_task_config_list(self, ee_target_pos, base_target_pos, initial_base_pos):
+        task_config_list = []
+
+        for i in range(self.target_num):
+            base_config = basep.BasePosTrajectoryLine.getDefaultParams()
+            base_config["name"] = "Base Pos " + str(i+1)
+
+            if i == 0:
+                base_config["initial_pos"] = initial_base_pos
+            else:
+                base_config["initial_pos"] = base_target_pos[i-1]
+
+            base_config["target_pos"] = base_target_pos[i]
+            base_config["tracking_err_tol"] = self.base_tracking_err_tol
+            base_config["cruise_speed"] = self.base_cruise_speed
+
+            ee_config = eep.EESimplePlanner.getDefaultParams()
+            ee_config["frame_id"] = "base"
+            ee_config["name"] = "EE Pos "+ str(i+1)
+            ee_config["target_pos"] = ee_target_pos[i]
+            ee_config["hold_period"] = 3.
+
+            task_config_list.append(base_config)
+            task_config_list.append(ee_config)
+
+        return task_config_list
+
 class SoTCycle(SoTBase):
     def __init__(self, config):
         # in the class, we assume that tasks come in base and ee pairs with a base task preceding an ee task.

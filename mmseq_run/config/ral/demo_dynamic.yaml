@@ -1,0 +1,46 @@
+planner:
+  sot_type: "SoTSequentialTasks"
+  vicon_mark_swarm_estimation_topic_name: "human_states"
+  seat_pos:
+    - [-3, -3]
+    - [-3, 0]
+    - [-3, 3]
+    - [3, -3]
+    - [3, 0]
+    - [3, 3]
+  ee_target_pos_xy:
+    - [-2, -3]
+    - [-2, 0]
+    - [-2, 3]
+    - [2, -3]
+    - [2, 0]
+    - [2, 3]
+  base_target_pos:
+    - [-0.5, -3]
+    - [-0.5, 0]
+    - [-0.5, 3]
+    - [ 0.5, -3 ]
+    - [ 0.5, 0 ]
+    - [ 0.5, 3 ]
+  base_tracking_err_tol: 0.5
+  base_cruise_speed: 0.5
+  initial_base_pos: [0, 0]
+  initial_waypoints_index: [0, 1, 5]  # index start from 0
+  initial_ee_target_pos_z: [0.8, 1.5, 0.8]
+
+simulation:
+  duration: 30
+
+include:
+  - package: "mmseq_run"
+    path: "config/robot/thing.yaml"
+  - package: "mmseq_run"
+    path: "config/controller/HTMPC.yaml"
+  - package: "mmseq_run"
+    path: "config/sim/simulation.yaml"
+  - package: "mmseq_run"
+    path: "config/scene/restaurant.yaml"
+
+logging:
+  log_dir: "/home/tracy/Documents/PhD/data/debug"
+  log_level: 20 # 0 - not set, 10 - debug, 20 - info

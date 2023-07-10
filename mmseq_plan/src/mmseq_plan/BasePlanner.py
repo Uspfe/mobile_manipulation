@@ -132,18 +132,22 @@ class BasePosTrajectoryLine(TrajectoryPlanner):
         self.start_time = 0
 
         self.initial_pos = np.array(config["initial_pos"])
-        self.final_pos = np.array(config["target_pos"])
+        self.target_pos = np.array(config["target_pos"])
         self.cruise_speed = config["cruise_speed"]
 
         self.dt = 0.01
-        self.T = np.linalg.norm(self.initial_pos - self.final_pos) / self.cruise_speed
+        self.T = np.linalg.norm(self.initial_pos - self.target_pos) / self.cruise_speed
         self.plan = self._generatePlan()
 
         super().__init__()
 
+    def regeneratePlan(self):
+        self.plan = self._generatePlan()
+        self.start_time = 0
+
     def _generatePlan(self):
         ts = np.linspace(0, self.T, int(self.T/self.dt)).reshape((-1, 1))
-        n = (self.final_pos - self.initial_pos) / np.linalg.norm(self.initial_pos - self.final_pos)
+        n = (self.target_pos - self.initial_pos) / np.linalg.norm(self.initial_pos - self.target_pos)
         plan_pos = n * ts * self.cruise_speed + self.initial_pos
 
         plan_vel = np.tile(n * self.cruise_speed, (int(self.T/self.dt), 1))
@@ -175,6 +179,19 @@ class BasePosTrajectoryLine(TrajectoryPlanner):
         self.finished = False
         self.started = False
         self.start_time = 0
+
+    @staticmethod
+    def getDefaultParams():
+        config = {}
+        config["name"] = "Base Position"
+        config["planner_type"] = "BasePosTrajectoryLine"
+        config["frame_id"] = "base"
+        config["initial_pos"] = [0, 0]
+        config["target_pos"] = [0, 0]
+        config["cruise_speed"] = 0.5
+        config["tracking_err_tol"] = 0.02
+
+        return config
 
 class BasePosTrajectorySqaureWave(TrajectoryPlanner):
     def __init__(self, config):

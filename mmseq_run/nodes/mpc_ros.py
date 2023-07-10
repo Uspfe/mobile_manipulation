@@ -20,7 +20,7 @@ from mmseq_control.robot import MobileManipulator3D
 import mmseq_plan.TaskManager as TaskManager
 from mmseq_utils import parsing
 from mmseq_utils.logging import DataLogger
-from mobile_manipulation_central.ros_interface import MobileManipulatorROSInterface, ViconObjectInterface
+from mobile_manipulation_central.ros_interface import MobileManipulatorROSInterface, ViconObjectInterface, ViconMarkerSwarmInterface
 
 class ControllerROSNode:
 
@@ -91,6 +91,8 @@ class ControllerROSNode:
         # ROS Related
         self.robot_interface = MobileManipulatorROSInterface()
         self.vicon_tool_interface = ViconObjectInterface(self.ctrl_config["robot"]["tool_vicon_name"])
+        if self.planner_config["sot_type"] == "SoTSequentialTasks":
+            self.vicon_marker_swarm_interface = ViconMarkerSwarmInterface(self.planner_config["vicon_mark_swarm_estimation_topic_name"])
         self.controller_visualization_pub = rospy.Publisher("controller_visualization", Marker, queue_size=10)
         self.plan_visualization_pub = rospy.Publisher("plan_visualization", Marker, queue_size=10)
         self.tracking_point_pub = rospy.Publisher("controller_tracking_pt", MultiDOFJointTrajectory, queue_size=5)
@@ -242,7 +244,7 @@ class ControllerROSNode:
     def run(self):
         rate = rospy.Rate(self.ctrl_rate)
 
-
+        print("-----Checking Robot Interface-----")
         while not self.robot_interface.ready():
             self.robot_interface.brake()
             rate.sleep()
@@ -251,16 +253,30 @@ class ControllerROSNode:
                 return
         print("Controller received joint states. Proceed ... ")
 
+        print("-----Checking Vicon Tool messages----- ")
         use_vicon_tool_data = True
         if not self.vicon_tool_interface.ready():
             use_vicon_tool_data = False
             print("Controller did not receive vicon tool " + self.ctrl_config["robot"]["tool_vicon_name"] + ". Using Robot Model")
             self.robot = MobileManipulator3D(self.ctrl_config)
         else:
-            print("Controlelr received vicon tool " + self.ctrl_config["robot"]["tool_vicon_name"])
+            print("Controller received vicon tool " + self.ctrl_config["robot"]["tool_vicon_name"])
 
-        planner_class = getattr(TaskManager, self.planner_config["sot_type"])
-        self.sot = planner_class(self.planner_config)
+        task_manager_class = getattr(TaskManager, self.planner_config["sot_type"])
+        self.sot = task_manager_class(self.planner_config)
+
+        print("-----Checking Vicon Marker Swarm Estimation messages----- ")
+        if self.planner_config["sot_type"] == "SoTSequentialTasks":
+            while not self.vicon_marker_swarm_interface.ready():
+                self.robot_interface.brake()
+                rate.sleep()
+
+                if rospy.is_shutdown():
+                    return
+            print("Planner received vicon marker swarm estimation")
+            states = {"base": (self.robot_interface.q[:3], self.robot_interface.v[:3])}
+            self.sot.update_planner(self.vicon_marker_swarm_interface.position, states)
+
         if use_vicon_tool_data:
             self.planner_coord_transform(self.robot_interface.q, self.vicon_tool_interface.position, self.sot.planners)
         else:
@@ -274,7 +290,7 @@ class ControllerROSNode:
             print("planner target:{}".format(planner.getTrackingPoint(0, states)))
 
         input("Press Enter to continue...")
-        rospy.sleep(5.)
+        # rospy.sleep(5.)
         self.sot.activatePlanners()
         t = rospy.Time.now().to_sec()
         t0 = t
@@ -310,6 +326,12 @@ class ControllerROSNode:
             states = {"base": (robot_states[0][:3], robot_states[1][:3]), "EE": ee_states}
 
             self.sot_lock.acquire()
+            if self.sot.__class__.__name__ == "SoTSequentialTasks":
+                # if t - t0 > 10 and t - t0 < 10.2:
+                #     human_pos = np.array([[-3, -3, 0.8],
+                #                  [-3, 0, 0.8],
+                #                  [3, -3, 1.0]])
+                self.sot.update_planner(self.vicon_marker_swarm_interface.position, states)
             self.sot.update(t-t0, states)
             self.sot_lock.release()
 
