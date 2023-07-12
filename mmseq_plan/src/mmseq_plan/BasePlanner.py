@@ -136,7 +136,6 @@ class BasePosTrajectoryLine(TrajectoryPlanner):
         self.cruise_speed = config["cruise_speed"]
 
         self.dt = 0.01
-        self.T = np.linalg.norm(self.initial_pos - self.target_pos) / self.cruise_speed
         self.plan = self._generatePlan()
 
         super().__init__()
@@ -146,6 +145,8 @@ class BasePosTrajectoryLine(TrajectoryPlanner):
         self.start_time = 0
 
     def _generatePlan(self):
+        self.T = np.linalg.norm(self.initial_pos - self.target_pos) / self.cruise_speed
+
         ts = np.linspace(0, self.T, int(self.T/self.dt)).reshape((-1, 1))
         n = (self.target_pos - self.initial_pos) / np.linalg.norm(self.initial_pos - self.target_pos)
         plan_pos = n * ts * self.cruise_speed + self.initial_pos
@@ -177,7 +178,6 @@ class BasePosTrajectoryLine(TrajectoryPlanner):
 
     def reset(self):
         self.finished = False
-        self.started = False
         self.start_time = 0
 
     @staticmethod

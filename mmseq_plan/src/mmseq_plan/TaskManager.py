@@ -89,7 +89,7 @@ class SoTSequentialTasks(SoTStatic):
         super().__init__(config)
 
     def update_planner(self, human_pos, robot_states):
-        base_pos = robot_states["base"][:2]
+        base_pos = robot_states["base"][0][:2]
         if len(human_pos) != self.target_num:
             print("human_pos length isn't correct expected {} got {}".format(self.target_num, len(human_pos)))
             return
@@ -97,6 +97,8 @@ class SoTSequentialTasks(SoTStatic):
         new_waypoints_index = self._get_new_waypoints_index(human_pos)
         new_ee_target_pos_z = self._get_new_ee_target_pos_z(human_pos)
         new_ee_target_pos, new_base_target_pos = self._get_waypoints(new_waypoints_index, new_ee_target_pos_z)
+        new_ee_target_pos = np.array(new_ee_target_pos)
+        new_base_target_pos = np.array(new_base_target_pos)
 
         for i in range(self.target_num):
             prev_base_task_index = i*2
@@ -110,7 +112,7 @@ class SoTSequentialTasks(SoTStatic):
                     self.planners[ee_task_index].target_pos = new_ee_target_pos[i]
 
                     # Corresponding base task hasn't been executed yet
-                    if prev_base_task_index > self.curr_task_id:
+                    if prev_base_task_index > self.curr_task_id+1:
                         self.planners[prev_base_task_index].target_pos = new_base_target_pos[i]
                         self.planners[prev_base_task_index].regeneratePlan()
 
@@ -118,7 +120,7 @@ class SoTSequentialTasks(SoTStatic):
                             self.planners[next_base_task_index].initial_pos = new_base_target_pos[i]
                             self.planners[next_base_task_index].regeneratePlan()
 
-                    elif prev_base_task_index ==  self.curr_task_id:
+                    elif prev_base_task_index == self.curr_task_id or prev_base_task_index == (self.curr_task_id + 1):
                         self.planners[prev_base_task_index].initial_pos = base_pos
                         self.planners[prev_base_task_index].target_pos = new_base_target_pos[i]
                         self.planners[prev_base_task_index].regeneratePlan()
@@ -146,7 +148,7 @@ class SoTSequentialTasks(SoTStatic):
 
     def _get_new_ee_target_pos_z(self, human_pos):
         ee_pos_z = human_pos[:, 2] - 0.5
-        ee_pos_z = np.where(ee_pos_z < 0.6, 0.6, ee_pos_z)
+        ee_pos_z = np.where(ee_pos_z < 0.8, 0.8, ee_pos_z)
         ee_pos_z = np.where(ee_pos_z > 1.8, 1.8, ee_pos_z)
 
         return ee_pos_z

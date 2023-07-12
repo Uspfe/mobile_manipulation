@@ -220,7 +220,6 @@ class EEPosTrajectoryCircle(Planner):
 
     def reset(self):
         self.finished = False
-        self.started = False
 
 class EESimplePlannerRandom(Planner):
     def __init__(self, planner_params):
