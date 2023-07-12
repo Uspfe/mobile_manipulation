@@ -263,19 +263,20 @@ class ControllerROSNode:
             print("Controller received vicon tool " + self.ctrl_config["robot"]["tool_vicon_name"])
 
         task_manager_class = getattr(TaskManager, self.planner_config["sot_type"])
-        self.sot = task_manager_class(self.planner_config)
+        self.sot = task_manager_class(self.planner_config.copy())
 
         print("-----Checking Vicon Marker Swarm Estimation messages----- ")
+        use_vicon_marker_swarm_data = True
         if self.planner_config["sot_type"] == "SoTSequentialTasks":
-            while not self.vicon_marker_swarm_interface.ready():
-                self.robot_interface.brake()
-                rate.sleep()
+            if self.vicon_marker_swarm_interface.ready():
+                print("Planner received vicon marker swarm estimation")
+                states = {"base": (self.robot_interface.q[:3], self.robot_interface.v[:3])}
+                self.sot.update_planner(self.vicon_marker_swarm_interface.position, states)
+            else:
+                use_vicon_marker_swarm_data = False
 
-                if rospy.is_shutdown():
-                    return
-            print("Planner received vicon marker swarm estimation")
-            states = {"base": (self.robot_interface.q[:3], self.robot_interface.v[:3])}
-            self.sot.update_planner(self.vicon_marker_swarm_interface.position, states)
+                print("Planner did not receive vicon marker swarm estimation. Using config file to initialize SoT.")
+
 
         if use_vicon_tool_data:
             self.planner_coord_transform(self.robot_interface.q, self.vicon_tool_interface.position, self.sot.planners)
@@ -326,12 +327,14 @@ class ControllerROSNode:
             states = {"base": (robot_states[0][:3], robot_states[1][:3]), "EE": ee_states}
 
             self.sot_lock.acquire()
-            if self.sot.__class__.__name__ == "SoTSequentialTasks":
-                # if t - t0 > 10 and t - t0 < 10.2:
+            if self.sot.__class__.__name__ == "SoTSequentialTasks" and use_vicon_marker_swarm_data:
+                # if t - t0 > 0 and t - t0 < 0.2:
                 #     human_pos = np.array([[-3, -3, 0.8],
-                #                  [-3, 0, 0.8],
-                #                  [3, -3, 1.0]])
+                #                  [-3, 3, 0.8],
+                #                  [3, -0, 1.0]])
+                #     self.sot.update_planner(human_pos, states)
                 self.sot.update_planner(self.vicon_marker_swarm_interface.position, states)
+
             self.sot.update(t-t0, states)
             self.sot_lock.release()
 
