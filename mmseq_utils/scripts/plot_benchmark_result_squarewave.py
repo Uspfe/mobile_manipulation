@@ -1,10 +1,17 @@
 import argparse
 import os
 
+import matplotlib.colors
 import pandas
 import numpy as np
+import seaborn as sns
+import holoviews as hv
+from holoviews import opts
+hv.extension('bokeh')
+opts.defaults(opts.HeatMap(radial=True, width=800, height=800, tools=["hover"]))
 
 from mmseq_utils.logging import DataLogger, DataPlotter, multipage
+from matplotlib.colors import LinearSegmentedColormap
 from mmseq_utils import math
 import matplotlib.pyplot as plt
 from pandas import DataFrame, concat
@@ -13,14 +20,17 @@ STATS = [("err_ee", "integral"), ("err_base_normalized", "integral"),
          ("err_ee_2", "integral"), ("err_base_normalized_2", "integral"),
          ("cmd_accs_saturation", "mean"),
          ("cmd_jerks_base_linear", "max"),
-         ("run_time", "mean"), ("constraints_violation", "mean")]
-
+         ("run_time", "mean"), ("constraints_violation", "mean"),
+         ("phi", "value"),
+         ("r", "value")]
+YELLOW="#FFAE42"
+SCARLET="#cc1d00"
 EE_HEIGHT = 0.708
-REACHABLE_RADIUS = 1.8682347282929948
+REACHABLE_RADIUS = 1.8605063504325914
+EE_POS_HOME = [1.48985, 0.17431, 0.705131]      # copied from generate_random_test
 
 def get_optimal_base_err(r_bw_wd, r_ew_wd):
     r_bw_w_opt = (r_bw_wd - r_ew_wd[:2]) / np.linalg.norm(r_bw_wd - r_ew_wd[:2]) * REACHABLE_RADIUS + r_ew_wd[:2]
-
     return np.linalg.norm(r_bw_wd - r_bw_w_opt)
 
 def construct_logger(path_to_folder):
@@ -75,9 +85,10 @@ class SquareWaveDataPlotter(DataPlotter):
         self.data["err_ee_1"] = self.data["err_ee"][:N]
         self.data["err_ee_2"] = self.data["err_ee"][N:]
         # assume that controller achieves optimal error 10 steps before the second waypoint
-        eb_opt = get_optimal_base_err(self.data["r_bw_w_ds"][-10], self.data["r_ew_w_ds"][-10])
+        eb_opt = get_optimal_base_err(self.data["r_bw_w_ds"][0], self.data["r_ew_w_ds"][-10])
+        # eb_opt = self.data["err_base"][N-10]
 
-        self.data["err_base_normalized_1"] = (self.data["err_base"][:N] - eb_opt) / (self.data["err_base"][0] - eb_opt)
+        self.data["err_base_normalized_1"] = (self.data["err_base"][:N]) / (self.data["err_base"][0])
         self.data["err_base_normalized_2"] = self.data["err_base"][N:] / self.data["err_base"][N]
 
         data_names = ["err_ee_1", "err_ee_2", "err_base_normalized_1", "err_base_normalized_2"]
@@ -90,6 +101,10 @@ class SquareWaveDataPlotter(DataPlotter):
                                                    "integral": math.integrate_zoh(t, np.abs(self.data[name])),
                                                    "mean": stats[0], "max": stats[1],
                                                    "min": stats[2]}
+
+        r_be_w = self.data["r_bw_w_ds"][0] - self.data["r_ew_w_ds"][0][:2]
+        self.data["statistics"]["phi"] = {"value": math.wrap_to_2_pi_scalar(np.arctan2(r_be_w[1], r_be_w[0]))}
+        self.data["statistics"]["r"] = {"value": np.linalg.norm(r_be_w)}
 
     def plot_task_performance(self, axes=None, index=0, legend=None):
         if axes is None:
@@ -117,7 +132,7 @@ class SquareWaveDataPlotter(DataPlotter):
         N = np.argwhere(np.linalg.norm(self.data["r_bw_w_ds"] - self.data["r_bw_w_ds"][-10], axis=1) < 1e-3).flatten()[0]
         axes[2].plot(t_sim[:N], self.data["err_base_normalized_1"],
                      label=legend + " part 1 acc = {:.3f}".format(self.data["statistics"]["err_base_normalized_1"]["integral"]), color=colors[index])
-        axes[2].plot(t_sim[N:], self.data["err_base_normalized_2"], linestyle="--",
+        axes[2].plot(t_sim[N:] - t_sim[N], self.data["err_base_normalized_2"], linestyle="--",
                      label=legend + " part 2 acc = {:.3f}".format(self.data["statistics"]["err_base_normalized_2"]["integral"]),
                      color=colors[index])
         axes[2].set_ylabel("Base Err (m)")
@@ -131,6 +146,43 @@ class SquareWaveDataPlotter(DataPlotter):
 
         return axes
 
+    def plot_base_tracking(self, axes=None, index=0, legend=None):
+        if axes is None:
+            f, axes = plt.subplots(1,1)
+
+        if legend is None:
+            legend = self.data["name"]
+
+        prop_cycle = plt.rcParams["axes.prop_cycle"]
+        colors = prop_cycle.by_key()["color"]
+
+        t_sim = self.data["ts"]
+        axes.plot(t_sim, self.data["err_base"],
+                     label=legend, color=colors[index], linewidth=2.)
+        axes.set_ylabel("Base Err (m)")
+        axes.legend()
+        axes.grid('on')
+
+        return axes
+
+    def plot_singularity (self, axes=None, index=0, legend=None):
+        if axes is None:
+            f, axes = plt.subplots(1, 1)
+
+        if legend is None:
+            legend = self.data["name"]
+
+        prop_cycle = plt.rcParams["axes.prop_cycle"]
+        colors = prop_cycle.by_key()["color"]
+
+        t_sim = self.data["ts"]
+        axes.plot(t_sim, self.data["arm_manipulability"], label=legend, color=colors[index], linewidth=2.)
+        axes.set_ylabel("Arm Singularity")
+        axes.legend()
+        axes.grid('on')
+
+
+        return axes
 
 class BenchmarkDataPlotter():
 
@@ -144,6 +196,11 @@ class BenchmarkDataPlotter():
         # NOTE: Decided not to generate plots here. It takes too much memory space. Generate plots using bash scripts instead.
         if "stats_all.csv" in os.listdir(folder_path):
             df = pandas.read_csv(os.path.join(folder_path, "stats_all.csv"), index_col=[0,1])
+            folder_name = "test_13"
+            test_folder_path = os.path.join(folder_path, folder_name)
+            filename = "HTMPC"
+            d = os.path.join(test_folder_path, filename)
+            self.example_plotter = construct_logger(d)
         else:
             dfs = []
             keys = []
@@ -157,8 +214,10 @@ class BenchmarkDataPlotter():
                             plotter = construct_logger(d)
                             plotters.append(plotter)
 
+                    print(test_folder_path)
                     keys.append(folder_name)
                     dfs.append(statistics(plotters))
+
 
             # concatenate data frames
             df = concat(dfs, keys=keys)
@@ -230,15 +289,157 @@ class BenchmarkDataPlotter():
         plt.boxplot(data, labels=df_names)
         plt.title(title)
 
+    def _convert_header_to_label(self, df, headers, labels, new_header, data_name):
+        s = []
+        for header in headers:
+            s.append(df[header])
+
+        s_new = concat(s, keys=labels, names=new_header).to_frame(data_name)
+
+        return s_new.reset_index()
+
+    def violin_plot(self, dfs, df_names):
+        df = concat(dfs, keys=df_names, names=["Method"])
+        df_ee = self._convert_header_to_label(df, ["err_ee_1_integral", "err_ee_2_integral"], ["part 1", "part 2"], ["Square Wave"], "Mean Error (m)")
+        df_base = self._convert_header_to_label(df, ["err_base_normalized_1_integral", "err_base_normalized_2_integral"], ["part 1", "part 2"], ["Square Wave"], "Mean Normalized Error")
+        df_ee.to_csv(os.path.join(self.folder_path, "err_ee_{}_stacked.csv".format('_'.join(df_names))))
+        df_base.to_csv(os.path.join(self.folder_path, "err_base_{}_stacked.csv".format('_'.join(df_names))))
+        with sns.color_palette("ch:s=.35,rot=-.35", n_colors=3):
+            plt.figure()
+            sns.stripplot(data=df_ee, y='Method', x="Mean Error (m)", hue="Square Wave", jitter=False, edgecolor='black', linewidth=1)
+            sns.violinplot(df_ee, y="Method", x="Mean Error (m)", hue="Square Wave", inner=None, split=True, scale="count", orient="h", cut=1.25)
+            ax = plt.gca()
+            handles, labels = ax.get_legend_handles_labels()
+            plt.legend(handles[2:], labels[2:], title='Square Wave')
+            # left, right = plt.xlim()
+            # plt.xlim([0, right])
+            plt.title("Task 1: End Effector Tracking Error")
+
+            plt.figure()
+            sns.stripplot(df_base, y="Method", x="Mean Normalized Error", hue="Square Wave", jitter=False, edgecolor='black', linewidth=1)
+            sns.violinplot(df_base, y="Method", x="Mean Normalized Error", hue="Square Wave", inner=None, split=True, scale="count", orient="h")
+            ax = plt.gca()
+            handles, labels = ax.get_legend_handles_labels()
+            plt.legend(handles[2:], labels[2:], title='Square Wave')
+            plt.title("Task 2: Base Tracking Error (Normalized)")
+
+    def scatter_plot(self, dfs, df_names, x_var_name, y_var_name):
+        df = concat(dfs, keys=df_names, names=["Method"])
+        plt.figure()
+        sns.scatterplot(df, x=x_var_name, y=y_var_name, hue="Method")
+        sns.lineplot(df, x=x_var_name, y=y_var_name, hue="Method")
+        ax = plt.gca()
+        handles, labels = ax.get_legend_handles_labels()
+        plt.legend(handles[3:], labels[3:], title='Method')
+
+    def radial_heat_map(self, dfs, df_names, x_var_name, y_var_name, title=None):
+        # df = concat(dfs, keys=df_names, names=["Method"])
+        # df.rename(columns={y_var_name: "values"}, inplace=True)
+        for df in dfs:
+            df.sort_values(x_var_name, inplace=True)
+        df = dfs[0]
+        angle = df[x_var_name]
+        radius = np.array([0, 0.15, 0.3, 0.45, 0.6]) + 0.5
+        R,th = np.meshgrid(radius, angle)
+        z = np.vstack([df[y_var_name] for df in dfs]).T
+        nans = np.zeros((z.shape[0],1)) * np.nan
+        z_padded = np.c_[z[:, 0], nans, z[:,1], nans, z[:,2]]
+
+        colors = sns.color_palette("ch:s=.35,rot=-.35", n_colors=3)
+        cm = LinearSegmentedColormap.from_list(
+            "my_list", colors, N=50)
+        fig, ax = plt.subplots(subplot_kw={'projection': 'polar'})
+        # Defining the colormesh to define the color as per the values
+        mc = plt.pcolormesh(th, R, z_padded, cmap=cm)
+        # PLotting the figure
+        plt.plot(angle, R, ls='none')
+        plt.colorbar(mc, ax=ax, pad=0.005, location="right", shrink=0.8)
+        ax.set_rmax(radius[-1]+0.2)
+        ax.set_xlim([angle[0], angle[-1]])
+        ax.set_yticks(radius[0::2])
+        ax.set_yticklabels([])
+        # Remove all spines
+        ax.set_frame_on(False)
+        # Set grid with some transparency
+        ax.grid(alpha=0.4)
+        if title:
+            ax.set_title(title)
+        else:
+            ax.set_title(y_var_name)
+
+        # Define the characteristics of the bbox behind the text we add
+        bbox_dict = {
+            "facecolor": "w", "edgecolor": colors[-1], "linewidth": 1,
+            "boxstyle": "round", "pad": 0.15
+        }
+        # Iterate over types of plastics and add the labels
+        for r, name in zip(radius[0::2], df_names):
+            ax.text(
+                np.pi/2, r, name, color=colors[-1], ha="center", va="bottom",
+                fontsize=11, bbox=bbox_dict
+            )
+        return ax
+
+    def plot_squarewave_tasks(self, df):
+        colors = sns.color_palette("ch:s=.35,rot=-.35", n_colors=3)
+        cm = LinearSegmentedColormap.from_list(
+            "my_list", colors, N=50)
+
+        fig, ax = plt.subplots(subplot_kw={'projection': 'polar'})
+
+        # Plot Example Path
+        r_bw_bs = self.example_plotter.data.get("r_bw_bs", [])
+        r_bw_ees = r_bw_bs - np.array(EE_POS_HOME)[:2]
+
+        ax.scatter(r_bw_ees[::3, 0], r_bw_ees[::3, 1],
+                   transform=ax.transData._b,
+                   label="Example Base Trajectory", facecolors="none",
+                   edgecolors=cm(np.linspace(0, 1, r_bw_ees[::3, 0].shape[0])), s=80)
+
+        # Plot Peak
+        ax.scatter(df["phi_value"], df["r_value"], label="Base Target (Peak)",
+                   facecolors=cm(0.5), edgecolors=cm(0.5), linewidth=1.5, s=50)
+
+        # Plot Valley
+        base_target_valley = -np.array(EE_POS_HOME)[:2]
+        phi_valley = math.wrap_to_2_pi_scalar(np.arctan2(base_target_valley[1], base_target_valley[0]))
+        r_valley = np.linalg.norm(base_target_valley)
+        ax.scatter(phi_valley, r_valley,  label="Base Target (Valley)",
+                   facecolors=YELLOW, s=40)
+
+        # Plot Reachable Area
+        reachable_area = plt.Circle((0,0), radius=REACHABLE_RADIUS, facecolor=(0, 0, 0, .0125), edgecolor=colors[1],
+                                    transform=ax.transData._b, label="Workspace Boundary", linewidth=2.0)
+        ax.add_artist(reachable_area)
+
+        # Plot EE Target
+        ax.scatter(0, 0, label="EE Target",
+                   facecolors=SCARLET, linewidth=1.5, s=50)
+
+
+        ax.set_xticks((np.arange(12)+1) / 6. * np.pi)
+        ax.set_yticks([0, 1, 2])
+        ax.set_yticklabels(["0 m", "1 m", "2 m"])
+        ax.set_frame_on(False)
+        ax.set_title("Random Square Wave Tests")
+        plt.legend(loc="lower center", ncol=3, bbox_to_anchor=(0.5, -0.15), borderaxespad=0.)
+
+
 
 def benchmark(folder_path):
     data_plotter = BenchmarkDataPlotter(folder_path)
-    methods = ["HTIDKC", "HTMPC"]
+    methods = ["HTIDKC", "HTMPC_WPT", "HTMPC"]
 
     dfs = data_plotter.summarize(methods)
     data_plotter.plot_mean_error(dfs, methods)
     data_plotter.box_plot("cmd_jerks_base_linear_max", dfs, methods, "Maximum Commanded Base Jerk (Linear) (m/s^3)")
     data_plotter.box_plot("run_time_mean", dfs, methods, "Run Time (s)")
+    data_plotter.violin_plot(dfs, methods)
+    data_plotter.scatter_plot(dfs, methods,"phi_value" ,"err_base_normalized_integral")
+    data_plotter.scatter_plot(dfs, methods,"phi_value" ,"err_base_normalized_1_integral")
+    data_plotter.scatter_plot(dfs, methods,"phi_value" ,"err_base_normalized_2_integral")
+    ax = data_plotter.radial_heat_map(dfs, methods,"phi_value" ,"err_base_normalized_integral", "Base Tracking Error (Normalized)")
+    data_plotter.plot_squarewave_tasks(dfs[-1])
 
     plt.show()
 
@@ -253,6 +454,35 @@ def tracking(folder_path):
     axes = None
     for pid, plotter in enumerate(plotters):
         axes = plotter.plot_task_performance(axes=axes, index=pid)
+
+    fig, axes = plt.subplots(2, 1, sharex=True)
+    for pid, plotter in enumerate(plotters):
+        plotter.plot_base_tracking(axes[0], pid)
+        plotter.plot_singularity(axes[1], pid)
+
+    axes[1].set_xlabel("Time (s)")
+    # t1 = axes[0].text(4, 0.0, "Part 1 (Peak)",
+    #             ha="center", va="center", rotation=0,
+    #             bbox=dict(boxstyle="darrow,pad=0.3",
+    #                       fc="white", ec="steelblue"))
+
+    axes_fraction_y = 0.1
+    an12 = axes[0].annotate("",
+                           xy=(0.0, -axes_fraction_y), xycoords=("data", "axes fraction"), xytext=(8, -axes_fraction_y),
+                           arrowprops=dict(arrowstyle="<->", lw=1.5))
+    an11 = axes[0].annotate("Part 1 (Peak)",
+                      xy=(4, -axes_fraction_y), xycoords=("data", "axes fraction"),
+                      va="center", ha="center",
+                      bbox=dict(boxstyle="round", fc="w"))
+
+    an22 = axes[0].annotate("",
+                           xy=(8, -axes_fraction_y), xycoords=("data", "axes fraction"), xytext=(16., -axes_fraction_y),
+                           arrowprops=dict(arrowstyle="<->", lw=1.5))
+
+    an21 = axes[0].annotate("Part 2 (Valley)",
+                      xy=(12, -axes_fraction_y), xycoords=("data", "axes fraction"),
+                      va="center", ha="center",
+                      bbox=dict(boxstyle="round", fc="w"))
 
     plt.show()
 

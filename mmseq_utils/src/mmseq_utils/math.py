@@ -149,6 +149,15 @@ def plane_span(normal):
     """
     return null_space(normal[None, :]).T
 
+def wrap_to_2_pi_scalar(theta):
+    while np.abs(theta-np.pi) > np.pi:
+        if theta > 2 * np.pi:
+            theta -= 2 * np.pi
+        elif theta < 0:
+            theta += 2 * np.pi
+
+    return theta
+
 def wrap_pi_scalar(theta):
     while np.abs(theta) > np.pi:
         if theta > np.pi:
