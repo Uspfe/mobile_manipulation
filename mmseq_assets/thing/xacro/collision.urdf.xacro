@@ -54,7 +54,7 @@
     <child link="base_collision_link"/>
   </joint>
 
-  <xacro:collision_link_cylinder name="rack_collision_link" radius="0.275"/>
+  <xacro:collision_link_cylinder name="rack_collision_link" radius="0.325"/>
   <joint name="rack_collision_joint" type="fixed">
     <origin rpy="0 0 0" xyz="-0.45 -0. 0.75"/>
     <parent link="base_link"/>
@@ -128,7 +128,7 @@
   </joint>
 
   <!-- Gripped Object -->
-  <xacro:collision_link_sphere name="gripped_object_collision_link" radius="0.22"/>
+  <xacro:collision_link_sphere name="gripped_object_collision_link" radius="0.26"/>
   <joint name="gripped_object_collision_joint" type="fixed">
     <origin rpy="0 0 0" xyz="0 0 0.0"/>
     <parent link="gripped_object"/>

@@ -60,27 +60,27 @@
   <link name="restaurant_base_link"/>
 
   <xacro:chair name="chair_1">
-    <origin rpy="0 0 0" xyz="-3. -3. 0."/>
+    <origin rpy="0 0 0" xyz="0 -3. 0."/>
   </xacro:chair>
 
   <xacro:chair name="chair_2">
-    <origin rpy="0 0 0" xyz="-3. 0. 0."/>
+    <origin rpy="0 0 0" xyz="-3.25 -1. 0."/>
   </xacro:chair>
 
   <xacro:chair name="chair_3">
-    <origin rpy="0 0 0" xyz="-3. 3. 0."/>
+    <origin rpy="0 0 0" xyz="-3.25 1. 0."/>
   </xacro:chair>
 
   <xacro:chair name="chair_4">
-    <origin rpy="0 0 0" xyz="3. -3. 0."/>
+    <origin rpy="0 0 0" xyz="0 3. 0."/>
   </xacro:chair>
 
   <xacro:chair name="chair_5">
-    <origin rpy="0 0 0" xyz="3. 0. 0."/>
+    <origin rpy="0 0 0" xyz="3.25 1. 0."/>
   </xacro:chair>
 
   <xacro:chair name="chair_6">
-    <origin rpy="0 0 0" xyz="3. 3. 0."/>
+    <origin rpy="0 0 0" xyz="3.25 -1. 0."/>
   </xacro:chair>
 
 
