@@ -18,6 +18,7 @@ def main():
     plotter1.plot_joint_states()
     plotter1.plot_joint_vel_tracking()
     plotter1.plot_tracking()
+    plotter1.plot_base_velocity_estimation()
     # plotter2.plot_tracking(subscript="_damped")
     plotter1.plot_show()
 

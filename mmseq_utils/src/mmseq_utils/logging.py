@@ -5,6 +5,8 @@ import numpy as np
 from scipy.interpolate import interp1d
 
 import matplotlib.pyplot as plt
+import seaborn as sns
+from matplotlib.colors import LinearSegmentedColormap
 from pathlib import Path
 import yaml
 import rosbag
@@ -272,11 +274,11 @@ class DataPlotter:
 
 
     def _get_mean_violation(self, data_normalized):
-        vio_mask = data_normalized > 1
+        vio_mask = data_normalized > 1.05
         vio = np.sum((data_normalized - 1) * vio_mask, axis=1)
         vio_num = np.sum(vio_mask, axis=1)
         vio_mean = np.where(vio_num > 0, vio/vio_num, 0)
-        return vio_mean
+        return vio_mean, np.sum(vio_num)
 
     def _post_processing(self):
         # tracking error
@@ -316,7 +318,7 @@ class DataPlotter:
         # box constraints
         constraints_violation = np.abs(np.hstack((self.data["xs_normalized"], self.data["cmd_accs_normalized"])))
         constraints_violation = np.hstack((constraints_violation, np.expand_dims(0.05 - self.data["signed_distance"], axis=1) / 0.05 + 1))
-        self.data["constraints_violation"] = self._get_mean_violation(constraints_violation)
+        self.data["constraints_violation"], self.data["constraints_violation_num"] = self._get_mean_violation(constraints_violation)
 
         # singularity
         man_fcn = self.model_interface.robot.manipulability_fcn
@@ -340,6 +342,7 @@ class DataPlotter:
         self.data["r_ew_b_ds"] = self._transform_w2b_SE3(qb, self.data["r_ew_w_ds"])
 
 
+        # has_rb = self.data.get("r_bw_w_ds", None)
         self.data["r_bw_bs"] = self._transform_w2b_SE2(qb, self.data["r_bw_ws"])
         self.data["r_bw_b_ds"] = self._transform_w2b_SE2(qb, self.data["r_bw_w_ds"])
 
@@ -350,7 +353,8 @@ class DataPlotter:
         err_ee_stats = math.statistics(self.data["err_ee"])
         self.data["statistics"]["err_ee"] = {"rms": math.rms_continuous(self.data["ts"], self.data["err_ee"]),
                                              "integral": math.integrate_zoh(self.data["ts"], self.data["err_ee"]),
-                                             "mean": err_ee_stats[0], "max": err_ee_stats[1], "min": err_ee_stats[2]}
+                                             "mean": err_ee_stats[0], "max": err_ee_stats[1], "min": err_ee_stats[2],
+                                             "std": math.statistics_std(self.data["err_ee"])}
         # base tracking error
         err_base_stats = math.statistics(self.data["err_base"])
         self.data["statistics"]["err_base"] = {"rms": math.rms_continuous(self.data["ts"], self.data["err_base"]),
@@ -400,10 +404,11 @@ class DataPlotter:
                                                             "min": cmd_jerks_stats[2]}
 
         violation_stats = math.statistics(self.data["constraints_violation"])
-        self.data["statistics"]["constraints_violation"] = {"mean": violation_stats[0], "max": violation_stats[1], "min": violation_stats[2]}
-
+        self.data["statistics"]["constraints_violation"] = {"mean": violation_stats[0], "max": violation_stats[1], "min": violation_stats[2], "num": self.data["constraints_violation_num"]}
         run_time_states = math.statistics(self.data["controller_run_time"])
         self.data["statistics"]["run_time"] = {"mean": run_time_states[0], "max": run_time_states[1], "min": run_time_states[2]}
+        print(self.data["statistics"]["constraints_violation"]["num"])
+
 
     def summary(self, stat_names):
         """ get a summary of statistics
@@ -452,7 +457,7 @@ class DataPlotter:
 
         return axes
 
-    def plot_base_path(self, axes=None, index=0, legend=None, worldframe=True):
+    def plot_base_path(self, axes=None, index=0, legend=None, worldframe=True, linewidth=1, color=None):
         if worldframe:
             r_b = self.data.get("r_bw_ws", [])
         else:
@@ -463,17 +468,24 @@ class DataPlotter:
 
         if axes is None:
             axes = []
-            f, axes = plt.subplots(1, 1, sharex=True)
+            f, axes = plt.subplots(1, 1, sharex=True, figsize=(3.5, 2.))
 
         if legend is None:
             legend = self.data["name"]
 
+
+
         # if legend == "baseline h = 0.8m":
         #     r_ew_ws += [0, 1]
-        prop_cycle = plt.rcParams["axes.prop_cycle"]
-        colors = prop_cycle.by_key()["color"]
+        # prop_cycle = plt.rcParams["axes.prop_cycle"]
+        # colors = prop_cycle.by_key()["color"]
+        colors = sns.color_palette("ch:s=.35,rot=-.35", n_colors=3)
+        cm = LinearSegmentedColormap.from_list(
+            "my_list", colors, N=50)
+        if color is None:
+            color = cm(index)
         if len(r_b) > 0:
-            axes.plot(r_b[:, 0], r_b[:, 1], label=legend, color=colors[index])
+            axes.plot(r_b[:, 0], r_b[:, 1], label=legend, color=color, linewidth=linewidth)
 
         axes.grid()
         axes.legend()
@@ -482,7 +494,7 @@ class DataPlotter:
 
         return axes
 
-    def plot_base_ref_path(self, axes=None, index=0, legend=None, worldframe=True):
+    def plot_base_ref_path(self, axes=None, index=0, legend=None, worldframe=True, color='b'):
         if worldframe:
             r_b = self.data.get("r_bw_w_ds", [])
         else:
@@ -500,7 +512,7 @@ class DataPlotter:
         prop_cycle = plt.rcParams["axes.prop_cycle"]
         colors = prop_cycle.by_key()["color"]
         if len(r_b) > 0:
-            axes.plot(r_b[:, 0], r_b[:, 1], label=legend, color=colors[index], linestyle="--")
+            axes.plot(r_b[:, 0], r_b[:, 1], label=legend, color=color, linestyle="--")
 
         axes.grid()
         axes.legend()
@@ -1197,7 +1209,7 @@ class DataPlotter:
 
     def plot_robot(self):
         self.plot_cmd_vs_real_vel()
-        # self.plot_state()
+        self.plot_state()
         self.plot_state_normalized()
         # self.plot_cmds()
         self.plot_cmds_normalized()
@@ -1285,13 +1297,13 @@ class ROSBagPlotter:
             if name == 'markers':
                 continue
             msgs = [msg for _, msg, _ in bag.read_messages(topic)]
-            if name == "ThingBase":
+            if name == "ThingBase_2":
                 ts, qs = ros_utils.parse_ridgeback_vicon_msgs(msgs)         # q is a 3-element vector x, y, theta
-                self.data["vicon"][name] = {"ts": ts, "pos": qs[:, :2], "orn": qs[:, 2]}
+                self.data["vicon"]["ThingBase"] = {"ts": ts, "pos": qs[:, :2], "orn": qs[:, 2]}
 
                 dts = ts[1:] - ts[:-1]
                 vel = (qs[1:, :2] - qs[:-1, :2]) / np.expand_dims(dts, axis=-1)
-                self.data["vicon"][name]["vel"] = vel  
+                self.data["vicon"]["ThingBase"]["vel"] = vel  
             else:
                 ts, qs = ros_utils.parse_transform_stamped_msgs(msgs, False)    # q is a 7-element vector x, y, z for position followed by a unit quaternion
                 self.data["vicon"][name] = {"ts": ts, "pos": qs[:, :3], "orn": qs[:, 3:]}
@@ -1406,7 +1418,7 @@ class ROSBagPlotter:
                     self.data["ur10"]["joint_states"]["vs"][:, i], '-',
                     label=r"$\dot\theta_{}$".format(i + 1))
             ax[i].plot(self.data["ur10"]["cmd_vels"]["ts"],
-                    self.data["ur10"]["cmd_vels"]["vcs"][:, i], '-',
+                    self.data["ur10"]["cmd_vels"]["vcs"][:, i], '-x',
                     label=r"${\dot\theta_d}" + "_{}$".format(i + 1))
             ax[i].legend()
             ax[i].grid()
@@ -1418,7 +1430,7 @@ class ROSBagPlotter:
         labels_vc = [r"$v_{c,x}$", r"$v_{c, y}$", r"$\omega_c$"]
         for i in range(3):
             ax[i].plot(self.data["ridgeback"]["joint_states"]["ts"],
-                   self.data["ridgeback"]["joint_states"]["vbs"][:, i], '-',
+                   self.data["ridgeback"]["joint_states"]["vbs"][:, i], '-x',
                    label=labels_v[i])
 
             ax[i].plot(self.data["ridgeback"]["cmd_vels"]["ts"],

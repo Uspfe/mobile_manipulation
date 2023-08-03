@@ -207,6 +207,11 @@ def statistics(data):
 
     return mean, max, min
 
+def statistics_std(data):
+    std = np.std(data, axis=0)
+
+    return std
+
 def normalize_wrt_bounds(lower_bound, upper_bound, data):
     """ Normalize data wrt bounds
         # -1 --> saturate lower bounds

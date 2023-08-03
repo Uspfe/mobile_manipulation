@@ -1,4 +1,5 @@
 from mmseq_utils.trajectory_generation import *
+from mmseq_plan.BasePlanner import BasePoseTrajectoryLine
 import numpy as np
 
 def visualize_trajectory(plan):
@@ -17,7 +18,7 @@ def visualize_trajectory(plan):
 
     for i in range(n):
         axes_v[i].plot(plan["t"], plan["v"][:, i], label="r_" + str(i))
-    axes_v[0].set_title("velcity trajectory")
+    axes_v[0].set_title("velocity trajectory")
 
     return [axes_p, axes_v]
 
@@ -40,10 +41,21 @@ def test_interpolation(plan):
         axes_p[i].plot(ts, ps[:, i], '.', markersize=10)
         axes_v[i].plot(ts, vs[:, i], '.', markersize=10)
 
+def test_base_pose_trajectory():
+    config = BasePoseTrajectoryLine.getDefaultParams()
+    config["initial_pose"] = [0, 0, 0.5]
+    config["target_pose"] = [2.5, 0, 0]
+    config["cruise_speed"] = 0.5
+    config["yaw_speed"] = 0.05
 
+    planner = BasePoseTrajectoryLine(config)
+
+    visualize_trajectory(planner.plan)
 
 if __name__ == "__main__":
-    plan = sqaure_wave([1, 2], [-1, 0], 3, 5, 0.01)
-
-    test_interpolation(plan)
+    # plan = sqaure_wave([1, 2], [-1, 0], 3, 5, 0.01)
+    #
+    # test_interpolation(plan)
+    # plt.show()
+    test_base_pose_trajectory()
     plt.show()
