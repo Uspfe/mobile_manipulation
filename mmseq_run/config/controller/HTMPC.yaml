@@ -16,9 +16,10 @@ controller:
   static_obstacles_collision_avoidance_enabled: False
   ee_upward_constraint_enabled: False
   cst_tol_schedule_enabled: False
+  hierarchy_const_tol: 0.01
 
   collision_safety_margin: 0.05
-  ee_upward_deviation_angle_max: 0.26    #rad, 0.26 rad ~ 15 degree
+  ee_upward_deviation_angle_max: 0.20    #rad, 0.26 rad ~ 15 degree
 
   # soft constraints parameters
   xu_soft:
@@ -29,12 +30,12 @@ controller:
     zeta: 0.005
   ee_upward_soft:
     mu: 0.001
-    zeta: 0.005
+    zeta: 0.01
 
   # weights for each cost function
   cost_params:
     EEPos3:
-      Qk: 2.
+      Qk: 1.0
       P: 10.
     BasePos2:
       Qk: 1.
@@ -42,9 +43,9 @@ controller:
     Effort:
       Qqa: 0.
       Qqb: 0.
-      Qva: 0.01
-      Qvb: 0.01
-      Qua: 0.01
+      Qva: 0.1
+      Qvb: 0.1
+      Qua: 0.02
       Qub: 0.1
       Qdua: 0.
       Qdub: 0.1

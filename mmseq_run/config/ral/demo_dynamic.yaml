@@ -9,12 +9,7 @@ planner:
     - [0, 3]
     - [3.25, 1]
     - [3.25, -1]
-#    - [-2.75, -2.5]
-#    - [-2.75, 0]
-#    - [-2.75, 2.5]
-#    - [2.75, -2.5]
-#    - [2.75, 0]
-#    - [2.75, 2.5]
+
   ee_target_pos_xy:
     - [0, -2]
     - [-2.5, -1]
@@ -22,12 +17,7 @@ planner:
     - [0, 2]
     - [2.5, 1]
     - [2.5, -1]
-#    - [-2, -3]
-#    - [-2, 0]
-#    - [-2, 3]
-#    - [2, -3]
-#    - [2, 0]
-#    - [2, 3]
+
   base_target_pos:
     - [0, -1.2]
     - [-1.75, -0.703]
@@ -35,17 +25,12 @@ planner:
     - [0, 1.2]
     - [1.75, 0.703]
     - [1.75, -0.703]
-#    - [-0.5, -3]
-#    - [-0.5, 0]
-#    - [-0.5, 3]
-#    - [ 0.5, -3 ]
-#    - [ 0.5, 0 ]
-#    - [ 0.5, 3 ]
-  base_tracking_err_tol: 0.5
+
+  base_tracking_err_tol: 0.8
   base_cruise_speed: 0.5
   initial_base_pos: [0, 0]
-  initial_waypoints_index: [5, 0, 2]  # index start from 0
-  initial_ee_target_pos_z: [1.0, 1.2, 0.8]
+  initial_waypoints_index: [3, 5, 1]  # index start from 0
+  initial_ee_target_pos_z: [0.8, 0.8, 0.8]
 
 simulation:
   duration: 200
@@ -65,7 +50,7 @@ simulation:
 controller:
   ee_upward_constraint_enabled: True
   collision_safety_margin: 0.2
-  ee_upward_deviation_angle_max: 0.17    #rad, 0.26 rad ~ 15 degree
+  ee_upward_deviation_angle_max: 0.26    #rad, 0.26 rad ~ 15 degree
 
 
 
@@ -77,13 +62,13 @@ controller:
     mu: 0.001
     zeta: 0.005
   ee_upward_soft:
-    mu: 0.002
-    zeta: 0.005
+    mu: 0.001
+    zeta: 0.01
 
   # weights for each cost function
   cost_params:
     EEPos3:
-      Qk: 0.5
+      Qk: 0.8
       P: 10.
     BasePos2:
       Qk: 1.
@@ -95,13 +80,13 @@ controller:
       Qvb: 0.1
       Qua: 0.025
       Qub: 0.1
-      Qdua: 0.
+      Qdua: 0.0
       Qdub: 0.05
 
   robot:
     limits:
       state:
-        lower: [ -2, -10, -2.pi, -0.1pi, -1pi, -1pi, -1pi, 0.pi, -1pi,
+        lower: [ -2, -10, -2.pi, -0.1pi, -1pi, -1pi, -1pi, -0.2pi, -1pi,
                  -0.5, -0.5, -1, -0.5, -1, -1., -2, -2, -2]
         upper: [ 2, 10, 2pi, 1.pi, 1pi, 1pi, 1pi, 1pi, 1pi,
                  0.5, 0.5, 1, 0.5, 1, 1., 2, 2, 2 ]

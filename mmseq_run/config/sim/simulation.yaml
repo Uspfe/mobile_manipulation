@@ -6,7 +6,7 @@ simulation:
   robot:
 #    home: [0, 0, 0, 0.5pi, -0.5pi, 0, -0.pi, 0.5pi, 0]  # upright
 #    home: [0, 0, 0, 0.5pi, 0., 0., 0., 0.5pi, 0.]  # upright
-    home: [ 0., -0, 0.pi, 0.5pi, -0.25pi, 0.5pi, -0.25pi, 0.5pi, 0.417pi ]  # standard
+    home: [ 0., -0, 0.pi, 0.5pi, -0.25pi, 0.5pi, -0.25pi, 0.5pi, -0.261 ]  # standard
 #    home: [ -0., 0, 0.pi, 0.5pi, -0.25pi, 0.5pi, 0.25pi, 0.5pi, 0.417pi ]  # grasping box directly
     tool_vicon_name: ThingContainer
 

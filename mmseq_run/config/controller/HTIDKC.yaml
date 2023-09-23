@@ -16,7 +16,7 @@ controller:
   base_tracking:
     κ: 0.3
   ee_tracking:
-    κ: 1.0
+    κ: 0.5
   joint_angle_bound:
     κ: 0.02
   collision_avoidance:

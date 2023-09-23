@@ -12,5 +12,5 @@ planner:
       frame_id: "base"
       initial_pos: [-0.0, -0.0]
       target_pos: [3.0, 0.]
-      cruise_speed: 0.7
+      cruise_speed: 0.5
       tracking_err_tol: 0.02

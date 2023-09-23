@@ -17,7 +17,7 @@ planner:
     - name: "EE Pos 1"
       planner_type: "EESimplePlanner"
       frame_id: "base"
-      target_pos: [ 4., .0, 0.7 ]
+      target_pos: [ 3.5, -1.0, 1.0 ]
       hold_period: 3.
       tracking_err_tol: 0.02
 

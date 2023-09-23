@@ -4,7 +4,7 @@ planner:
     - name: "EE Pos 1"
       planner_type: "EESimplePlanner"
       frame_id: "base"
-      target_pos: [1.5, -2.0, 2.4]
+      target_pos: [1.5, -2.0, 2.2]
       hold_period: 10
       tracking_err_tol: 0.03
     - name: "Base Pos 2"
@@ -12,5 +12,5 @@ planner:
       frame_id: "base"
       initial_pos: [-0.0, -0.0]
       target_pos: [3.0, 0.]
-      cruise_speed: 0.7
+      cruise_speed: 0.5
       tracking_err_tol: 0.02
