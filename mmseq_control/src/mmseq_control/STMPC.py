@@ -25,9 +25,6 @@ class STMPCSQP(MPC):
         self.home = mm.load_home_position(config["home"])
 
     def control(self, t, robot_states, planners):
-        if len(planners) != 1:
-            print("STMPC only accecpt one planner")
-            return np.zeros_like(self.v_cmd), np.zeros_like(self.u_prev), np.zeros_like(self.u_bar)
 
         self.py_logger.debug("control time {}".format(t))
         self.curr_control_time = t
@@ -43,32 +40,54 @@ class STMPCSQP(MPC):
         # 0.2 Get ref, cost_fcn,
         r_bars = []
         cost_fcns = []
+        if len(planners) == 1:
 
-        planner = planners[0]
-        r_bar = [planner.getTrackingPoint(t + k * self.dt, (self.x_bar[k, :self.DoF], self.x_bar[k, self.DoF:]))[0]
-                 for k in range(self.N + 1)]
-        r_bars += [[np.array(r_bar)], [-self.u_prev]]
+            planner = planners[0]
+            r_bar = [planner.getTrackingPoint(t + k * self.dt, (self.x_bar[k, :self.DoF], self.x_bar[k, self.DoF:]))[0]
+                     for k in range(self.N + 1)]
+            r_bars += [[np.array(r_bar)], [-self.u_prev]]
 
-        if planner.type == "EE" and planner.ref_data_type == "Vec3":
-            cost_fcns += [self.EEPos3BaseFrameCost, self.CtrlEffCost]
-        elif planner.type == "base" and planner.ref_data_type == "Vec2":
-            # cost_fcns += [self.BasePos2Cost, self.CtrlEffCost, self.EEPos3BaseFrameCost]
-            cost_fcns += [self.BasePos2Cost, self.CtrlEffCost, self.ArmJointCost]
-            r_qa = [self.home[3:] for k in range(self.N + 1)]
-            r_bars += [[np.array(r_qa)]]
-        elif planner.type == "base" and planner.ref_data_type == "Vec3":
-            # cost_fcns += [self.BasePose3Cost, self.CtrlEffCost, self.EEPos3BaseFrameCost]
-            # # r_e,_ = self.robot.getEE(q, base_frame=True)
-            # r_eb_b = [EE_POS_HOME for k in range(self.N+1)]
-            # r_bars += [[np.array(r_eb_b)]]
+            if planner.type == "EE" and planner.ref_data_type == "Vec3":
+                cost_fcns += [self.EEPos3BaseFrameCost, self.CtrlEffCost]
+            elif planner.type == "base" and planner.ref_data_type == "Vec2":
+                # cost_fcns += [self.BasePos2Cost, self.CtrlEffCost, self.EEPos3BaseFrameCost]
+                cost_fcns += [self.BasePos2Cost, self.CtrlEffCost, self.ArmJointCost]
+                r_qa = [self.home[3:] for k in range(self.N + 1)]
+                r_bars += [[np.array(r_qa)]]
+            elif planner.type == "base" and planner.ref_data_type == "Vec3":
+                # cost_fcns += [self.BasePose3Cost, self.CtrlEffCost, self.EEPos3BaseFrameCost]
+                # # r_e,_ = self.robot.getEE(q, base_frame=True)
+                # r_eb_b = [EE_POS_HOME for k in range(self.N+1)]
+                # r_bars += [[np.array(r_eb_b)]]
 
-            cost_fcns += [self.BasePose3Cost, self.CtrlEffCost, self.ArmJointCost]
-            r_qa = [self.home[3:] for k in range(self.N+1)]
-            r_bars += [[np.array(r_qa)]]
+                cost_fcns += [self.BasePose3Cost, self.CtrlEffCost, self.ArmJointCost]
+                r_qa = [self.home[3:] for k in range(self.N+1)]
+                r_bars += [[np.array(r_qa)]]
 
 
+            else:
+                self.py_logger.warning("unknown cost type, planner # %d", id)
         else:
-            self.py_logger.warning("unknown cost type, planner # %d", id)
+            for planner in planners:
+                r_bar = [planner.getTrackingPoint(t + k * self.dt, (self.x_bar[k, :self.DoF], self.x_bar[k, self.DoF:]))[0]
+                     for k in range(self.N + 1)]
+                r_bars += [[np.array(r_bar)]]
+
+                if planner.type == "EE" and planner.ref_data_type == "Vec3":
+                    cost_fcns += [self.EEPos3Cost]
+                elif planner.type == "base" and planner.ref_data_type == "Vec2":
+                    # cost_fcns += [self.BasePos2Cost, self.CtrlEffCost, self.EEPos3BaseFrameCost]
+                    cost_fcns += [self.BasePos2Cost]
+                else:
+                    self.py_logger.warning("unknown cost type, planner # %d", id)
+
+                if planner.type == "EE":
+                    self.ree_bar = r_bar 
+                elif planner.type == "base":
+                    self.rbase_bar = r_bar
+
+            cost_fcns += [self.CtrlEffCost]
+            r_bars += [[-self.u_prev]]
 
         # 0.3 get constraints
         csts = {"eq": [self.MotionCst], "ineq": []}
@@ -92,10 +111,7 @@ class STMPCSQP(MPC):
             st_cost_fcn += [self.eeUpwardSoftCst]
             st_cost_fcn_params += [[]]
 
-        if planner.type == "EE":
-            self.ree_bar = r_bar
-        elif planner.type == "base":
-            self.rbase_bar = r_bar
+        print(st_cost_fcn)
         xbar_lopt, ubar_lopt, status = self.solveSTMPCCasadi(xo, self.x_bar.copy(), self.u_bar.copy(), st_cost_fcn,
                                                              st_cost_fcn_params, csts, csts_params)
         self.cost_final = self._eval_cost_functions(cost_fcns, xbar_lopt, ubar_lopt, r_bars)

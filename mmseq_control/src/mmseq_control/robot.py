@@ -10,7 +10,7 @@ import casadi_kin_dyn.py3casadi_kin_dyn as cas_kin_dyn
 import rospkg
 from scipy.linalg import expm
 import hppfcl as fcl
-from spatialmath.base import r2q
+from spatialmath.base import r2q, rotz
 
 from liegroups import SO3
 from mmseq_utils import parsing
@@ -537,10 +537,15 @@ class MobileManipulator3D:
 
         return xs_num_violation, us_num_violation
 
-    def getEE(self, q):
+    def getEE(self, q, base_frame=False):
         fee = self.kinSymMdls[self.tool_link_name]
         P, rot = fee(q)
         quat = r2q(np.array(rot), order="xyzs")
+        if base_frame:
+            P[:2] -= q[:2]
+            Rwb = rotz(q[2])
+            P = Rwb.T @ P
+
 
         return P.toarray().flatten(), quat
 

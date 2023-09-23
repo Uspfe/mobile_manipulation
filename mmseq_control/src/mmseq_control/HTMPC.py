@@ -208,7 +208,7 @@ class HTMPCSQP(MPC):
         self.step_size = np.zeros((self.params["HT_MaxIntvl"], task_num, self.params["ST_MaxIntvl"]))
         self.solver_status = np.zeros_like(self.step_size)
 
-        self.tol_schedule = np.linspace(0.01, 0.01, self.params["HT_MaxIntvl"])
+        self.tol_schedule = np.linspace(self.params["hierarchy_const_tol"], self.params["hierarchy_const_tol"], self.params["HT_MaxIntvl"])
 
         for i in range(self.params["HT_MaxIntvl"]):
             e_bars = []

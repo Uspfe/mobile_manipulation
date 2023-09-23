@@ -215,6 +215,23 @@ class EEPos3BaseFrameCostFunction(TrackingCostFunction):
         cost_params["P"] = np.eye(nr) * params["P"]
         super().__init__(dt, nx, nu, N, nr, f_fcn, cost_params)
 
+class ArmJointCostFunction(TrackingCostFunction):
+    def __init__(self, dt, N, robot_mdl, params):
+        self.name = "ArmJoint"
+
+        ss_mdl = robot_mdl.ssSymMdl
+        nx = ss_mdl["nx"]
+        nu = ss_mdl["nu"]
+        nr = 6
+        f_fcn = cs.Function("f_qa", [robot_mdl.x_sym], [robot_mdl.qa_sym])
+        cost_params = {}
+        cost_params["Qk"] = np.eye(nr) * params["Qk"]
+        cost_params["P"] = np.eye(nr) * params["P"]
+
+        super().__init__(dt, nx, nu, N, nr, f_fcn, cost_params)
+
+
+
 class BasePos2CostFunction(TrackingCostFunction):
     def __init__(self, dt, N, robot_mdl, params):
         self.name = "BasePos2"
@@ -224,6 +241,21 @@ class BasePos2CostFunction(TrackingCostFunction):
         nr = 2
         fk_b = robot_mdl.kinSymMdls["base"]
         f_fcn = cs.Function("fb", [robot_mdl.x_sym], [fk_b(robot_mdl.q_sym)[0]])
+        cost_params = {}
+        cost_params["Qk"] = np.eye(nr) * params["Qk"]
+        cost_params["P"] = np.eye(nr) * params["P"]
+
+        super().__init__(dt, nx, nu, N, nr, f_fcn, cost_params)
+
+class BasePose3CostFunction(TrackingCostFunction):
+    def __init__(self, dt, N, robot_mdl, params):
+        self.name = "BasePos2"
+        ss_mdl = robot_mdl.ssSymMdl
+        nx = ss_mdl["nx"]
+        nu = ss_mdl["nu"]
+        nr = 3
+        # fk_b = robot_mdl.kinSymMdls["base"]
+        f_fcn = cs.Function("fb", [robot_mdl.x_sym], [robot_mdl.q_sym[:3]])
         cost_params = {}
         cost_params["Qk"] = np.eye(nr) * params["Qk"]
         cost_params["P"] = np.eye(nr) * params["P"]
