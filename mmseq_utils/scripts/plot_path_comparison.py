@@ -11,6 +11,7 @@ import seaborn as sns
 from matplotlib.colors import LinearSegmentedColormap
 STYLE_PATH = parsing.parse_ros_path({"package": "mmseq_utils", "path":"scripts/plot_style.mplstyle"})
 plt.style.use(STYLE_PATH)
+plt.rcParams['pdf.fonttype'] = 42
 
 
 EE_POS_Target0 = np.array([1.5, -2.0])

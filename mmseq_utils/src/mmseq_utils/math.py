@@ -158,6 +158,12 @@ def wrap_to_2_pi_scalar(theta):
 
     return theta
 
+def wrap_to_2_pi_array(thetas):
+    thetas_wrapped = [wrap_to_2_pi_scalar(theta) for theta in thetas]
+
+    return np.array(thetas_wrapped)
+
+
 def wrap_pi_scalar(theta):
     while np.abs(theta) > np.pi:
         if theta > np.pi:

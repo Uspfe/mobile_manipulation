@@ -16,10 +16,16 @@ from mmseq_utils import math, parsing
 import matplotlib.pyplot as plt
 import matplotlib.lines as mlines
 import matplotlib.patches as mpatches
+import matplotlib.transforms as transforms
 from pandas import DataFrame, concat
+from spatialmath.base import rotz
+
 
 STYLE_PATH = parsing.parse_ros_path({"package": "mmseq_utils", "path":"scripts/plot_style.mplstyle"})
 plt.style.use(STYLE_PATH)
+plt.rcParams['pdf.fonttype'] = 42
+
+
 STATS = [("err_ee", "integral"), ("err_ee", "std"),("err_base_normalized", "integral"),("err_ee", "max"),
          ("err_ee_1", "integral"), ("err_base_normalized_1", "integral"),
          ("err_ee_2", "integral"), ("err_base_normalized_2", "integral"),
@@ -200,15 +206,36 @@ class SquareWaveDataPlotter(DataPlotter):
         colors = prop_cycle.by_key()["color"]
         colors = sns.color_palette()
 
-
         t_sim = self.data["ts"]
         axes.plot(t_sim, self.data["err_base"],
                      label=legend, color=colors[index], linewidth=1.3)
+
         axes.set_ylabel("Base Err (m)", fontsize=FOOTNOTE_SIZE)
         axes.legend(fontsize=FOOTNOTE_SIZE)
         axes.grid('on')
 
+        # axes.annotate("Optimal error",
+        #                  xy=(t_sim[int(N/2)], err_opt_1), xycoords="data",
+        #                  xytext=(0.1, 0.1),
+        #                  va="center", ha="center",
+        #                  bbox=dict(boxstyle="round", fc="w"), fontsize=FOOTNOTE_SIZE)
+
         return axes
+
+    def plot_optimal_error(self, axes=None):
+        if axes is None:
+            f, axes = plt.subplots(1,1)
+        N = np.argwhere(np.linalg.norm(self.data["r_bw_w_ds"] - self.data["r_bw_w_ds"][-10], axis=1) < 1e-3).flatten()[
+            0]
+        err_opt_1 = get_optimal_base_err(self.data["r_bw_w_ds"][0], self.data["r_ew_w_ds"][0])
+        err_opt_2 = 0
+        err_opt_1_array = np.repeat(err_opt_1, N)
+        err_opt_2_array = np.repeat(err_opt_2, len(self.data["ts"]) - N)
+        err_opt = np.hstack((err_opt_1_array, err_opt_2_array))
+
+        t_sim = self.data["ts"]
+        axes.plot(t_sim, err_opt, '--', color=SCARLET, linewidth=1.5, label="optimal error")
+        axes.legend(fontsize=FOOTNOTE_SIZE)
 
     def plot_base_tracking_normalized(self, axes=None, index=0, legend=None):
         if axes is None:
@@ -444,7 +471,8 @@ class BenchmarkDataPlotter():
         for df in dfs:
             df.sort_values(x_var_name, inplace=True)
         df = dfs[0]
-        angle = df[x_var_name]
+        mid = (df[x_var_name][-1] + df[x_var_name][0])/2
+        angle = df[x_var_name] - mid + np.pi/2
         radius = np.linspace(0, 1.5, 5) + 0.5
         R,th = np.meshgrid(radius, angle)
         z = np.vstack([df[y_var_name] for df in dfs]).T
@@ -466,11 +494,11 @@ class BenchmarkDataPlotter():
         plt.plot(angle, R, ls='none')
 
         # Annotation
-        impacted_area = mpatches.Ellipse((-radius[2], -0.14), height=0.5,width=2.5, angle=13,facecolor=(0, 0, 0, .0125), edgecolor=SCARLET,
+        impacted_area = mpatches.Ellipse((0., radius[-1]/2), height=0.5,width=2.5, angle=-90,facecolor=(0, 0, 0, .0125), edgecolor=SCARLET,
                                     transform=ax.transData._b, linewidth=1.3)
         ax.add_patch(impacted_area)
-        ax.annotate("Negatively impacted \nby singularity", xy=(np.pi-0.1, 1.5), xycoords="data",
-                    xytext=(np.pi - 0.3, 3.0),
+        ax.annotate("Negatively impacted \nby singularity", xy=(np.pi/2+0.1, 1.5), xycoords="data",
+                    xytext=(5*np.pi/6 , 3.0),
                     horizontalalignment='center', arrowprops=dict(arrowstyle="->", lw=1.),
                     fontsize=FOOTNOTE_SIZE)
 
@@ -490,7 +518,10 @@ class BenchmarkDataPlotter():
         # Set grid with some transparency
         ax.grid(alpha=0.4)
         if title:
-            ax.set_title(title, fontsize=FOOTNOTE_SIZE)
+            # ax.set_title(title, fontsize=FOOTNOTE_SIZE)
+            ax.text(
+                np.pi / 2, radius[-1]+0.75, title, ha="center", va="center", fontsize=FOOTNOTE_SIZE, fontweight='bold'
+            )
         else:
             ax.set_title(y_var_name)
 
@@ -502,14 +533,14 @@ class BenchmarkDataPlotter():
         # Iterate over types of plastics and add the labels
         for r, name in zip(radius[0::2], df_names):
             ax.text(
-                np.pi/2, r, name, color=colors[-1], ha="center", va="bottom",
+                np.pi/6, r, name, color=colors[-1], ha="center", va="top",
                  bbox=bbox_dict, fontsize=FOOTNOTE_SIZE
             )
 
-        plt.subplots_adjust(top=0.929,
-                            bottom=5.2e-18,
-                            left=0.11,
-                            right=0.877,
+        plt.subplots_adjust(top=1.0,
+                            bottom=0.0,
+                            left=0.15,
+                            right=1.0,
                             hspace=0.2,
                             wspace=0.2)
 
@@ -692,6 +723,10 @@ class BenchmarkDataPlotter():
 
         if ax is None:
             fig, ax = plt.subplots(subplot_kw={'projection': 'polar'}, figsize=(3.5, 2.5))
+            df_sorted = df.sort_values("phi_value", inplace=False)
+
+            mid = ( df_sorted["phi_value"][-1] + df_sorted["phi_value"][0]) / 2
+
         else:
             fig = plt.gca()
 
@@ -709,8 +744,12 @@ class BenchmarkDataPlotter():
         r_bw_b_ds = self.example_plotter.data.get("r_bw_b_ds", [])
         N = np.argwhere(np.linalg.norm(r_bw_b_ds - r_bw_b_ds[-10], axis=1) < 1e-3).flatten()[0]
 
+        R = rotz(-mid+np.pi/2)
+        r_bw_ees = np.hstack((r_bw_ees, np.zeros((r_bw_ees.shape[0], 1))))
+        r_bw_ees = (R @ r_bw_ees.T).T
         line1, = ax.plot(r_bw_ees[:N, 0], r_bw_ees[:N, 1], color=cm(0.4), transform=ax.transData._b, linewidth=1.3, label="Part 1")
         line2, = ax.plot(r_bw_ees[N:, 0], r_bw_ees[N:, 1], color=cm(0.8), transform=ax.transData._b, linewidth=1.3, label="Part 2")
+
         self.add_arrow_to_line2D(ax, line1, arrow_locs=[0.2, 0.4, 0.6, 0.8],
                             arrowstyle='-|>', arrowsize=1, transform=ax.transData._b)
         self.add_arrow_to_line2D(ax, line2, arrow_locs=[0.2, 0.4, 0.6, 0.8],
@@ -726,13 +765,13 @@ class BenchmarkDataPlotter():
         ax.scatter(df.xs("test_13")["phi_value"], df.xs("test_13")["r_value"],
                    facecolors=YELLOW, edgecolors=YELLOW, linewidth=1.5, s=10, marker="*", label="Peak Target")
         ax.annotate("", xy=(phi_peaks[5], r_peaks[5]), xycoords="data",
-                    xytext=(np.pi- 0.5, 3.0),
+                    xytext=(np.pi- 0.8, 3.0),
                     horizontalalignment='center', arrowprops=dict(arrowstyle="->", lw=1.), fontsize=FOOTNOTE_SIZE*scale)
         ax.annotate("", xy=(phi_peaks[3], r_peaks[3]), xycoords="data",
-                    xytext=(np.pi-0.5, 3.0),
+                    xytext=(np.pi-0.8, 3.0),
                     horizontalalignment='center', arrowprops=dict(arrowstyle="->", lw=1.), fontsize=FOOTNOTE_SIZE*scale)
         ax.annotate("Base Targets\n (Peak)", xy=(phi_peaks[8], r_peaks[8]), xycoords="data",
-                    xytext=(np.pi - 0.5, 3.0),
+                    xytext=(np.pi - 0.8, 3.0),
                     horizontalalignment='center', arrowprops=dict(arrowstyle="->", lw=1.), fontsize=FOOTNOTE_SIZE*scale)
 
         # Plot Valley
@@ -741,31 +780,35 @@ class BenchmarkDataPlotter():
         r_valley = np.linalg.norm(base_target_valley)
         ax.scatter(phi_valley, r_valley,
                    facecolors=YELLOW, s=10)
-        ax.annotate("Base Home/\nTarget (Valley)", xy=(phi_valley, r_valley), xycoords="data", xytext=(np.pi, r_valley*0.8),
+        ax.annotate("Base Home/\nTarget (Valley)", xy=(phi_valley, r_valley), xycoords="data", xytext=(np.pi, r_valley*0.7),
                     horizontalalignment='center', fontsize=FOOTNOTE_SIZE*scale)
 
 
         # Plot EE Target
         ax.scatter(0, 0, facecolors=SCARLET, linewidth=1.5, s=60)
-        ax.annotate("EE Home/Target", xy=(0.0, 0), xycoords="data", xytext=(np.pi/2*3, 0.3), horizontalalignment='center', fontsize=FOOTNOTE_SIZE*scale)
+        ax.annotate("EE Home/Target", xy=(0.0, 0), xycoords="data", xytext=(0, 0.4), horizontalalignment='center', fontsize=FOOTNOTE_SIZE*scale)
 
-        ax.set_xticks((np.arange(12)+1) / 6. * np.pi)
+        ax.set_xticks(math.wrap_to_2_pi_array((np.arange(12)+1) / 6. * np.pi + mid - np.pi/2))
         # ax.set_xticklabels(["","", "90°", "","", "180°", "","","270°", "","","0°"], fontsize=FOOTNOTE_SIZE*scale)
         ax.set_xticklabels([])
         ax.set_yticks([0, 1, 2])
         ax.set_yticklabels(["0 m", "1 m", "2 m"], fontsize=FOOTNOTE_SIZE*scale)
+        ax.set_rlabel_position(135)
         ax.set_frame_on(False)
-        ax.set_title("Random Square Wave Tests", fontsize=FOOTNOTE_SIZE*scale)
-        legend = ax.legend(loc="lower center", ncol=1, bbox_to_anchor=(0.85, 0.1), borderaxespad=0., title="HTMPC Results", fontsize=FOOTNOTE_SIZE*scale)
+        ax.set_title("Random Square Wave Tests", fontsize=FOOTNOTE_SIZE*scale, fontweight="bold")
+        legend = ax.legend(loc="upper center", ncol=1, bbox_to_anchor=(-0.1, 0.9), borderaxespad=0., title="HTMPC Results", fontsize=FOOTNOTE_SIZE*scale)
         plt.setp(legend.get_title(), fontsize=FOOTNOTE_SIZE*scale)
         ax.grid(alpha=0.4)
         ax.set_aspect('equal')
         ax.set_rmax(2.5)
 
+
         plt.subplots_adjust(top=0.929,
                             bottom=5.2e-18,
                             hspace=0.2,
                             wspace=0.2)
+        ax.set_theta_zero_location(loc="E", offset=(-mid + np.pi / 2) / np.pi * 180)
+
         return ax, fig
 
 
@@ -819,7 +862,7 @@ def tracking(folder_path):
     for pid, plotter in enumerate(plotters):
         axes = plotter.plot_task_performance(axes=axes, index=pid)
 
-    fig, axes = plt.subplots(2, 1, sharex=True, figsize=(3.5, 2.5))
+    fig, axes = plt.subplots(2, 1, sharex=True, figsize=(3.5, 2.2))
     shade_region = []
     for pid, plotter in enumerate(plotters):
         plotter.plot_base_tracking(axes[0], pid)
@@ -828,6 +871,7 @@ def tracking(folder_path):
         index = np.where(plotter.data["arm_manipulability"] < 0.1)
         shade_region.append([plotter.data["ts"][index][0], plotter.data["ts"][index][-1]])
 
+    plotters[0].plot_optimal_error(axes[0])
 
     axes[0].tick_params(axis='both', labelsize=FOOTNOTE_SIZE)
     axes[1].tick_params(axis='both', labelsize=FOOTNOTE_SIZE)
@@ -874,8 +918,8 @@ def tracking(folder_path):
                             xy=(np.mean([shade_start, shade_end]), 0.5), xycoords="data",
                             va="center", ha="center",
                             bbox=dict(boxstyle="round", fc="w"), fontsize=FOOTNOTE_SIZE)
-    plt.subplots_adjust(top=0.94,
-                        bottom=0.143,
+    plt.subplots_adjust(top=0.97,
+                        bottom=0.168,
                         left=0.135,
                         right=0.977,
                         hspace=0.222,

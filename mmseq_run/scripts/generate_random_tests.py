@@ -54,28 +54,35 @@ def generate_waypoint_tasks(args):
     save_configs(configs, args.folder)
 
 
-def generate_squarewave_tasks(args):
-    random.seed(args.seed)
-    num_case = args.number
+def generate_squarewave_tasks(seed, num_case, folder=None, grid=False):
+    random.seed(seed)
     configs = []
     base_peaks = []
-
+    theta_grid = np.linspace(-1.6, 1.6, num_case) + np.pi
     for i in range(num_case):
         planner_config = {"sot_type": "SoTStatic"}
         ee_task_config = EESimplePlanner.getDefaultParams()
         base_task_config = BasePosTrajectorySqaureWave.getDefaultParams()
 
-        while True:
-            rbase = random.rand() * 0.25 + 0.25 + REACHABLE_RADIUS
-            theta = random.rand() * np.pi * 2
+        if grid:
+            rbase = 0.25 + REACHABLE_RADIUS
+            theta = theta_grid[i]
 
             base_target_pos = np.array([rbase * np.cos(theta),
-                               rbase * np.sin(theta)])
+                                        rbase * np.sin(theta)])
             base_target_pos += EE_POS_HOME[:2]
+        else:
+            while True:
+                rbase = random.rand() * 0.25 + 0.25 + REACHABLE_RADIUS
+                theta = random.rand() * np.pi * 2
 
-            # base waypoint can't be too far since HTIDKC tend to violate acceleration constraints
-            if np.linalg.norm(base_target_pos) < 3:
-                break
+                base_target_pos = np.array([rbase * np.cos(theta),
+                                   rbase * np.sin(theta)])
+                base_target_pos += EE_POS_HOME[:2]
+
+                # base waypoint can't be too far since HTIDKC tend to violate acceleration constraints
+                if np.linalg.norm(base_target_pos) < 3:
+                    break
         base_task_config["frame_id"] = "base"
         base_task_config["peak_pos"] = [float(x) for x in base_target_pos]
         base_task_config["period"] = 16
@@ -85,10 +92,16 @@ def generate_squarewave_tasks(args):
 
         configs.append({"planner": planner_config})
         base_peaks.append(base_target_pos)
+        print("Test {} Base {}".format(i, base_target_pos))
 
-    save_configs(configs, os.path.join(args.folder, "test_cases"))
+    if folder:
+        save_configs(configs, os.path.join(folder, "test_cases"))
     base_peaks = np.array(base_peaks)
 
+    return base_peaks
+
+
+def plot_square_wave(base_peaks):
     f = plt.figure()
     ax = plt.gca()
     plt.plot(base_peaks[:, 0], base_peaks[:, 1], 'o', markersize=5, label="Base Target (Peak)")
@@ -104,6 +117,48 @@ def generate_squarewave_tasks(args):
     plt.show()
 
 
+def generate_squarewave_tasks_wpt(args):
+    random.seed(args.seed)
+    num_case = args.number
+    configs = []
+    base_peaks = []
+    theta_grid = np.linspace(-1.6, 1.6, num_case) + np.pi
+
+    for i in range(num_case):
+        planner_config = {"sot_type": "SoTTimed", "task_switching_time": [8]}
+        ee_task_config = EESimplePlanner.getDefaultParams()
+        base_task_config = BaseSingleWaypoint.getDefaultParams()
+        if args.grid:
+            rbase = 0.25 + REACHABLE_RADIUS
+            theta = theta_grid[i]
+
+            base_target_pos = np.array([rbase * np.cos(theta),
+                                        rbase * np.sin(theta)])
+            base_target_pos += EE_POS_HOME[:2]
+        else:
+            while True:
+                rbase = random.rand() * 0.25 + 0.25 + REACHABLE_RADIUS
+                theta = random.rand() * np.pi * 2
+
+                base_target_pos = np.array([rbase * np.cos(theta),
+                                   rbase * np.sin(theta)])
+                base_target_pos += EE_POS_HOME[:2]
+
+                # base waypoint can't be too far since HTIDKC tend to violate acceleration constraints
+                if np.linalg.norm(base_target_pos) < 3:
+                    break
+        base_task_config["frame_id"] = "base"
+        base_task_config["target_pos"] = [float(x) for x in base_target_pos]
+
+        planner_config["tasks"] = [ee_task_config, base_task_config, BaseSingleWaypoint.getDefaultParams()]
+
+        configs.append({"planner": planner_config})
+        base_peaks.append(base_target_pos)
+
+    save_configs(configs, os.path.join(args.folder, "test_cases"))
+    base_peaks = np.array(base_peaks)
+
+    return base_peaks
 
 
 
@@ -114,9 +169,15 @@ if __name__ == "__main__":
     parser.add_argument('-s', "--seed", type=int, default=0, help="Seed number.")
     parser.add_argument("--waypoint", action="store_true", help="Generate hierarchical waypoint tasks")
     parser.add_argument("--squarewave", action="store_true", help="Generate hierarchical waypoint tasks")
+    parser.add_argument("--squarewavewpt", action="store_true", help="Generate hierarchical waypoint tasks")
+    parser.add_argument("--grid", action="store_true", help="Generate hierarchical waypoint tasks (Grid sampling)")
 
     args = parser.parse_args()
     if args.waypoint:
         generate_waypoint_tasks(args)
     elif args.squarewave:
-        generate_squarewave_tasks(args)
+        base_peaks = generate_squarewave_tasks(args.seed, args.number, args.folder, args.grid)
+        plot_square_wave(base_peaks)
+    elif args.squarewavewpt:
+        base_peaks = generate_squarewave_tasks_wpt(args)
+        plot_square_wave(base_peaks)

@@ -25,3 +25,8 @@ do
   roslaunch mmseq_run simple_demo_sim.launch config:="$path_to_folder""/base.yaml" ctrl_config:=$(rospack find mmseq_run)/config/controller/"$controller_type".yaml planner_config:="${test_files[$i]}" use_mpc:="$use_mpc" logging_sub_folder:="test_$i/$controller_type"
 done
 
+#for i in "${!test_files[@]}"
+#do
+#  roslaunch mmseq_run simple_demo_sim.launch config:="$path_to_folder""/base.yaml" ctrl_config:="${test_files[$i]}" use_mpc:="$use_mpc" logging_sub_folder:="test_$i"
+#done
+#

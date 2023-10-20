@@ -16,10 +16,12 @@ from geometry_msgs.msg import Point, Transform, Twist
 from trajectory_msgs.msg import MultiDOFJointTrajectory, MultiDOFJointTrajectoryPoint
 
 import mmseq_control.HTMPC as HTMPC
+import mmseq_control.STMPC as STMPC
 from mmseq_control.robot import MobileManipulator3D
 import mmseq_plan.TaskManager as TaskManager
 from mmseq_utils import parsing
 from mmseq_utils.logging import DataLogger
+from mmseq_utils.math import wrap_pi_scalar, wrap_to_2_pi_scalar
 from mobile_manipulation_central.ros_interface import MobileManipulatorROSInterface, ViconObjectInterface, ViconMarkerSwarmInterface, JoystickButtonInterface
 from mobile_manipulation_central import PointToPointTrajectory, bound_array
 
@@ -60,6 +62,8 @@ class ControllerROSNode:
 
         # controller
         control_class = getattr(HTMPC, self.ctrl_config["type"], None)
+        if control_class is None:
+            control_class = getattr(STMPC, self.ctrl_config["type"], None)
         self.controller = control_class(self.ctrl_config)
 
         self.ctrl_rate = self.ctrl_config["ctrl_rate"]
@@ -79,7 +83,7 @@ class ControllerROSNode:
 
         # TODO: How to organize logger for decentralized settings
         # init logger
-        self.logger = DataLogger(config)
+        self.logger = DataLogger(config.copy())
 
         self.logger.add("sim_timestep", config["simulation"]["timestep"])
         self.logger.add("duration", config["simulation"]["duration"])
@@ -95,7 +99,7 @@ class ControllerROSNode:
         if self.planner_config["sot_type"] == "SoTSequentialTasks":
             self.vicon_marker_swarm_interface = ViconMarkerSwarmInterface(self.planner_config["vicon_mark_swarm_estimation_topic_name"])
 
-        self.start_end_button_interface = JoystickButtonInterface(3)    # square
+        self.start_end_button_interface = JoystickButtonInterface(2)    # square
 
         if self.planner_config.get("use_joy", False):
             self.use_joy = True
@@ -105,6 +109,8 @@ class ControllerROSNode:
 
         self.controller_visualization_pub = rospy.Publisher("controller_visualization", Marker, queue_size=10)
         self.plan_visualization_pub = rospy.Publisher("plan_visualization", Marker, queue_size=10)
+        self.current_plan_visualization_pub = rospy.Publisher("current_plan_visualization", Marker, queue_size=10)
+
         self.tracking_point_pub = rospy.Publisher("controller_tracking_pt", MultiDOFJointTrajectory, queue_size=5)
 
         # publish mpc predicted input trajectory at a higher rate
@@ -228,6 +234,28 @@ class ControllerROSNode:
             marker_plan.lifetime = rospy.Duration.from_sec(0.1)
             self.plan_visualization_pub.publish(marker_plan)
 
+        curr_planners = self.sot.getPlanners(2)
+        colors = [[1,0,0],[0,1,0]]
+        for pid, planner in enumerate(curr_planners):
+            if planner.ref_type == "waypoint":
+                if planner.ref_data_type == "Vec3":
+                    marker_plan = self._make_marker(Marker.SPHERE, pid, rgba=colors[pid]+[1], scale=[0.1, 0.1, 0.1])
+                    marker_plan.pose.position = Point(*planner.target_pos)
+                elif planner.ref_data_type == "Vec2":
+                    marker_plan = self._make_marker(Marker.CYLINDER, pid, rgba=colors[pid]+ [1], scale=[0.1, 0.1, 0.5])
+                    marker_plan.pose.position = Point(*planner.target_pos, 0.25)
+            elif planner.ref_type == "trajectory":
+                marker_plan = self._make_marker(Marker.LINE_STRIP, pid, rgba=colors[pid]+ [1], scale=[0.1, 0.1, 0.1])
+
+                if planner.ref_data_type == "Vec3":
+                    marker_plan.points = [Point(*pt) for pt in planner.plan['p']]
+                elif planner.ref_data_type == "Vec2":
+                    marker_plan.points = [Point(*pt, 0) for pt in planner.plan['p']]
+
+            marker_plan.lifetime = rospy.Duration.from_sec(0.1)
+            self.current_plan_visualization_pub.publish(marker_plan)
+
+
         self.sot_lock.release()
 
     def _publish_mpc_data(self, controller):
@@ -316,6 +344,7 @@ class ControllerROSNode:
 
             self.start_end_button_interface.reset_button()
         else:
+            # print("Continue")
             input("----- Press Enter to start -----")
 
         # rospy.sleep(5.)
@@ -324,13 +353,15 @@ class ControllerROSNode:
         t0 = t
         self.sot.started = True
 
+        # sot_num_plans = 1 if self.ctrl_config["type"][:2] == "ST" else 2
+        sot_num_plans = 2
         while not self.ctrl_c:
             t = rospy.Time.now().to_sec()
 
             # open-loop command
             robot_states = (self.robot_interface.q, self.robot_interface.v)
             self.sot_lock.acquire()
-            planners = self.sot.getPlanners(num_planners=2)
+            planners = self.sot.getPlanners(num_planners=sot_num_plans)
             self.sot_lock.release()
 
             tc1 = time.perf_counter()
@@ -403,19 +434,26 @@ class ControllerROSNode:
         self.cmd_vel_timer.shutdown()
         self.mpc_plan = None
 
-        self.go_home()
+        # self.go_home()
 
     def go_home(self):
         rate = rospy.Rate(125)
+        q = self.robot_interface.q
+        q[2] = wrap_pi_scalar(q[2])
+        print(q)
 
         trajectory = PointToPointTrajectory.quintic(
-            self.robot_interface.q, self.home, max_vel=0.2, max_acc=1, min_duration=1
+            q, self.home, max_vel=0.2, max_acc=1, min_duration=1
         )
 
         # use P control + feedforward velocity to track the trajectory
         while not rospy.is_shutdown():
+            q = self.robot_interface.q
+            q[2] = wrap_pi_scalar(q[2])
+
             t = rospy.Time.now().to_sec()
-            dist = np.linalg.norm(self.home - self.robot_interface.q)
+
+            dist = np.linalg.norm(self.home - q)
 
             # we want to both let the trajectory complete and ensure we've
             # converged properly
@@ -423,7 +461,7 @@ class ControllerROSNode:
                 break
 
             qd, vd, _ = trajectory.sample(t)
-            cmd_vel = (qd - self.robot_interface.q) + vd
+            cmd_vel = (qd - q) + vd
 
             # this shouldn't be needed unless the trajectory is poorly tracked, but
             # we do it just in case for safety

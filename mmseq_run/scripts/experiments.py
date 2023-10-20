@@ -10,6 +10,7 @@ from spatialmath.base import rotz
 
 import mmseq_control.HTMPC as HTMPC
 import mmseq_control.HTIDKC as HTIDKC
+import mmseq_control.STMPC as STMPC
 import mmseq_plan.TaskManager as TaskManager
 from mmseq_simulator import simulation
 from mmseq_utils import parsing
@@ -83,6 +84,8 @@ def main():
     control_class = getattr(HTMPC, ctrl_config["type"], None)
     if control_class is None:
         control_class = getattr(HTIDKC, ctrl_config["type"], None)
+    if control_class is None:
+        control_class = getattr(STMPC, ctrl_config["type"], None)
     controller = control_class(ctrl_config)
 
     # Stack of Tasks
@@ -137,8 +140,17 @@ def main():
         t, _ = sim.step(t, step_robot=False)
         ee_curr_pos, ee_cur_orn = robot.link_pose()
         base_curr_pos, _ = robot.link_pose(-1)
-        states = {"base": robot_states[0][:3],
-                  "EE": (ee_curr_pos, ee_cur_orn)}
+        ee_states = (ee_curr_pos, ee_cur_orn)
+        states = {"base": (robot_states[0][:3], robot_states[1][:3]), "EE": ee_states}
+
+        if sot.__class__.__name__ == "SoTSequentialTasks":
+            if t > 12 and t < 12.2:
+                human_pos = np.array([[-3, -3, 0.8],
+                                      [-3, 3, 0.8],
+                                      [3, -0, 1.0]])
+                # self.sot.update_planner(self.vicon_marker_swarm_interface.position, states)
+                sot.update_planner(human_pos, states)
+
         sot.update(t, states)
 
         # log

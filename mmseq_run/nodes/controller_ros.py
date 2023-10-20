@@ -134,9 +134,10 @@ class ControllerROSNode:
             print("planner target:{}".format(planner.getTrackingPoint(0)))
 
         input("Press Enter to continue...")
+        # rospy.sleep(5)
         t = rospy.Time.now().to_sec()
         t0 = t
-        while not self.ctrl_c:
+        while not self.ctrl_c and t - t0 < 16:
             t = rospy.Time.now().to_sec()
 
             # open-loop command
@@ -156,8 +157,7 @@ class ControllerROSNode:
                 ee_states = (self.vicon_tool_interface.position, self.vicon_tool_interface.orientation)
             else:
                 ee_states = self.robot.getEE(robot_states[0])
-            states = {"base": robot_states[0][:3], "EE": ee_states}
-
+            states = {"base": (robot_states[0][:3], robot_states[1][:3]), "EE": ee_states}
             self.sot_lock.acquire()
             self.sot.update(t-t0, states)
             self.sot_lock.release()

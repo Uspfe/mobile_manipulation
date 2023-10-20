@@ -1217,10 +1217,10 @@ class DataPlotter:
         self.plot_collision()
 
     def plot_tracking(self):
-        self.plot_ee_position()
-        self.plot_base_position()
+        # self.plot_ee_position()
+        # self.plot_base_position()
         self.plot_tracking_err()
-        self.plot_cmd_vs_real_vel()
+        # self.plot_cmd_vs_real_vel()
         self.plot_task_performance()
         self.plot_task_violation()
 
