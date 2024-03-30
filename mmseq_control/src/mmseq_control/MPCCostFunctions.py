@@ -340,7 +340,7 @@ class ControlEffortCostFunciton(LinearLeastSquare):
         return super().quad(x_bar, u_bar, *[np.zeros(self.QPsize)])
 
 class SoftConstraintsRBFCostFunction(CostFunctions):
-    def __init__(self, mu, zeta, cst_obj, name="SoftConstraint"):
+    def __init__(self, mu, zeta, cst_obj, name="SoftConstraint", expand=True):
         super().__init__(cst_obj.dt, cst_obj.nx, cst_obj.nu, cst_obj.N)
 
         self.name = name
@@ -364,13 +364,20 @@ class SoftConstraintsRBFCostFunction(CostFunctions):
         ddBddh_eqn = cs.diag(cs.vertcat(*ddBddh_eqn_list))
         self.hess_approx_eqn = self.dhdz_eqn.T @ ddBddh_eqn @ self.dhdz_eqn
 
-        self.h_fcn = cs.Function("h_"+self.name, [self.x_bar_sym, self.u_bar_sym, *self.params_sym], [self.h_eqn]).expand()
-        self.J_fcn = cs.Function("J_" + self.name, [self.x_bar_sym, self.u_bar_sym, *self.params_sym, self.s_sym], [self.J_eqn]).expand()
-        self.hess_fcn = cs.Function("ddJddz_"+self.name, [self.z_bar_sym, *self.params_sym, self.s_sym], [self.hess_eqn]).expand()
+        self.h_fcn = cs.Function("h_"+self.name, [self.x_bar_sym, self.u_bar_sym, *self.params_sym], [self.h_eqn])
+        self.J_fcn = cs.Function("J_" + self.name, [self.x_bar_sym, self.u_bar_sym, *self.params_sym, self.s_sym], [self.J_eqn])
+        self.hess_fcn = cs.Function("ddJddz_"+self.name, [self.z_bar_sym, *self.params_sym, self.s_sym], [self.hess_eqn])
         self.hess_approx_fcn = cs.Function("ddJddz_approx_" + self.name, [self.z_bar_sym, *self.params_sym, self.s_sym],
-                                    [self.hess_approx_eqn]).expand()
+                                    [self.hess_approx_eqn])
         self.grad_fcn = cs.Function("dJdz_" + self.name, [self.z_bar_sym, *self.params_sym, self.s_sym],
-                                    [self.grad_eqn]).expand()
+                                    [self.grad_eqn])
+        
+        if expand:
+            self.h_fcn = self.h_fcn.expand()
+            self.J_fcn = self.J_fcn.expand()
+            self.hess_fcn = self.hess_fcn.expand()
+            self.hess_approx_fcn = self.hess_approx_fcn.expand()
+            self.grad_fcn = self.grad_fcn.expand()
 
     def evaluate(self, x_bar, u_bar, *params):
         s = self.h_fcn(x_bar.T, u_bar.T, *params) < self.zeta

@@ -64,10 +64,18 @@ class MPC():
         self.eeUpwardCst = EEUpwardConstraint(self.robot, self.params["ee_upward_deviation_angle_max"], self.dt, self.N)
 
         self.xuSoftCst = SoftConstraintsRBFCostFunction(self.params["xu_soft"]["mu"], self.params["xu_soft"]["zeta"], self.xuCst, "xuSoftCst")
-        self.collisionSoftCsts = {name: SoftConstraintsRBFCostFunction(self.params["collision_soft"]["mu"],
-                                                                       self.params["collision_soft"]["zeta"],
-                                                                       sd_cst, name+"CollisionSoftCst")
-                                                                       for name, sd_cst in self.collisionCsts.items()}
+        # self.collisionSoftCsts = {name: SoftConstraintsRBFCostFunction(self.params["collision_soft"]["mu"],
+        #                                                                self.params["collision_soft"]["zeta"],
+        #                                                                sd_cst, name+"CollisionSoftCst")
+        #                                                                for name, sd_cst in self.collisionCsts.items()}
+        self.collisionSoftCsts = {}
+        for name,sd_cst in self.collisionCsts.items():
+            expand = True if name !="sdf" else False
+            self.collisionSoftCsts[name] = SoftConstraintsRBFCostFunction(self.params["collision_soft"]["mu"],
+                                                                          self.params["collision_soft"]["zeta"],
+                                                                          sd_cst, name+"CollisionSoftCst",
+                                                                          expand=expand)
+            
         self.eeUpwardSoftCst = SoftConstraintsRBFCostFunction(self.params["ee_upward_soft"]["mu"],
                                                               self.params["ee_upward_soft"]["zeta"],
                                                               self.eeUpwardCst, "eeUpwardSoftCst")
