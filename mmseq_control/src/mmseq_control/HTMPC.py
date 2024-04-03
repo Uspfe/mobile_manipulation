@@ -58,7 +58,7 @@ class MPC():
         for name in self.collision_link_names:
             sd_fcn = self.model_interface.getSignedDistanceSymMdls(name)
             sd_cst = SignedDistanceCollisionConstraint(self.robot, sd_fcn, self.dt, self.N,
-                                                       self.params["collision_safety_margin"], name)
+                                                       self.params["collision_safety_margin"][name], name)
             self.collisionCsts[name] = sd_cst
 
         self.eeUpwardCst = EEUpwardConstraint(self.robot, self.params["ee_upward_deviation_angle_max"], self.dt, self.N)
@@ -71,8 +71,8 @@ class MPC():
         self.collisionSoftCsts = {}
         for name,sd_cst in self.collisionCsts.items():
             expand = True if name !="sdf" else False
-            self.collisionSoftCsts[name] = SoftConstraintsRBFCostFunction(self.params["collision_soft"]["mu"],
-                                                                          self.params["collision_soft"]["zeta"],
+            self.collisionSoftCsts[name] = SoftConstraintsRBFCostFunction(self.params["collision_soft"][name]["mu"],
+                                                                          self.params["collision_soft"][name]["zeta"],
                                                                           sd_cst, name+"CollisionSoftCst",
                                                                           expand=expand)
             

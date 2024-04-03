@@ -19,16 +19,21 @@ controller:
   cst_tol_schedule_enabled: False
   hierarchy_const_tol: 0.01
 
-  collision_safety_margin: 0.05
   ee_upward_deviation_angle_max: 0.20    #rad, 0.26 rad ~ 15 degree
-
+  collision_safety_margin:
+    self: 0.05
+    sdf: 0.15
   # soft constraints parameters
   xu_soft:
     mu: 0.001
     zeta: 0.005
   collision_soft:
-    mu: 0.0001
-    zeta: 0.005
+    self:
+      mu: 0.0001
+      zeta: 0.005
+    sdf:
+      mu: 0.0001
+      zeta: 0.005
   ee_upward_soft:
     mu: 0.001
     zeta: 0.01
