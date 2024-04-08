@@ -2,6 +2,8 @@ controller:
   # HT-MPC Solver Type, lex vs SQP
   type: "HTMPCSQP"
 
+  # Signed Distance Field Type, SDF3D vs SDF2D
+  sdf_type: "SDF3D"
   # MPC params
   dt: 0.1
   prediction_horizon: 1.0

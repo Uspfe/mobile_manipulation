@@ -13,7 +13,7 @@ import hppfcl as fcl
 from spatialmath.base import r2q, rotz, q2r
 
 # from liegroups import SO3
-from mmseq_control.map import SDF2D
+import mmseq_control.map as map
 from mmseq_utils import parsing
 from mmseq_simulator import simulation
 from mobile_manipulation_central.kinematics import RobotKinematics
@@ -175,8 +175,13 @@ class CasadiModelInterface:
         self.scene = Scene(config)  
         self.pinocchio_interface = PinocchioInterface(config)
         #TODO: set robot init pose
-        self.sdf_map = SDF2D()          
-        self.sdf_map_SymMdl = CBF('sdf', self.sdf_map)
+        sdf_class = getattr(map, config["sdf_type"], None)
+        if sdf_class is None:
+            sdf_class = getattr(map, "SDF2D", None)
+            print(f"sdf_type {config['sdf_type']} can not be found. Using SDF2D instead.")
+
+        self.sdf_map = sdf_class()          
+        self.sdf_map_SymMdl = CBF('sdf', self.sdf_map, self.sdf_map.dim)
 
         self.collision_pairs = {"self": [],
                                 "static_obstacles": {},
@@ -238,8 +243,15 @@ class CasadiModelInterface:
                                                                             self.robot.collision_link_names["forearm"] +
                                                                             self.robot.collision_link_names["upper_arm"])
         
-        self.collision_pairs["sdf"] = self._addCollisionPairFromTwoGroups(["map"],
-                                                                          self.robot.collision_link_names["base"])
+        if self.sdf_map.dim == 2:
+            self.collision_pairs["sdf"] = self._addCollisionPairFromTwoGroups(["map"],
+                                                                              self.robot.collision_link_names["base"])
+        elif self.sdf_map.dim ==3:
+            self.collision_pairs["sdf"] = self._addCollisionPairFromTwoGroups(["map"],
+                                                                              self.robot.collision_link_names["base"] +
+                                                                              self.robot.collision_link_names["wrist"] +
+                                                                              self.robot.collision_link_names["forearm"] +
+                                                                              self.robot.collision_link_names["upper_arm"])
 
     def _setupSelfCollisionSymMdl(self):
         sd_syms = []
@@ -285,7 +297,11 @@ class CasadiModelInterface:
                 continue
 
             pt_sym = self.robot.collisionLinkKinSymMdls[pair[1]](self.robot.q_sym)
-            sd_sym = self.sdf_map_SymMdl(pt_sym[0][:2]) - o.geometry.radius
+            if self.sdf_map.dim == 2:
+                sd_sym = self.sdf_map_SymMdl(pt_sym[0][:2]) - o.geometry.radius 
+            else:
+                sd_sym = self.sdf_map_SymMdl(pt_sym[0]) - o.geometry.radius 
+
             sd_syms.append(sd_sym)
             sd_fcn = cs.Function("sd_" + pair[0] + "_" + pair[1], [self.robot.q_sym], [sd_sym])
             self.signedDistanceSymMdls[tuple(pair)] = sd_fcn
@@ -848,10 +864,11 @@ if __name__ == "__main__":
         help="Record video. Optionally specify prefix for video directory.",
     )
     args = parser.parse_args()
-    test_robot_mdl(args)
+    # test_robot_mdl(args)
     # test_obstacle_mdl(args)
     # test_pinocchio_interface(args)
-    # test_casadi_interface(args)
+    args.config = "/home/tracy/Projects/mm_slam/mm_ws/src/mm_sequential_tasks/mmseq_run/config/simple_experiment.yaml"
+    test_casadi_interface(args)
     # check_maximum_reach(args)
 
             

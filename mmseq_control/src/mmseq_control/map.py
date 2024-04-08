@@ -13,6 +13,7 @@ class SDF2D:
         self.mutex = threading.Lock()
         self.map = None
         self.valid = True
+        self.dim = 2
         self.init_robot_pose = init_pose
         self.inv_init_robot_pose = np.linalg.inv(init_pose)
 
@@ -134,6 +135,7 @@ class SDF3D:
         self.mutex = threading.Lock()
         self.valid = False
         self.map = None
+        self.dim = 3
         self.init_robot_pose = init_pose
         self.inv_init_robot_pose = np.linalg.inv(init_pose)
 
