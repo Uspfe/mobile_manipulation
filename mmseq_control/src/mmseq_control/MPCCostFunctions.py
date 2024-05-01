@@ -6,7 +6,7 @@ from scipy.linalg import block_diag
 import casadi as cs
 from mmseq_control.robot import MobileManipulator3D
 
-class RBF:
+class RBFOld:
     mu_sym = cs.MX.sym('mu')
     zeta_sym = cs.MX.sym('zeta')
     h_sym = cs.MX.sym('h')
@@ -20,6 +20,21 @@ class RBF:
     B_hess_eqn, B_grad_eqn = cs.hessian(B_eqn, h_sym)
     B_hess_fcn = cs.Function("ddBddh_fcn", [s_sym, h_sym, mu_sym, zeta_sym], [B_hess_eqn])
     B_grad_fcn = cs.Function("dBdh_fcn", [s_sym, h_sym, mu_sym, zeta_sym], [B_grad_eqn])
+
+class RBF:
+    mu_sym = cs.MX.sym('mu')
+    zeta_sym = cs.MX.sym('zeta')
+    h_sym = cs.MX.sym('h')
+
+    B_eqn_list = [-mu_sym * cs.log(h_sym),
+                  mu_sym * (0.5 * (((h_sym - 2 * zeta_sym) / zeta_sym) ** 2 - 1) - cs.log(zeta_sym))]
+    s_eqn = h_sym < zeta_sym
+    B_eqn = cs.conditional(s_eqn, B_eqn_list, 0, False)
+    B_fcn = cs.Function("B_fcn", [h_sym, mu_sym, zeta_sym], [B_eqn])
+
+    B_hess_eqn, B_grad_eqn = cs.hessian(B_eqn, h_sym)
+    B_hess_fcn = cs.Function("ddBddh_fcn", [h_sym, mu_sym, zeta_sym], [B_hess_eqn])
+    B_grad_fcn = cs.Function("dBdh_fcn", [h_sym, mu_sym, zeta_sym], [B_grad_eqn])
 
 class CostFunctions(ABC):
     def __init__(self, dt, nx, nu, N, name="TBD"):
@@ -347,23 +362,22 @@ class SoftConstraintsRBFCostFunction(CostFunctions):
         self.h_eqn = -cst_obj.g_fcn(self.x_bar_sym, self.u_bar_sym, *self.params_sym)
         self.dhdz_eqn = -cst_obj.grad_fcn(self.z_bar_sym, *self.params_sym)
         self.nh = self.h_eqn.shape[0]
-        self.s_sym = cs.MX.sym("s_"+self.name, self.nh)
 
-        J_eqn_list = [RBF.B_fcn(self.s_sym[k], self.h_eqn[k], self.mu, self.zeta) for k in range(self.nh)]
+        J_eqn_list = [RBF.B_fcn(self.h_eqn[k], self.mu, self.zeta) for k in range(self.nh)]
         self.J_eqn = sum(J_eqn_list)
         self.J_vec_eqn = cs.vertcat(*J_eqn_list)
         self.hess_eqn, self.grad_eqn = cs.hessian(self.J_eqn, self.z_bar_sym)
-        ddBddh_eqn_list = [RBF.B_hess_fcn(self.s_sym[k], self.h_eqn[k], self.mu, self.zeta) for k in range(self.nh)]
+        ddBddh_eqn_list = [RBF.B_hess_fcn(self.h_eqn[k], self.mu, self.zeta) for k in range(self.nh)]
         ddBddh_eqn = cs.diag(cs.vertcat(*ddBddh_eqn_list))
         self.hess_approx_eqn = self.dhdz_eqn.T @ ddBddh_eqn @ self.dhdz_eqn
 
         self.h_fcn = cs.Function("h_"+self.name, [self.x_bar_sym, self.u_bar_sym, *self.params_sym], [self.h_eqn])
-        self.J_fcn = cs.Function("J_" + self.name, [self.x_bar_sym, self.u_bar_sym, *self.params_sym, self.s_sym], [self.J_eqn])
-        self.J_vec_fcn = cs.Function("J_vec_" + self.name, [self.x_bar_sym, self.u_bar_sym, *self.params_sym, self.s_sym], [self.J_vec_eqn])
-        self.hess_fcn = cs.Function("ddJddz_"+self.name, [self.z_bar_sym, *self.params_sym, self.s_sym], [self.hess_eqn])
-        self.hess_approx_fcn = cs.Function("ddJddz_approx_" + self.name, [self.z_bar_sym, *self.params_sym, self.s_sym],
+        self.J_fcn = cs.Function("J_" + self.name, [self.x_bar_sym, self.u_bar_sym, *self.params_sym], [self.J_eqn])
+        self.J_vec_fcn = cs.Function("J_vec_" + self.name, [self.x_bar_sym, self.u_bar_sym, *self.params_sym], [self.J_vec_eqn])
+        self.hess_fcn = cs.Function("ddJddz_"+self.name, [self.z_bar_sym, *self.params_sym], [self.hess_eqn])
+        self.hess_approx_fcn = cs.Function("ddJddz_approx_" + self.name, [self.z_bar_sym, *self.params_sym],
                                     [self.hess_approx_eqn])
-        self.grad_fcn = cs.Function("dJdz_" + self.name, [self.z_bar_sym, *self.params_sym, self.s_sym],
+        self.grad_fcn = cs.Function("dJdz_" + self.name, [self.z_bar_sym, *self.params_sym],
                                     [self.grad_eqn])
         
         if expand:
@@ -375,20 +389,15 @@ class SoftConstraintsRBFCostFunction(CostFunctions):
             self.grad_fcn = self.grad_fcn.expand()
 
     def evaluate(self, x_bar, u_bar, *params):
-        s = self.h_fcn(x_bar.T, u_bar.T, *params) < self.zeta
-
-        return self.J_fcn(x_bar.T, u_bar.T, *params, s)
+        return self.J_fcn(x_bar.T, u_bar.T, *params)
     
     def evaluate_vec(self, x_bar, u_bar, *params):
-        s = self.h_fcn(x_bar.T, u_bar.T, *params) < self.zeta
-
-        return self.J_vec_fcn(x_bar.T, u_bar.T, *params, s).toarray().flatten()
+        return self.J_vec_fcn(x_bar.T, u_bar.T, *params).toarray().flatten()
 
     def quad(self, x_bar, u_bar, *params):
-        s = self.h_fcn(x_bar.T, u_bar.T, *params) < self.zeta
         z_bar = np.hstack((x_bar.flatten(), u_bar.flatten()))
-        H = self.hess_approx_fcn(z_bar, *params, s)
-        g = self.grad_fcn(z_bar, *params, s)
+        H = self.hess_approx_fcn(z_bar, *params)
+        g = self.grad_fcn(z_bar, *params)
         return H, g
 
     def get_hess_fcn(self):
