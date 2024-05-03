@@ -53,7 +53,8 @@ class SDF2D:
         vs = [c.r * self.mul for c in tsdf_vals]
 
         self.map = LinearNDInterpolator(pts, vs) # choose LinearNDInterpolator(pts, vs) or CloughTocher2DInterpolator(pts, vs)
-
+        self.map((0,0))
+        
     def vis(self, x_lim, y_lim, block=True):
         Nx = int(1.0/0.1 * (x_lim[1] - x_lim[0]))+1
         Ny = int(1.0/0.1 * (y_lim[1] - y_lim[0]))+1
@@ -182,6 +183,8 @@ class SDF3D:
         #print("min",min(vs))
         self.mutex.acquire(blocking=True)
         self.map = LinearNDInterpolator(pts, vs)
+        self.map((0,0,0))
+
         self.mutex.release()
         
     def create_map(self, tsdf, tsdf_vals):
