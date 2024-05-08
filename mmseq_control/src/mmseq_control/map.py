@@ -46,6 +46,9 @@ class SDF2D:
 
     def set_robot_pose(self, pose):
         pass
+
+    def get_params(self):
+        return []
         
     def create_map(self, tsdf, tsdf_vals):
         pts = np.around(np.array([np.array([p.x,p.y]) for p in tsdf]), 2).reshape((len(tsdf),2))
@@ -176,7 +179,10 @@ class SDF3D:
         self.pose_mutex.acquire(blocking=True)
         self.curr_robot_pose = pose
         self.pose_mutex.release()
-        
+
+    def get_params(self):
+        return []
+    
     def create_map0(self, tsdf, tsdf_vals):
         pts = np.around(np.array([np.array([p.x,p.y,p.z]) for p in tsdf]), 2).reshape((len(tsdf),3))
         vs = [c.r * self.mul for c in tsdf_vals]
@@ -503,3 +509,160 @@ class SDF2DNew:
         yg = np.linspace(min_y, max_y, self.map_size[1])
 
         return xg, yg
+
+class SDF3DNew:
+    def __init__(self, init_pose=np.eye(4)):
+
+        self.dim = 3
+        # self.default_val = config["map"]["default_val"]
+        # self.map_coverage = parsing.parse_array(config["map"]["map_coverage"]) # x,y in m
+        # self.voxel_size = config["map"]["voxel_size"]
+
+        self.default_val = 1.8
+        self.map_coverage = np.array([6,6,0.9]) # x,y,z in m
+        self.voxel_size = 0.1
+        self.map_size = np.ceil(self.map_coverage / self.voxel_size).astype(int)
+        self.mul=10
+        self.init_robot_pose = init_pose
+        self.inv_init_robot_pose = np.linalg.inv(init_pose)
+        self.curr_robot_pose = init_pose
+        print('[map] init robot pose',self.init_robot_pose)
+
+        self.xg_sym = MX.sym("xg", self.map_size[0])
+        self.yg_sym = MX.sym("yg", self.map_size[1])
+        self.zg_sym = MX.sym("zg", self.map_size[2])
+
+        self.v_sym = MX.sym("v", self.map_size[0] * self.map_size[1]*self.map_size[2])
+        self.x_sym = MX.sym("x", self.dim)
+        interp = cs.interpolant("interpol_linear_x", "linear", self.map_size)
+        self.sdf_eqn = interp(self.x_sym, cs.vertcat(self.xg_sym, self.yg_sym, self.zg_sym), self.v_sym)
+        self.sdf_fcn = cs.Function('map', [self.x_sym, self.xg_sym, self.yg_sym, self.zg_sym, self.v_sym], [self.sdf_eqn],
+                                          ["x_query", "x_grid", "y_grid", "z_grid", "value"], ["sd(x)"])
+
+        self.hess_eqn, self.grad_eqn = cs.hessian(self.sdf_eqn, self.x_sym)
+        self.grad_fcn = cs.Function('map_grad', [self.x_sym, self.xg_sym, self.yg_sym, self.zg_sym, self.v_sym], [self.grad_eqn])
+
+        self.xg, self.yg, self.zg = self._get_grid()
+        self.v = np.ones(self.map_size[0]* self.map_size[1]*self.map_size[2]) * self.default_val
+
+    def update_map(self, tsdf, tsdf_vals):
+        if (len(tsdf) > 10):
+
+            self.create_map2(tsdf, tsdf_vals)
+            self.valid = True
+
+    def create_map(self, tsdf, tsdf_vals):
+        pts = np.around(np.array([np.array([p.x,p.y,p.z]) for p in tsdf]), 2).reshape((len(tsdf),3))
+        vs = [c.r * self.mul for c in tsdf_vals]
+
+        map_ir = LinearNDInterpolator(pts, vs) # choose LinearNDInterpolator(pts, vs) or CloughTocher2DInterpolator(pts, vs) ort RegularGridInterpolator?
+        map_ir(0,0,0)
+
+        xg, yg, zg = self._get_grid()
+        X, Y, Z = np.meshgrid(xg, yg, zg, indexing='ij')
+        v = np.nan_to_num(map_ir(X, Y, Z), True, self.default_val)
+        v = v.ravel(order='F')
+
+        # TODO: thread safety?
+        self.xg, self.yg, self.zg, self.v = xg, yg, zg, v
+    
+    def create_map2(self, tsdf, tsdf_vals):
+        pts = np.around(np.array([np.array([p.x,p.y,p.z]) for p in tsdf]), 2).reshape((len(tsdf),3))
+        vs = [c.r * self.mul for c in tsdf_vals]
+
+        self.map_ir = LinearNDInterpolator(pts, vs) # choose LinearNDInterpolator(pts, vs) or CloughTocher2DInterpolator(pts, vs) ort RegularGridInterpolator?
+        self.map_ir(0,0,0)
+
+        # Limit the map to a certain size around the robot
+        max_x = np.around(min(max(pts[:,0]), self.curr_robot_pose[0,3]+self.map_size[0]/2), 2)
+        min_x = np.around(max(min(pts[:,0]), self.curr_robot_pose[0,3]-self.map_size[0]/2), 2)
+        max_y = np.around(min(max(pts[:,1]), self.curr_robot_pose[1,3]+self.map_size[1]/2), 2)
+        min_y = np.around(max(min(pts[:,1]), self.curr_robot_pose[1,3]-self.map_size[1]/2), 2)
+        max_z = max(pts[:,2])
+        min_z = min(pts[:,2])
+
+        xg = np.linspace(min_x, max_x, self.map_size[0])
+        yg = np.linspace(min_y, max_y, self.map_size[1])
+        zg = np.linspace(min_z, max_z, self.map_size[2])
+
+        X, Y, Z = np.meshgrid(xg, yg, zg, indexing='ij')
+        v = np.nan_to_num(self.map_ir(X, Y, Z), True, self.default_val)
+        v = v.ravel(order='F')
+        self.xg, self.yg, self.zg, self.v = xg, yg, zg, v
+
+    
+    def get_params(self):
+        return [self.xg, self.yg, self.zg, self.v]
+
+    def vis(self, x_lim, y_lim, z_lim, block=True):
+        Nx = int(1.0/0.1 * (x_lim[1] - x_lim[0]))+1
+        Ny = int(1.0/0.1 * (y_lim[1] - y_lim[0]))+1
+        Nz = int(1.0/0.1 * (z_lim[1] - z_lim[0]))+1
+
+        dims = ['x', 'y', 'z']
+        labels = ['x (m)', 'y (m)', 'z (m)']
+        lims = np.vstack((x_lim, y_lim, z_lim))
+        data_1d = []
+        shown = []
+        not_shown = 0
+        for i, N in enumerate([Nx, Ny, Nz]):
+            data_1d.append(np.linspace(lims[i][0], lims[i][1], N))
+            if N!=1:
+                shown.append(i)
+            else:
+                not_shown = i
+        if len(shown)!=2:
+            print(f"vis plot 2D data. {len(shown)}D data is given")
+
+        x_idx = shown[0]
+        y_idx = shown[1]
+        X,Y=np.meshgrid(data_1d[x_idx], data_1d[y_idx])
+        Z=np.zeros(X.shape)
+        # This makes the unobserved area free space
+        for i in range(Nx):
+            for j in range(Ny):
+                for k in range(Nz):
+                    val = self.query_val(data_1d[0][i], data_1d[1][j], data_1d[2][k])
+                    temp = [i,j,k]
+                    Z[temp[y_idx]][temp[x_idx]] = val
+                    # print(f" {(data_1d[0][i], data_1d[1][j], data_1d[2][k])} = {val}")
+
+
+        fig, ax = plt.subplots()
+        levels = np.linspace(-1.0, 2.5, int(3.5/0.25)+1)
+
+        cs = ax.contour(X,Y,Z, levels)
+        ax.clabel(cs, levels)   
+        ax.grid()
+        ax.set_title(f"Signed Distance Field sd({dims[x_idx]}, {dims[y_idx]}, {data_1d[not_shown][0]})")   # 0.6 is base collision radius
+        ax.set_xlabel(labels[x_idx])
+        ax.set_ylabel(labels[y_idx])
+        plt.show(block=block)
+
+    def query_val(self, x, y, z):
+        input = np.vstack((x,y,z))
+        val = self.sdf_fcn(input, self.xg, self.yg, self.zg, self.v)
+
+        return val
+    
+    def query_grad(self, x, y, z):
+        return self.grad_fcn(np.vstack((x,y,z)), self.xg, self.yg, self.zg, self.v).toarray()
+
+    def set_robot_pose(self, pose):
+        self.curr_robot_pose = pose
+    
+    def _get_grid(self):
+        # Limit the map to a certain size around the robot
+
+        max_x = np.around(self.curr_robot_pose[0,3]+self.map_coverage[0]/2, 2)
+        min_x = np.around(self.curr_robot_pose[0,3]-self.map_coverage[0]/2, 2)
+        max_y = np.around(self.curr_robot_pose[1,3]+self.map_coverage[1]/2, 2)
+        min_y = np.around(self.curr_robot_pose[1,3]-self.map_coverage[1]/2, 2)
+        min_z = 0
+        max_z = self.map_coverage[2]
+
+        xg = np.linspace(min_x, max_x, self.map_size[0])
+        yg = np.linspace(min_y, max_y, self.map_size[1])
+        zg = np.linspace(min_z, max_z, self.map_size[2])
+
+        return xg, yg, zg
