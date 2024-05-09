@@ -140,6 +140,65 @@ def test_sdf3d():
 
         time.sleep(0.1)
 
+def test_sdf3d_time(config):
+    tsdf_map_interface = MapInterfaceNew(config["controller"])
+    map = SDF3DNew(config["controller"])
+    rate = rospy.Rate(20)
+
+    while not tsdf_map_interface.ready() and not rospy.is_shutdown():
+        rate.sleep()
+
+    while not rospy.is_shutdown():
+        is_map_updated, tsdf = tsdf_map_interface.get_map()
+        if is_map_updated:
+            t0 = time.perf_counter()
+            map.update_map(*tsdf)
+            t1 = time.perf_counter()
+            print(t1-t0)
+        n_item = 100
+
+
+        x = np.random.rand(n_item)*5
+        y = np.random.rand(n_item)*5
+        z = np.random.rand(n_item)*5
+        j = np.random.rand(n_item)
+
+
+        print('------Expected------')
+        # Map Query Array
+        t0 = time.perf_counter()
+        map.query_val(x, y, z)
+        t1 = time.perf_counter()
+        print(f"Map query: {t1-t0}")
+        t0 = time.perf_counter()
+        map.query_grad(x, y, z)
+        t1 = time.perf_counter()
+        print(f"Map grad: {t1-t0}")
+
+        
+
+        print('------Casadi------')
+        input = np.vstack((x,y,z))
+        # CBF Query Array
+        cbf = CBF("cbf", map, n=3)
+        print(cbf)
+        t0 = time.perf_counter()
+        res = cbf(input)
+        t1 = time.perf_counter()
+        print(f"CBF query: {t1-t0}")
+
+        # Try to Parallize
+        input_sym = cs.MX.sym("pts", 3, n_item)
+        output_eqn = [cbf(input_sym[:, i]) for i in range(n_item)]
+        cbf_stack = cs.Function('cbf_stack', [input_sym], [cs.vertcat(*output_eqn)])
+        t0 = time.perf_counter()
+        res = cbf_stack(input)
+        t1 = time.perf_counter()
+        print(f"CBF Stack query: {t1-t0}")
+        
+
+        time.sleep(0.1)
+
 
 
 def test_sdf2d_time(config):
@@ -206,5 +265,5 @@ if __name__ == '__main__':
     
     # test_sdf2d()
     # test_sdf3d()
-    # test_sdf3d_time()
-    test_sdf2d_time(config)
+    test_sdf3d_time(config)
+    # test_sdf2d_time(config)

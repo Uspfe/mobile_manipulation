@@ -48,7 +48,7 @@ include:
   - package: "mmseq_run"
     path: "config/scene/empty.yaml"
   - package: "mmseq_run"
-    path: "config/map/sdf.yaml"
+    path: "config/map/SDF3D.yaml"
 
 logging:
   log_dir: "/home/tracy/Documents/PhD/data/debug"
