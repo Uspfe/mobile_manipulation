@@ -17,6 +17,8 @@ from trajectory_msgs.msg import MultiDOFJointTrajectory, MultiDOFJointTrajectory
 
 import mmseq_control.HTMPC as HTMPC
 import mmseq_control.STMPC as STMPC
+import mmseq_control_new.MPC as MPC
+
 from mmseq_control.robot import MobileManipulator3D
 import mmseq_plan.TaskManager as TaskManager
 from mmseq_utils import parsing
@@ -64,6 +66,9 @@ class ControllerROSNode:
         control_class = getattr(HTMPC, self.ctrl_config["type"], None)
         if control_class is None:
             control_class = getattr(STMPC, self.ctrl_config["type"], None)
+        if control_class is None:
+            control_class = getattr(MPC, self.ctrl_config["type"], None)
+
         self.controller = control_class(self.ctrl_config)
 
         self.ctrl_rate = self.ctrl_config["ctrl_rate"]

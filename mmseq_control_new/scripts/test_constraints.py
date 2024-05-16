@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 
 from mmseq_control.robot import MobileManipulator3D
 from mmseq_control_new.MPCConstraints import HierarchicalTrackingConstraint, SignedDistanceConstraint
-from mmseq_control_new.MPCCostFunctions import BasePos2CostFunction, EEPos3CostFunction
+from mmseq_control_new.MPCCostFunctions import BasePos2CostFunction, EEPos3CostFunction, SoftConstraintsRBFCostFunction
 
 def test_HierarchicalTrackingConstraint(config):
     robot = MobileManipulator3D(config["controller"])
@@ -87,8 +87,26 @@ def test_SignedDistanceConstraint(config):
         ax_g.set_title("Collision Constraint $g = -(sd(x) - d_{safe})$, " + "$d_{safe} = $" + f"{0.6 + d_safe}m")   # 0.6 is base collision radius
         ax_g.set_xlabel("x(m)")
         ax_g.set_ylabel("y(m)")
-        plt.show(block=True)
+        plt.show(block=False)
 
+
+        mu = config["controller"]["collision_soft"]['sdf']["mu"]
+        zeta = config["controller"]["collision_soft"]['sdf']["zeta"]
+        print(const.get_p_dict())
+        const_soft = SoftConstraintsRBFCostFunction(mu, zeta, const, "SelfCollisionSoftConstraint",expand=False)
+        # J_soft = [const_soft.evaluate(x_bar[i,:], u_bar)/X.size for i in range(N+1)]
+        J_soft = const_soft.evaluate_vec(x, u, param_map.cat)
+        J_soft = np.array(J_soft).reshape(X.shape)
+
+        fig_J, ax_J = plt.subplots()
+        levels = np.linspace(-0.5, 5, int(5.5/0.5)+1)
+        cs = ax_J.contour(X,Y,J_soft, levels)
+        ax_J.clabel(cs, levels)
+        ax_J.grid()
+        ax_J.set_title("Soft Collision Constraint Cost $\mathcal{J} = RBF(g)(x))$, " + "$d_{safe} = $" + f"{0.6 + d_safe}m")   # 0.6 is base collision radius
+        ax_J.set_xlabel("x(m)")
+        ax_J.set_ylabel("y(m)")
+        plt.show()
 
 
 if __name__ == "__main__":
@@ -100,3 +118,4 @@ if __name__ == "__main__":
 
     test_SignedDistanceConstraint(config)
     # test_HierarchicalTrackingConstraint(config)
+    

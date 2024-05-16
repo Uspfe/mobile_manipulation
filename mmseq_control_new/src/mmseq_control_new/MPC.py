@@ -11,8 +11,10 @@ from mmseq_control.robot import MobileManipulator3D as MM
 from mmseq_control.robot import CasadiModelInterface as ModelInterface
 from mmseq_utils.math import wrap_pi_array
 from mmseq_utils.casadi import casadi_sym_struct
-from mmseq_control_new.MPCCostFunctions import EEPos3CostFunction, BasePos2CostFunction, ControlEffortCostFunction, EEPos3BaseFrameCostFunction
+from mmseq_control_new.MPCCostFunctions import EEPos3CostFunction, BasePos2CostFunction, ControlEffortCostFunction, EEPos3BaseFrameCostFunction, SoftConstraintsRBFCostFunction
+from mmseq_control_new.MPCConstraints import SignedDistanceConstraint
 import mobile_manipulation_central as mm
+INF = 1e15
 
 class MPC():
     def __init__(self, config):
@@ -34,9 +36,27 @@ class MPC():
         self.EEPos3Cost = EEPos3CostFunction(self.robot, config["cost_params"]["EEPos3"])
         self.EEPos3BaseFrameCost = EEPos3BaseFrameCostFunction(self.robot, config["cost_params"]["EEPos3"])
         self.BasePos2Cost = BasePos2CostFunction(self.robot, config["cost_params"]["BasePos2"])
-
         self.CtrlEffCost = ControlEffortCostFunction(self.robot, config["cost_params"]["Effort"])
 
+        self.collision_link_names = ["self"] if self.params["self_collision_avoidance_enabled"] else []
+        self.collision_link_names += self.model_interface.scene.collision_link_names["static_obstacles"] \
+            if self.params["static_obstacles_collision_avoidance_enabled"] else []
+        self.collision_link_names += ["sdf"] if self.params["sdf_collision_avoidance_enabled"] else []
+
+        self.collisionCsts = {}
+        for name in self.collision_link_names:
+            sd_fcn = self.model_interface.getSignedDistanceSymMdls(name)
+            sd_cst = SignedDistanceConstraint(self.robot, sd_fcn, 
+                                              self.params["collision_safety_margin"][name], name)
+            self.collisionCsts[name] = sd_cst
+            
+        self.collisionSoftCsts = {}
+        for name,sd_cst in self.collisionCsts.items():
+            expand = True if name !="sdf" else False
+            self.collisionSoftCsts[name] = SoftConstraintsRBFCostFunction(self.params["collision_soft"][name]["mu"],
+                                                                          self.params["collision_soft"][name]["zeta"],
+                                                                          sd_cst, name+"CollisionSoftCst",
+                                                                          expand=expand)
         self.x_bar = np.zeros((self.N + 1, self.nx))  # current best guess x0,...,xN
         self.x_bar[:, :self.DoF] = self.home
         self.u_bar = np.zeros((self.N, self.nu))  # current best guess u0,...,uN-1
@@ -100,10 +120,15 @@ class STMPC(MPC):
         model.f_expl_expr = self.ssSymMdl["fmdl"](model.x, model.u)
         model.name = "MM"
 
-        costs = [self.EEPos3Cost, self.CtrlEffCost]
+        # get params from constraints
+        costs = [self.BasePos2Cost, self.CtrlEffCost]
+        costs += [cost for cost in self.collisionSoftCsts.values()]
+        constraints = []
         self.p_dict = {}
         for cost in costs:
             self.p_dict.update(cost.get_p_dict())
+        for cst in constraints:
+            self.p_dict.update(cst.get_p_dict())
         self.p_struct = casadi_sym_struct(self.p_dict)
         print(self.p_struct)
         self.p_map = self.p_struct(0)
@@ -124,7 +149,7 @@ class STMPC(MPC):
 
         # TODO: fix this. Terminal cost function now shares the parameters with stage cost.
         ocp.cost.cost_type_e = 'EXTERNAL'
-        cost_expr_e = sum(cost_expr[:-1])
+        cost_expr_e = sum(cost_expr[:1])
         cost_expr_e = cs.substitute(cost_expr_e, model.u, [])
         ocp.model.cost_expr_ext_cost_e = cost_expr_e
 
@@ -138,13 +163,29 @@ class STMPC(MPC):
         ocp.constraints.ubx = np.array(self.ssSymMdl["ub_x"])
         ocp.constraints.idxbx = np.arange(self.nx)
 
+        # nonlinear constraints
+        # TODO: what about the initial and terminal shooting nodes.
+        h_expr_list = []
+        for cst in constraints:
+            h_expr_list.append(cst.g_fcn(model.x, model.u, cst.p_sym))
+        
+        if len(h_expr_list) > 0:
+            h_expr = cs.vertcat(*h_expr_list)
+            print(h_expr)
+            model.con_h_expr = h_expr
+            h_expr_num = h_expr.shape[0]
+            ocp.constraints.uh = np.zeros(h_expr_num)
+            ocp.constraints.lh = -INF*np.ones(h_expr_num)
+
+        # TODO: slack variables?
+
         # initial condition
         ocp.constraints.x0 = self.x_bar[0]
 
         ocp.parameter_values = self.p_map.cat.full().flatten()
 
         # set options
-        ocp.solver_options.qp_solver = 'PARTIAL_CONDENSING_HPIPM' # FULL_CONDENSING_QPOASES
+        ocp.solver_options.qp_solver = 'FULL_CONDENSING_QPOASES' # FULL_CONDENSING_QPOASES
         # PARTIAL_CONDENSING_HPIPM, FULL_CONDENSING_QPOASES, FULL_CONDENSING_HPIPM,
         # PARTIAL_CONDENSING_QPDUNES, PARTIAL_CONDENSING_OSQP, FULL_CONDENSING_DAQP
         ocp.solver_options.hessian_approx = 'GAUSS_NEWTON' # 'GAUSS_NEWTON', 'EXACT'
@@ -154,32 +195,11 @@ class STMPC(MPC):
         ocp.solver_options.globalization = 'MERIT_BACKTRACKING' # turns on globalization
 
         # Construct AcadosOCPSolver
-        ocp_solver = AcadosOcpSolver(ocp, json_file = 'acados_ocp.json')
-        
+        ocp_solver = AcadosOcpSolver(ocp, json_file = 'acados_ocp_mm.json')
 
         self.model = model
         self.ocp = ocp
         self.ocp_solver = ocp_solver
-        # r_x = np.linspace(0, 0.5, self.N+1)
-
-        # for i in range(ocp_solver.N+1):
-        #     self.p_map["r_BasePos2"] = np.array((1,0))
-        #     print(self.p_map.cat.full().flatten())
-        #     ocp_solver.set(i, 'p', self.p_map.cat.full().flatten())
-
-        # status = ocp_solver.solve()
-        # ocp_solver.print_statistics() # encapsulates: stat = ocp_solver.get_stats("statistics")
-        # # get solution
-        # simX = np.zeros((self.N+1, self.nx))
-        # simU = np.zeros((self.N, self.nu))
-
-        # for i in range(self.N):
-        #     simX[i,:] = ocp_solver.get(i, "x")
-        #     simU[i,:] = ocp_solver.get(i, "u")
-            
-        # simX[self.N,:] = ocp_solver.get(self.N, "x")
-        # print(simX)
-        # print(simU)
 
     def control(self, t, robot_states, planners, map=None):
 
@@ -195,7 +215,7 @@ class STMPC(MPC):
         self.x_bar = self._predictTrajectories(xo, self.u_bar)            
 
 
-        # 0.2 Get ref, cost_fcn,
+        # 0.2 Get ref, sdf map,
         planner = planners[0]
         r_bar = [planner.getTrackingPoint(t + k * self.dt, (self.x_bar[k, :self.DoF], self.x_bar[k, self.DoF:]))[0]
                     for k in range(self.N + 1)]
@@ -206,7 +226,17 @@ class STMPC(MPC):
             self.rbase_bar = r_bar
             self.ree_bar = []
 
-        
+        if map is not None and self.params["sdf_collision_avoidance_enabled"]:
+            self.model_interface.sdf_map.update_map(*map)
+            params = self.model_interface.sdf_map.get_params()
+            self.p_map["x_grid_sdf"] = params[0]
+            self.p_map["y_grid_sdf"] = params[1]
+            if self.model_interface.sdf_map.dim == 3:
+                self.p_map["z_grid_sdf"] = params[2]
+                self.p_map["value_sdf"] = params[3]
+            else:
+                self.p_map["value_sdf"] = params[2]
+
         for i in range(self.N+1):
             # setting initial guess
             self.ocp_solver.set(i, 'x', self.x_bar[i])

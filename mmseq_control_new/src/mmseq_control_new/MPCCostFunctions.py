@@ -9,6 +9,21 @@ from scipy.linalg import block_diag
 from mmseq_control.robot import MobileManipulator3D
 from mmseq_utils.casadi import casadi_sym_struct
 
+class RBF:
+    mu_sym = cs.MX.sym('mu')
+    zeta_sym = cs.MX.sym('zeta')
+    h_sym = cs.MX.sym('h')
+
+    B_eqn_list = [-mu_sym * cs.log(h_sym),
+                  mu_sym * (0.5 * (((h_sym - 2 * zeta_sym) / zeta_sym) ** 2 - 1) - cs.log(zeta_sym))]
+    s_eqn = h_sym < zeta_sym
+    B_eqn = cs.conditional(s_eqn, B_eqn_list, 0, False)
+    B_fcn = cs.Function("B_fcn", [h_sym, mu_sym, zeta_sym], [B_eqn])
+
+    B_hess_eqn, B_grad_eqn = cs.hessian(B_eqn, h_sym)
+    B_hess_fcn = cs.Function("ddBddh_fcn", [h_sym, mu_sym, zeta_sym], [B_hess_eqn])
+    B_grad_fcn = cs.Function("dBdh_fcn", [h_sym, mu_sym, zeta_sym], [B_grad_eqn])
+
 
 class CostFunctions(ABC):
     def __init__(self, nx: int, nu:int, name: str="MPCCost"):
@@ -38,16 +53,11 @@ class CostFunctions(ABC):
 
         super().__init__()
         
-    @abstractmethod
     def evaluate(self, x, u, p):
-        """ evaluate cost function over the prediction window
-
-        :param x: state 
-        :param u: control
-        :param p: params
-        :return: J: cost function value
-        """
-        pass
+        if self.J_fcn is not None:
+            return self.J_fcn(x,u,p).toarray()[0]
+        else:
+            return None
 
     def get_p_dict(self):
         if self.p_dict is None:
@@ -85,8 +95,6 @@ class NonlinearLeastSquare(CostFunctions):
         self.J_eqn = 0.5 * e.T @ self.W @ e
         self.J_fcn = cs.Function("J_"+self.name, [self.x_sym, self.u_sym, self.p_sym], [self.J_eqn], ["x", "u", "r"], ["J"]).expand()
 
-    def evaluate(self, x, u, p):
-        return self.J_fcn(x,u,p).toarray()[0]
 
 class TrajectoryTrackingCostFunction(NonlinearLeastSquare):
     def __init__(self, nx: int, nu: int, nr: int, f_fcn: cs.Function, W, name):
@@ -161,6 +169,36 @@ class ControlEffortCostFunction(CostFunctions):
 
         self.J_eqn = 0.5 * self.x_sym.T @ Qx @ self.x_sym + 0.5 * self.u_sym.T @ Qu @ self.u_sym
         self.J_fcn = cs.Function("J_"+self.name, [self.x_sym, self.u_sym, self.p_sym], [self.J_eqn], ["x", "u", "r"], ["J"]).expand()
+    
+class SoftConstraintsRBFCostFunction(CostFunctions):
+    def __init__(self, mu, zeta, cst_obj, name="SoftConstraint", expand=True):
+        super().__init__(cst_obj.nx, cst_obj.nu, name)
 
-    def evaluate(self, x, u, p):
-        return self.J_fcn(x,u,p).toarray()[0]
+        self.mu = mu
+        self.zeta = zeta
+
+        self.p_dict = cst_obj.get_p_dict()
+        self.p_struct = casadi_sym_struct(self.p_dict)
+        self.p_sym = self.p_struct.cat
+
+        self.h_eqn = -cst_obj.g_fcn(self.x_sym, self.u_sym, self.p_sym)
+        self.nh = self.h_eqn.shape[0]
+
+        J_eqn_list = [RBF.B_fcn(self.h_eqn[k], self.mu, self.zeta) for k in range(self.nh)]
+        self.J_eqn = sum(J_eqn_list)
+        self.J_vec_eqn = cs.vertcat(*J_eqn_list)
+
+        self.h_fcn = cs.Function("h_"+self.name, [self.x_sym, self.u_sym, self.p_sym], [self.h_eqn])
+        self.J_fcn = cs.Function("J_" + self.name, [self.x_sym, self.u_sym, self.p_sym], [self.J_eqn])
+        self.J_vec_fcn = cs.Function("J_vec_" + self.name, [self.x_sym, self.u_sym, self.p_sym], [self.J_vec_eqn])
+            
+        if expand:
+            self.h_fcn = self.h_fcn.expand()
+            self.J_fcn = self.J_fcn.expand()
+            self.J_vec_fcn = self.J_vec_fcn.expand()
+        
+    def evaluate_vec(self, x, u, p):
+        return self.J_vec_fcn(x, u, p).toarray().flatten()
+    
+    def get_p_dict(self):
+        return self.p_dict

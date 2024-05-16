@@ -293,6 +293,8 @@ class CasadiModelInterface:
     def _setupSDFCollisionSymMdl(self):
         sd_syms = []
         sdf_map_params_sym = self.sdf_map_SymMdl.mx_in()[1:]        # sdf input [x, param1, param2 ...]
+        sdf_map_params_sym_name = self.sdf_map_SymMdl.name_in()[1:]        # sdf input [x, param1, param2 ...]
+
         for pair in self.collision_pairs["sdf"]:
             o = self.pinocchio_interface.getGeometryObject(pair[1:])
             if o is None:
@@ -309,10 +311,12 @@ class CasadiModelInterface:
                     sd_sym = self.sdf_map_SymMdl(pt_sym[0], *sdf_map_params_sym) - o.geometry.radius 
 
             sd_syms.append(sd_sym)
-            sd_fcn = cs.Function("sd_" + pair[0] + "_" + pair[1], [self.robot.q_sym] + sdf_map_params_sym, [sd_sym])
+            sd_fcn = cs.Function("sd_" + pair[0] + "_" + pair[1], [self.robot.q_sym] + sdf_map_params_sym, [sd_sym],
+                                 ["q"] + sdf_map_params_sym_name, ["_".join(["sd(q)"]+pair)])
             self.signedDistanceSymMdls[tuple(pair)] = sd_fcn
         
-        self.signedDistanceSymMdlsPerGroup["sdf"] = cs.Function("sd_sdf", [self.robot.q_sym] + sdf_map_params_sym, [cs.vertcat(*sd_syms)])
+        self.signedDistanceSymMdlsPerGroup["sdf"] = cs.Function("sd_sdf", [self.robot.q_sym] + sdf_map_params_sym, [cs.vertcat(*sd_syms)],
+                                                                          ["q"]+sdf_map_params_sym_name, ["sd(q)"])
 
     def getSignedDistanceSymMdls(self, name):
         """ get signed distance function by collision link name
