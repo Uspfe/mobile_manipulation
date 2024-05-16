@@ -1,0 +1,245 @@
+from abc import ABC, abstractmethod
+import time
+import logging
+
+import numpy as np
+import casadi as cs
+from spatialmath.base import rotz
+from acados_template import AcadosModel, AcadosOcp, AcadosOcpSolver
+
+from mmseq_control.robot import MobileManipulator3D as MM
+from mmseq_control.robot import CasadiModelInterface as ModelInterface
+from mmseq_utils.math import wrap_pi_array
+from mmseq_utils.casadi import casadi_sym_struct
+from mmseq_control_new.MPCCostFunctions import EEPos3CostFunction, BasePos2CostFunction, ControlEffortCostFunction, EEPos3BaseFrameCostFunction
+import mobile_manipulation_central as mm
+
+class MPC():
+    def __init__(self, config):
+        self.model_interface = ModelInterface(config)
+        self.robot = self.model_interface.robot
+        self.ssSymMdl = self.robot.ssSymMdl
+        self.kinSymMdl = self.robot.kinSymMdls
+        self.nx = self.ssSymMdl["nx"]
+        self.nu = self.ssSymMdl["nu"]
+        self.DoF = self.robot.DoF
+        self.home = mm.load_home_position(config["home"])
+
+        self.params = config
+        self.dt = self.params["dt"]
+        self.tf = self.params['prediction_horizon']
+        self.N = int(self.tf / self.dt)
+        self.QPsize = self.nx * (self.N + 1) + self.nu * self.N
+
+        self.EEPos3Cost = EEPos3CostFunction(self.robot, config["cost_params"]["EEPos3"])
+        self.EEPos3BaseFrameCost = EEPos3BaseFrameCostFunction(self.robot, config["cost_params"]["EEPos3"])
+        self.BasePos2Cost = BasePos2CostFunction(self.robot, config["cost_params"]["BasePos2"])
+
+        self.CtrlEffCost = ControlEffortCostFunction(self.robot, config["cost_params"]["Effort"])
+
+        self.x_bar = np.zeros((self.N + 1, self.nx))  # current best guess x0,...,xN
+        self.x_bar[:, :self.DoF] = self.home
+        self.u_bar = np.zeros((self.N, self.nu))  # current best guess u0,...,uN-1
+        self.zopt = np.zeros(self.QPsize)  # current lineaization point
+        self.u_prev = np.zeros(self.nu)
+        self.xu_bar_init = False
+
+        self.v_cmd = np.zeros(self.nx - self.DoF)
+
+        self.py_logger = logging.getLogger("Controller")
+
+
+    @abstractmethod
+    def control(self, t, robot_states, planners, map=None):
+        """
+
+        :param t: current control time
+        :param robot_states: (q, v) generalized coordinates and velocities
+        :param planners: a list of planner instances
+        :return: u, currently the best control inputs, aka, u_bar[0]
+        """
+        pass
+
+    def _predictTrajectories(self, xo, u_bar):
+        return MM.ssIntegrate(self.dt, xo, u_bar, self.ssSymMdl)
+
+    def _getEEBaseTrajectories(self, x_bar):
+        ee_bar = np.zeros((self.N + 1, 3))
+        base_bar = np.zeros((self.N + 1, 3))
+        for k in range(self.N+1):
+            base_bar[k] = x_bar[k, :3]
+            fee_fcn = self.kinSymMdl[self.robot.tool_link_name]
+            ee_pos, ee_orn = fee_fcn(x_bar[k, :self.DoF])
+            ee_bar[k] = ee_pos.toarray().flatten()
+
+        return ee_bar, base_bar
+
+
+    def reset(self):
+        self.x_bar = np.zeros((self.N + 1, self.nx))  # current best guess x0,...,xN
+        self.u_bar = np.zeros((self.N, self.nu))  # current best guess u0,...,uN-1
+        self.zopt = np.zeros(self.QPsize)  # current lineaization point
+        self.xu_bar_init = False
+
+        self.v_cmd = np.zeros(self.nx - self.DoF)
+
+class STMPC(MPC):
+
+    def __init__(self, config):
+        super().__init__(config)
+        self._construct()
+
+    def _construct(self):
+        # Construct AcadosModel
+        model = AcadosModel()
+        model.x = cs.MX.sym('x', self.nx)
+        model.u = cs.MX.sym('u', self.nu)
+        model.xdot = cs.MX.sym('xdot', self.nx)
+
+        model.f_impl_expr = model.xdot - self.ssSymMdl["fmdl"](model.x, model.u)
+        model.f_expl_expr = self.ssSymMdl["fmdl"](model.x, model.u)
+        model.name = "MM"
+
+        costs = [self.EEPos3Cost, self.CtrlEffCost]
+        self.p_dict = {}
+        for cost in costs:
+            self.p_dict.update(cost.get_p_dict())
+        self.p_struct = casadi_sym_struct(self.p_dict)
+        print(self.p_struct)
+        self.p_map = self.p_struct(0)
+        model.p = self.p_struct.cat
+
+        # Construct AcadosOCP
+        ocp = AcadosOcp()
+        ocp.model = model
+        ocp.dims.N = self.N
+        ocp.solver_options.tf = self.tf
+
+        ocp.cost.cost_type = 'EXTERNAL'
+        cost_expr = []
+        for cost in costs:
+            Ji = cost.J_fcn(model.x, model.u, cost.p_sym)
+            cost_expr.append(Ji)
+        ocp.model.cost_expr_ext_cost = sum(cost_expr)
+
+        # TODO: fix this. Terminal cost function now shares the parameters with stage cost.
+        ocp.cost.cost_type_e = 'EXTERNAL'
+        cost_expr_e = sum(cost_expr[:-1])
+        cost_expr_e = cs.substitute(cost_expr_e, model.u, [])
+        ocp.model.cost_expr_ext_cost_e = cost_expr_e
+
+        # control input constraints
+        ocp.constraints.lbu = np.array(self.ssSymMdl["lb_u"])
+        ocp.constraints.ubu = np.array(self.ssSymMdl["ub_u"])
+        ocp.constraints.idxbu = np.arange(self.nu)
+
+        # state constraints
+        ocp.constraints.lbx = np.array(self.ssSymMdl["lb_x"])
+        ocp.constraints.ubx = np.array(self.ssSymMdl["ub_x"])
+        ocp.constraints.idxbx = np.arange(self.nx)
+
+        # initial condition
+        ocp.constraints.x0 = self.x_bar[0]
+
+        ocp.parameter_values = self.p_map.cat.full().flatten()
+
+        # set options
+        ocp.solver_options.qp_solver = 'PARTIAL_CONDENSING_HPIPM' # FULL_CONDENSING_QPOASES
+        # PARTIAL_CONDENSING_HPIPM, FULL_CONDENSING_QPOASES, FULL_CONDENSING_HPIPM,
+        # PARTIAL_CONDENSING_QPDUNES, PARTIAL_CONDENSING_OSQP, FULL_CONDENSING_DAQP
+        ocp.solver_options.hessian_approx = 'GAUSS_NEWTON' # 'GAUSS_NEWTON', 'EXACT'
+        ocp.solver_options.integrator_type = 'IRK'
+        # ocp.solver_options.print_level = 1
+        ocp.solver_options.nlp_solver_type = 'SQP' # SQP_RTI, SQP
+        ocp.solver_options.globalization = 'MERIT_BACKTRACKING' # turns on globalization
+
+        # Construct AcadosOCPSolver
+        ocp_solver = AcadosOcpSolver(ocp, json_file = 'acados_ocp.json')
+        
+
+        self.model = model
+        self.ocp = ocp
+        self.ocp_solver = ocp_solver
+        # r_x = np.linspace(0, 0.5, self.N+1)
+
+        # for i in range(ocp_solver.N+1):
+        #     self.p_map["r_BasePos2"] = np.array((1,0))
+        #     print(self.p_map.cat.full().flatten())
+        #     ocp_solver.set(i, 'p', self.p_map.cat.full().flatten())
+
+        # status = ocp_solver.solve()
+        # ocp_solver.print_statistics() # encapsulates: stat = ocp_solver.get_stats("statistics")
+        # # get solution
+        # simX = np.zeros((self.N+1, self.nx))
+        # simU = np.zeros((self.N, self.nu))
+
+        # for i in range(self.N):
+        #     simX[i,:] = ocp_solver.get(i, "x")
+        #     simU[i,:] = ocp_solver.get(i, "u")
+            
+        # simX[self.N,:] = ocp_solver.get(self.N, "x")
+        # print(simX)
+        # print(simU)
+
+    def control(self, t, robot_states, planners, map=None):
+
+        self.py_logger.debug("control time {}".format(t))
+        self.curr_control_time = t
+        q, v = robot_states
+        q[2:9] = wrap_pi_array(q[2:9])
+        xo = np.hstack((q, v))
+
+        # 0.1 Get warm start point
+        self.u_bar[:-1] = self.u_bar[1:]
+        self.u_bar[-1] = 0
+        self.x_bar = self._predictTrajectories(xo, self.u_bar)            
+
+
+        # 0.2 Get ref, cost_fcn,
+        planner = planners[0]
+        r_bar = [planner.getTrackingPoint(t + k * self.dt, (self.x_bar[k, :self.DoF], self.x_bar[k, self.DoF:]))[0]
+                    for k in range(self.N + 1)]
+        if planner.type == "EE":
+            self.ree_bar = r_bar 
+            self.rbase_bar = []
+        elif planner.type == "base":
+            self.rbase_bar = r_bar
+            self.ree_bar = []
+
+        
+        for i in range(self.N+1):
+            # setting initial guess
+            self.ocp_solver.set(i, 'x', self.x_bar[i])
+            if planner.type == "base":
+                self.p_map["r_BasePos2"] = r_bar[i]
+            elif planner.type == "EE":
+                self.p_map["r_EEPos3"] = r_bar[i]
+            print(self.p_map.cat.full().flatten())
+            self.ocp_solver.set(i, 'p', self.p_map.cat.full().flatten())
+
+        self.ocp_solver.solve_for_x0(xo)
+        self.ocp_solver.print_statistics() # encapsulates: stat = ocp_solver.get_stats("statistics")
+        self.solver_status = self.ocp_solver.status
+        # get solution
+        self.u_prev = self.u_bar[0].copy()
+        for i in range(self.N):
+            self.x_bar[i,:] = self.ocp_solver.get(i, "x")
+            self.u_bar[i,:] = self.ocp_solver.get(i, "u")
+        self.x_bar[self.N,:] = self.ocp_solver.get(self.N, "x")
+
+        self.v_cmd = self.x_bar[0][self.robot.DoF:].copy()
+
+        self.ee_bar, self.base_bar = self._getEEBaseTrajectories(self.x_bar)
+        print(f"v{self.v_cmd}")
+        print(f"u: {self.u_bar[0]}")
+        return self.v_cmd, self.u_prev, self.u_bar.copy()
+
+
+
+if __name__ == "__main__":
+    # robot mdl
+    from mmseq_utils import parsing
+    config = parsing.load_config(
+        "/home/tracy/Projects/mm_slam/mm_ws/src/mm_sequential_tasks/mmseq_run/config/simple_experiment.yaml")
+
+    STMPC(config["controller"])
