@@ -121,7 +121,8 @@ class STMPC(MPC):
         model.name = "MM"
 
         # get params from constraints
-        costs = [self.BasePos2Cost, self.CtrlEffCost]
+        num_terminal_cost = 2
+        costs = [self.BasePos2Cost, self.EEPos3Cost, self.CtrlEffCost]
         costs += [cost for cost in self.collisionSoftCsts.values()]
         constraints = []
         self.p_dict = {}
@@ -149,7 +150,7 @@ class STMPC(MPC):
 
         # TODO: fix this. Terminal cost function now shares the parameters with stage cost.
         ocp.cost.cost_type_e = 'EXTERNAL'
-        cost_expr_e = sum(cost_expr[:1])
+        cost_expr_e = sum(cost_expr[:num_terminal_cost])
         cost_expr_e = cs.substitute(cost_expr_e, model.u, [])
         ocp.model.cost_expr_ext_cost_e = cost_expr_e
 
@@ -216,40 +217,77 @@ class STMPC(MPC):
 
 
         # 0.2 Get ref, sdf map,
-        planner = planners[0]
-        r_bar = [planner.getTrackingPoint(t + k * self.dt, (self.x_bar[k, :self.DoF], self.x_bar[k, self.DoF:]))[0]
-                    for k in range(self.N + 1)]
-        if planner.type == "EE":
-            self.ree_bar = r_bar 
-            self.rbase_bar = []
-        elif planner.type == "base":
-            self.rbase_bar = r_bar
-            self.ree_bar = []
+        r_bar_map = {}
+        for planner in planners:
+            r_bar = [planner.getTrackingPoint(t + k * self.dt, (self.x_bar[k, :self.DoF], self.x_bar[k, self.DoF:]))[0]
+                        for k in range(self.N + 1)]
+            acceptable_ref = True
+            if planner.type == "EE":
+                if planner.ref_data_type == "Vec3":
+                    r_bar_map["EEPos3"] = r_bar
+                else:
+                    acceptable_ref = False
+            elif planner.type == "base":
+                if planner.ref_data_type == "Vec2":
+                    r_bar_map["BasePos2"] = r_bar
+                else:
+                    acceptable_ref = False
 
-        if map is not None and self.params["sdf_collision_avoidance_enabled"]:
+            if not acceptable_ref:
+                self.py_logger.warning(f"unknown cost type {planner.ref_data_type}, planner {planner.name}")
+            
+            if planner.type == "EE":
+                self.ree_bar = r_bar 
+                self.rbase_bar = []
+            elif planner.type == "base":
+                self.rbase_bar = r_bar
+                self.ree_bar = []
+
+        curr_p_map = self.p_struct(0)
+    
+        if map is not None:
             self.model_interface.sdf_map.update_map(*map)
+
+        if self.params["sdf_collision_avoidance_enabled"]:
             params = self.model_interface.sdf_map.get_params()
-            self.p_map["x_grid_sdf"] = params[0]
-            self.p_map["y_grid_sdf"] = params[1]
+            curr_p_map["x_grid_sdf"] = params[0]
+            curr_p_map["y_grid_sdf"] = params[1]
             if self.model_interface.sdf_map.dim == 3:
-                self.p_map["z_grid_sdf"] = params[2]
-                self.p_map["value_sdf"] = params[3]
+                curr_p_map["z_grid_sdf"] = params[2]
+                curr_p_map["value_sdf"] = params[3]
             else:
-                self.p_map["value_sdf"] = params[2]
+                curr_p_map["value_sdf"] = params[2]
+        
 
         for i in range(self.N+1):
-            # setting initial guess
+            # set initial guess
             self.ocp_solver.set(i, 'x', self.x_bar[i])
-            if planner.type == "base":
-                self.p_map["r_BasePos2"] = r_bar[i]
-            elif planner.type == "EE":
-                self.p_map["r_EEPos3"] = r_bar[i]
-            print(self.p_map.cat.full().flatten())
-            self.ocp_solver.set(i, 'p', self.p_map.cat.full().flatten())
 
-        self.ocp_solver.solve_for_x0(xo)
+            # set parameters for tracking cost functions
+            p_keys = self.p_struct.keys()
+            for (name, r_bar) in r_bar_map.items():
+                p_name_r = "_".join(["r", name])
+                p_name_W = "_".join(["W", name])
+
+                if p_name_r in p_keys:
+                    # set reference
+                    curr_p_map[p_name_r] = r_bar[i]
+
+                    # Set weight matricies, assuming identity matrix with identical diagonal terms
+                    if i == self.N:
+                        curr_p_map[p_name_W] = self.params["cost_params"][name]["P"] * np.eye(r_bar[i].size)
+                    else:
+                        curr_p_map[p_name_W] = self.params["cost_params"][name]["Qk"] * np.eye(r_bar[i].size)
+                else:
+                    self.py_logger.warning(f"unknown p name {p_name_r}")
+
+            self.ocp_solver.set(i, 'p', curr_p_map.cat.full().flatten())
+            
+
+        self.ocp_solver.solve_for_x0(xo, fail_on_nonzero_status=self.params["raise_exception_on_failure"])
         self.ocp_solver.print_statistics() # encapsulates: stat = ocp_solver.get_stats("statistics")
         self.solver_status = self.ocp_solver.status
+        
         # get solution
         self.u_prev = self.u_bar[0].copy()
         for i in range(self.N):

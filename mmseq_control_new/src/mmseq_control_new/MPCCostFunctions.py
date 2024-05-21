@@ -66,7 +66,7 @@ class CostFunctions(ABC):
             return {key +f"_{self.name}":val for (key, val) in self.p_dict.items()}
 
 class NonlinearLeastSquare(CostFunctions):
-    def __init__(self, nx:int, nu:int, nr:int, f_fcn:cs.Function, W, name):
+    def __init__(self, nx:int, nu:int, nr:int, f_fcn:cs.Function, name):
         """ Nonlinear least square cost function
             J = ||f_fcn(x) - r||^2_W
 
@@ -82,24 +82,26 @@ class NonlinearLeastSquare(CostFunctions):
         self.nr = nr
         self.f_fcn = f_fcn.expand()
 
-        self.p_dict = {"r": cs.MX.sym("r_"+self.name, self.nr)}
+        self.p_dict = {"r": cs.MX.sym("r_"+self.name, self.nr),
+                       "W": cs.MX.sym("W_"+self.name, self.nr, self.nr)}
         self.p_struct = casadi_sym_struct(self.p_dict)
         self.p_sym = self.p_struct.cat
 
-        self.W = W
+        self.W = self.p_struct["W"]
+        self.r = self.p_struct['r']
         self._setupSymMdl()
 
     def _setupSymMdl(self):
         y = self.f_fcn(self.x_sym)
-        e = y - self.p_sym
+        e = y - self.r
         self.J_eqn = 0.5 * e.T @ self.W @ e
         self.J_fcn = cs.Function("J_"+self.name, [self.x_sym, self.u_sym, self.p_sym], [self.J_eqn], ["x", "u", "r"], ["J"]).expand()
 
 
 class TrajectoryTrackingCostFunction(NonlinearLeastSquare):
-    def __init__(self, nx: int, nu: int, nr: int, f_fcn: cs.Function, W, name):
-        super().__init__(nx, nu, nr, f_fcn, W, name)
-        self.e_eqn = self.f_fcn(self.x_sym) - self.p_sym
+    def __init__(self, nx: int, nu: int, nr: int, f_fcn: cs.Function, name):
+        super().__init__(nx, nu, nr, f_fcn, name)
+        self.e_eqn = self.f_fcn(self.x_sym) - self.r
         self.e_fcn = cs.Function("e_"+self.name, [self.x_sym, self.u_sym, self.p_sym], [self.e_eqn], ["x", "u", "r"], ["e"]).expand()
 
 
@@ -111,7 +113,7 @@ class EEPos3CostFunction(TrajectoryTrackingCostFunction):
         nr = 3
         fk_ee = robot_mdl.kinSymMdls[robot_mdl.tool_link_name]
         f_fcn = cs.Function("fee", [robot_mdl.x_sym], [fk_ee(robot_mdl.q_sym)[0]])
-        super().__init__(nx, nu, nr, f_fcn, params["Qk"], "EEPos3")
+        super().__init__(nx, nu, nr, f_fcn, "EEPos3")
 
 class EEPos3BaseFrameCostFunction(TrajectoryTrackingCostFunction):
     def __init__(self, robot_mdl, params):
@@ -121,7 +123,7 @@ class EEPos3BaseFrameCostFunction(TrajectoryTrackingCostFunction):
         nr = 3
         fk_ee = robot_mdl._getFk(robot_mdl.tool_link_name, base_frame=True)
         f_fcn = cs.Function("fee", [robot_mdl.x_sym], [fk_ee(robot_mdl.q_sym)[0]])
-        super().__init__(nx, nu, nr, f_fcn, params["Qk"], "EEPos3BaseFrame")
+        super().__init__(nx, nu, nr, f_fcn, "EEPos3BaseFrame")
 
 class ArmJointCostFunction(TrajectoryTrackingCostFunction):
     def __init__(self, robot_mdl, params):
@@ -132,7 +134,7 @@ class ArmJointCostFunction(TrajectoryTrackingCostFunction):
         nr = 6
         f_fcn = cs.Function("f_qa", [robot_mdl.x_sym], [robot_mdl.qa_sym])
 
-        super().__init__(nx, nu, nr, f_fcn, params["Qk"], "ArmJoint")
+        super().__init__(nx, nu, nr, f_fcn, "ArmJoint")
 
 
 class BasePos2CostFunction(TrajectoryTrackingCostFunction):
@@ -144,7 +146,7 @@ class BasePos2CostFunction(TrajectoryTrackingCostFunction):
         fk_b = robot_mdl.kinSymMdls["base"]
         f_fcn = cs.Function("fb", [robot_mdl.x_sym], [fk_b(robot_mdl.q_sym)[0]])
 
-        super().__init__(nx, nu, nr, f_fcn, params["Qk"], "BasePos2")
+        super().__init__(nx, nu, nr, f_fcn, "BasePos2")
 
 class ControlEffortCostFunction(CostFunctions):
     def __init__(self, robot_mdl, params):

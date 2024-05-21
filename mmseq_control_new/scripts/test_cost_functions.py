@@ -22,10 +22,18 @@ if __name__ == "__main__":
     x = np.hstack((np.array(q), v))
     u = np.zeros(9)
 
-    r_base = np.array([1,0])
-    r_ee = np.array([1,0,0])
-    J_base = cost_base.evaluate(x, u, r_base)
-    J_ee = cost_ee.evaluate(x, u, r_ee)
-    J_eff = cost_eff.evaluate(x, u, [])
+    p_map_base = cost_base.p_struct(0)
+    print(p_map_base)
+    p_map_base['W'] = config["controller"]["cost_params"]["BasePos2"]["Qk"]
+    p_map_base['r'] = np.array([1,0])
+    J_base = cost_base.evaluate(x, u, p_map_base.cat)
     print(J_base)
-    print(cost_base.p_dict)
+    
+    p_map_ee = cost_ee.p_struct(0)
+    p_map_ee['W'] = config["controller"]["cost_params"]["EEPos3"]["Qk"]
+    p_map_ee['r'] = np.array([1,0,0])
+    J_ee = cost_ee.evaluate(x, u, p_map_ee.cat)
+    print(J_ee)
+
+    J_eff = cost_eff.evaluate(x, u, [])
+    print(J_eff)
