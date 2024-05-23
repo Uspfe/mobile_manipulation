@@ -148,11 +148,23 @@ class STMPC(MPC):
             cost_expr.append(Ji)
         ocp.model.cost_expr_ext_cost = sum(cost_expr)
 
-        # TODO: fix this. Terminal cost function now shares the parameters with stage cost.
-        ocp.cost.cost_type_e = 'EXTERNAL'
-        cost_expr_e = sum(cost_expr[:num_terminal_cost])
-        cost_expr_e = cs.substitute(cost_expr_e, model.u, [])
-        ocp.model.cost_expr_ext_cost_e = cost_expr_e
+        custom_hess_expr = []
+        if self.params["use_custom_hess"]:
+            for cost in costs:
+                H_fcn = cost.get_custom_H_fcn()
+                H_expr_i = H_fcn(model.x, model.u, cost.p_sym)
+                custom_hess_expr.append(H_expr_i)
+        ocp.model.cost_expr_ext_cost_custom_hess = sum(custom_hess_expr)
+
+        # TODO: fix this. Terminal Cost function doesn't work for EE tracking
+        # ocp.cost.cost_type_e = 'NONLINEAR_LS'
+        # cost_expr_e = sum(cost_expr[:num_terminal_cost])
+        # cost_expr_e = cs.substitute(cost_expr_e, model.u, [])
+        # fk_ee = self.robot.kinSymMdls[self.robot.tool_link_name]
+        # Pee,_ = fk_ee(model.x[:9])
+        # ocp.model.cost_y_expr_e = Pee
+        # ocp.cost.W_e = np.eye(3) * self.params["cost_params"]["EEPos3"]["P"]
+        # ocp.cost.yref_e = np.zeros(3)
 
         # control input constraints
         ocp.constraints.lbu = np.array(self.ssSymMdl["lb_u"])
@@ -163,6 +175,10 @@ class STMPC(MPC):
         ocp.constraints.lbx = np.array(self.ssSymMdl["lb_x"])
         ocp.constraints.ubx = np.array(self.ssSymMdl["ub_x"])
         ocp.constraints.idxbx = np.arange(self.nx)
+
+        # ocp.constraints.lbx_e = np.array(self.ssSymMdl["lb_x"])
+        # ocp.constraints.ubx_e = np.array(self.ssSymMdl["ub_x"])
+        # ocp.constraints.idxbx_e = np.arange(self.nx)
 
         # nonlinear constraints
         # TODO: what about the initial and terminal shooting nodes.
@@ -186,7 +202,7 @@ class STMPC(MPC):
         ocp.parameter_values = self.p_map.cat.full().flatten()
 
         # set options
-        ocp.solver_options.qp_solver = 'FULL_CONDENSING_QPOASES' # FULL_CONDENSING_QPOASES
+        ocp.solver_options.qp_solver = 'FULL_CONDENSING_HPIPM' # FULL_CONDENSING_QPOASES
         # PARTIAL_CONDENSING_HPIPM, FULL_CONDENSING_QPOASES, FULL_CONDENSING_HPIPM,
         # PARTIAL_CONDENSING_QPDUNES, PARTIAL_CONDENSING_OSQP, FULL_CONDENSING_DAQP
         ocp.solver_options.hessian_approx = 'GAUSS_NEWTON' # 'GAUSS_NEWTON', 'EXACT'
@@ -194,9 +210,10 @@ class STMPC(MPC):
         # ocp.solver_options.print_level = 1
         ocp.solver_options.nlp_solver_type = 'SQP' # SQP_RTI, SQP
         ocp.solver_options.globalization = 'MERIT_BACKTRACKING' # turns on globalization
-
+        ocp.solver_options.qp_solver_iter_max = 100
+        ocp.solver_options.nlp_solver_tol_stat = 1e-3
         # Construct AcadosOCPSolver
-        ocp_solver = AcadosOcpSolver(ocp, json_file = 'acados_ocp_mm.json')
+        ocp_solver = AcadosOcpSolver(ocp, json_file = 'acados_ocp_stmpc.json')
 
         self.model = model
         self.ocp = ocp
@@ -218,6 +235,8 @@ class STMPC(MPC):
 
         # 0.2 Get ref, sdf map,
         r_bar_map = {}
+        self.ree_bar = []
+        self.rbase_bar = []
         for planner in planners:
             r_bar = [planner.getTrackingPoint(t + k * self.dt, (self.x_bar[k, :self.DoF], self.x_bar[k, self.DoF:]))[0]
                         for k in range(self.N + 1)]
@@ -238,10 +257,8 @@ class STMPC(MPC):
             
             if planner.type == "EE":
                 self.ree_bar = r_bar 
-                self.rbase_bar = []
             elif planner.type == "base":
                 self.rbase_bar = r_bar
-                self.ree_bar = []
 
         curr_p_map = self.p_struct(0)
     
@@ -282,12 +299,26 @@ class STMPC(MPC):
                     self.py_logger.warning(f"unknown p name {p_name_r}")
 
             self.ocp_solver.set(i, 'p', curr_p_map.cat.full().flatten())
-            
 
-        self.ocp_solver.solve_for_x0(xo, fail_on_nonzero_status=self.params["raise_exception_on_failure"])
+        self.ocp_solver.solve_for_x0(xo, fail_on_nonzero_status=False)
         self.ocp_solver.print_statistics() # encapsulates: stat = ocp_solver.get_stats("statistics")
         self.solver_status = self.ocp_solver.status
-        
+
+        if self.solver_status !=0:
+            for i in range(self.N):
+                print(f"stage {i}: x: {self.ocp_solver.get(i, 'x')}")
+                print(f"stage {i}: u: {self.ocp_solver.get(i, 'u')}")
+                        
+            for i in range(self.N):
+                print(f"stage {i}: lam: {self.ocp_solver.get(i, 'lam')}")
+            
+            for i in range(self.N):
+                print(f"stage {i}: pi: {self.ocp_solver.get(i, 'pi')}")
+
+            if self.params["raise_exception_on_failure"]:
+                raise Exception(f'acados acados_ocp_solver returned status {self.solver_status}')
+
+
         # get solution
         self.u_prev = self.u_bar[0].copy()
         for i in range(self.N):

@@ -76,7 +76,7 @@ class NonlinearConstraint(Constraint):
             self.g_eqn = g_fcn(self.x_sym, self.u_sym, self.p_sym)
         else:
             self.g_eqn = None
-
+    
     def check(self, x, u, p):
         g = self.g_fcn(x, u, p)
 
@@ -102,6 +102,9 @@ class HierarchicalTrackingConstraint(NonlinearConstraint):
 
         self.g_eqn = cs.vertcat(e_eqn, -e_eqn) - cs.vertcat(e_p_abs_eqn, e_p_abs_eqn)
         self.g_fcn = cs.Function("g_"+self.name, [self.x_sym, self.u_sym, self.p_struct.cat], [self.g_eqn])
+
+        self.g_grad_eqn = cs.jacobian(self.g_eqn, cs.veccat(self.u_sym, self.x_sym))
+        self.g_grad_fcn = cs.Function("g_grad", [self.x_sym, self.u_sym, self.p_sym], [self.g_eqn])
 
     def get_p_dict(self):
         if self.p_dict is None:
@@ -140,4 +143,6 @@ class SignedDistanceConstraint(NonlinearConstraint):
 
         self.g_fcn = cs.Function("g_"+self.name, [self.x_sym, self.u_sym, self.p_sym], [self.g_eqn])
 
+        self.g_grad_eqn = cs.jacobian(self.g_eqn, cs.veccat(self.u_sym, self.x_sym))
+        self.g_grad_fcn = cs.Function("g_grad", [self.x_sym, self.u_sym, self.p_sym], [self.g_eqn])
 

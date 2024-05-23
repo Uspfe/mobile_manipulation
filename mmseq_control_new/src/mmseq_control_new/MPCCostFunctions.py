@@ -50,6 +50,8 @@ class CostFunctions(ABC):
         self.p_struct = None
         self.J_eqn = None
         self.J_fcn = None
+        self.H_approx_eqn = None
+        self.H_approx_fcn = None
 
         super().__init__()
         
@@ -64,6 +66,9 @@ class CostFunctions(ABC):
             return None
         else:
             return {key +f"_{self.name}":val for (key, val) in self.p_dict.items()}
+    
+    def get_custom_H_fcn(self):
+        return self.H_approx_fcn
 
 class NonlinearLeastSquare(CostFunctions):
     def __init__(self, nx:int, nu:int, nr:int, f_fcn:cs.Function, name):
@@ -96,13 +101,15 @@ class NonlinearLeastSquare(CostFunctions):
         e = y - self.r
         self.J_eqn = 0.5 * e.T @ self.W @ e
         self.J_fcn = cs.Function("J_"+self.name, [self.x_sym, self.u_sym, self.p_sym], [self.J_eqn], ["x", "u", "r"], ["J"]).expand()
-
+        dedx = cs.jacobian(e, self.x_sym)
+        self.H_approx_eqn = cs.diagcat(cs.MX.zeros(self.nu, self.nu), dedx.T @ self.W @ dedx)
+        self.H_approx_fcn = cs.Function("H_approx_"+self.name, [self.x_sym, self.u_sym, self.p_sym], [self.H_approx_eqn], ["x", "u", "r"], ["H_approx"]).expand()
 
 class TrajectoryTrackingCostFunction(NonlinearLeastSquare):
     def __init__(self, nx: int, nu: int, nr: int, f_fcn: cs.Function, name):
         super().__init__(nx, nu, nr, f_fcn, name)
         self.e_eqn = self.f_fcn(self.x_sym) - self.r
-        self.e_fcn = cs.Function("e_"+self.name, [self.x_sym, self.u_sym, self.p_sym], [self.e_eqn], ["x", "u", "r"], ["e"]).expand()
+        self.e_fcn = cs.Function("e_"+self.name, [self.x_sym, self.u_sym, self.r], [self.e_eqn], ["x", "u", "r"], ["e"]).expand()
 
 
 class EEPos3CostFunction(TrajectoryTrackingCostFunction):
@@ -171,7 +178,9 @@ class ControlEffortCostFunction(CostFunctions):
 
         self.J_eqn = 0.5 * self.x_sym.T @ Qx @ self.x_sym + 0.5 * self.u_sym.T @ Qu @ self.u_sym
         self.J_fcn = cs.Function("J_"+self.name, [self.x_sym, self.u_sym, self.p_sym], [self.J_eqn], ["x", "u", "r"], ["J"]).expand()
-    
+        self.H_approx_eqn = cs.diagcat(Qu, Qx)
+        self.H_approx_fcn = cs.Function("H_approx_"+self.name, [self.x_sym, self.u_sym, self.p_sym], [self.H_approx_eqn], ["x", "u", "r"], ["H_approx"]).expand()
+
 class SoftConstraintsRBFCostFunction(CostFunctions):
     def __init__(self, mu, zeta, cst_obj, name="SoftConstraint", expand=True):
         super().__init__(cst_obj.nx, cst_obj.nu, name)
@@ -184,20 +193,26 @@ class SoftConstraintsRBFCostFunction(CostFunctions):
         self.p_sym = self.p_struct.cat
 
         self.h_eqn = -cst_obj.g_fcn(self.x_sym, self.u_sym, self.p_sym)
+        self.dhdz_eqn = -cst_obj.g_grad_fcn(self.x_sym, self.u_sym, self.p_sym)
         self.nh = self.h_eqn.shape[0]
 
         J_eqn_list = [RBF.B_fcn(self.h_eqn[k], self.mu, self.zeta) for k in range(self.nh)]
         self.J_eqn = sum(J_eqn_list)
         self.J_vec_eqn = cs.vertcat(*J_eqn_list)
+        ddBddh_eqn_list = [RBF.B_hess_fcn(self.h_eqn[k], self.mu, self.zeta) for k in range(self.nh)]
+        ddBddh_eqn = cs.diag(cs.vertcat(*ddBddh_eqn_list))
+        self.H_approx_eqn = self.dhdz_eqn.T @ ddBddh_eqn @ self.dhdz_eqn
 
         self.h_fcn = cs.Function("h_"+self.name, [self.x_sym, self.u_sym, self.p_sym], [self.h_eqn])
         self.J_fcn = cs.Function("J_" + self.name, [self.x_sym, self.u_sym, self.p_sym], [self.J_eqn])
         self.J_vec_fcn = cs.Function("J_vec_" + self.name, [self.x_sym, self.u_sym, self.p_sym], [self.J_vec_eqn])
+        self.H_approx_fcn = cs.Function("H_approx_"+self.name, [self.x_sym, self.u_sym, self.p_sym], [self.H_approx_eqn], ["x", "u", "r"], ["H_approx"])
             
         if expand:
             self.h_fcn = self.h_fcn.expand()
             self.J_fcn = self.J_fcn.expand()
             self.J_vec_fcn = self.J_vec_fcn.expand()
+            self.H_approx_fcn = self.H_approx_fcn.expand()
         
     def evaluate_vec(self, x, u, p):
         return self.J_vec_fcn(x, u, p).toarray().flatten()
