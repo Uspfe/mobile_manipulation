@@ -503,7 +503,7 @@ class SDF3DNew:
 
         self.hess_eqn, self.grad_eqn = cs.hessian(self.sdf_eqn, self.x_sym)
         self.grad_fcn = cs.Function('map_grad', [self.x_sym, self.xg_sym, self.yg_sym, self.zg_sym, self.v_sym], [self.grad_eqn])
-
+        self.hess_fcn = cs.Function('map_hess', [self.x_sym, self.xg_sym, self.yg_sym, self.zg_sym, self.v_sym], [self.hess_eqn])
         self.xg, self.yg, self.zg = self._get_default_grid()
         self.v = np.ones(self.map_size[0]* self.map_size[1]*self.map_size[2]) * self.default_val
 
@@ -566,6 +566,9 @@ class SDF3DNew:
     
     def query_grad(self, x, y, z):
         return self.grad_fcn(np.vstack((x,y,z)), self.xg, self.yg, self.zg, self.v).toarray()
+
+    def query_hessian(self, x, y, z):
+        return self.hess_fcn(np.vstack((x,y,z)), self.xg, self.yg, self.zg, self.v).toarray()
 
     def _get_default_grid(self):
         # Limit the map to a certain size around the robot

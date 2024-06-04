@@ -13,3 +13,15 @@ def casadi_sym_struct(data: dict):
         param_entries.append(entry(name, expr=expression))
     
     return struct_MX(param_entries)
+
+if __name__ == "__main__":
+    import numpy as np
+    import casadi as cs
+    data = {"r_EEPos3": cs.MX.sym('r', 2), "W_EEPos3": cs.MX.sym('W',3,3)}
+    p_struct = casadi_sym_struct(data)
+    print(p_struct.getLabel)
+    print(p_struct.labels)
+    print(p_struct.keys())
+    print(p_struct.order)
+
+

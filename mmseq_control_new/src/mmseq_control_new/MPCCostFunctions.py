@@ -7,7 +7,7 @@ import numpy as np
 from scipy.linalg import block_diag
 
 from mmseq_control.robot import MobileManipulator3D
-from mmseq_utils.casadi import casadi_sym_struct
+from mmseq_utils.casadi_struct import casadi_sym_struct
 
 class RBF:
     mu_sym = cs.MX.sym('mu')
@@ -57,7 +57,7 @@ class CostFunctions(ABC):
         
     def evaluate(self, x, u, p):
         if self.J_fcn is not None:
-            return self.J_fcn(x,u,p).toarray()[0]
+            return self.J_fcn(x,u,p).toarray().flatten()
         else:
             return None
 
@@ -111,6 +111,8 @@ class TrajectoryTrackingCostFunction(NonlinearLeastSquare):
         self.e_eqn = self.f_fcn(self.x_sym) - self.r
         self.e_fcn = cs.Function("e_"+self.name, [self.x_sym, self.u_sym, self.r], [self.e_eqn], ["x", "u", "r"], ["e"]).expand()
 
+    def get_e(self, x, u, r):
+        return self.e_fcn(x, u ,r).toarray().flatten()
 
 class EEPos3CostFunction(TrajectoryTrackingCostFunction):
     def __init__(self, robot_mdl, params):
@@ -219,3 +221,14 @@ class SoftConstraintsRBFCostFunction(CostFunctions):
     
     def get_p_dict(self):
         return self.p_dict
+
+class RegularizationCostFunction(CostFunctions):
+    def __init__(self, nx: int, nu: int, name="Regularization"):
+        super().__init__(nx, nu, name)
+        self.p_dict = {"eps": cs.MX.sym("eps_reg", 1)}
+        self.p_struct = casadi_sym_struct(self.p_dict)
+        self.p_sym = self.p_struct.cat
+        self.J_eqn = (self.x_sym.T @ self.x_sym + self.u_sym.T @ self.u_sym) * self.p_struct["eps"]
+        self.J_fcn = cs.Function('J_' + self.name, [self.x_sym, self.u_sym, self.p_sym], [self.J_eqn])
+        self.H_approx_eqn = cs.MX.eye(self.nx+self.nu) * self.p_struct["eps"]
+        self.H_approx_fcn = cs.Function("H_approx_"+self.name, [self.x_sym, self.u_sym, self.p_sym], [self.H_approx_eqn], ["x", "u", "eps"], ["H_approx"])

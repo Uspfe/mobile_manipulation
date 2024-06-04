@@ -7,7 +7,7 @@ import casadi as cs
 from casadi.tools import struct_symMX, entry
 from mmseq_control.robot import MobileManipulator3D
 from mmseq_control_new.MPCCostFunctions import TrajectoryTrackingCostFunction
-from mmseq_utils.casadi import casadi_sym_struct
+from mmseq_utils.casadi_struct import casadi_sym_struct
 
 class Constraint(ABC):
     def __init__(self, nx, nu, name):
@@ -41,11 +41,18 @@ class Constraint(ABC):
     def check(self, x, u, p):
         pass
 
-    def get_p_dict(self):
+    def get_p_dict(self, sym=True):
         if self.p_dict is None:
             return None
         else:
-            return {key +f"_{self.name}":val for (key, val) in self.p_dict.items()}
+            if sym:
+                return {key +f"_{self.name}":val for (key, val) in self.p_dict.items()}
+            else:
+                return {key +f"_{self.name}":cs.DM.zeros(val.shape) for (key, val) in self.p_dict.items()}
+    
+    def get_p_dict_default(self, stage_e=False):
+        p_dict = self.get_p_dict(False)
+        return p_dict
 
 class NonlinearConstraint(Constraint):
     def __init__(self, nx, nu, ng, g_fcn, p_dict, constraint_name):
@@ -96,6 +103,7 @@ class HierarchicalTrackingConstraint(NonlinearConstraint):
         p_dict = cost_fcn_obj.get_p_dict()
         p_dict["e_p"] = cs.MX.sym("e_p_"+name, ng)
         super().__init__(nx, nu, ng, None, p_dict, name)
+        self.cost_fcn_obj = cost_fcn_obj
 
         e_eqn = cost_fcn_obj.e_fcn(self.x_sym, self.u_sym, self.p_struct["r_"+cost_fcn_obj.name])  
         e_p_abs_eqn = cs.fabs(self.p_struct["e_p"])
@@ -106,18 +114,26 @@ class HierarchicalTrackingConstraint(NonlinearConstraint):
         self.g_grad_eqn = cs.jacobian(self.g_eqn, cs.veccat(self.u_sym, self.x_sym))
         self.g_grad_fcn = cs.Function("g_grad", [self.x_sym, self.u_sym, self.p_sym], [self.g_eqn])
 
-    def get_p_dict(self):
+    def get_p_dict(self, sym=True):
         if self.p_dict is None:
             return None
         else:
             p_dict = {}
             for (key, val) in self.p_dict.items():
                 if key == "e_p":
-                    p_dict[key+f"_{self.name}"] = val
+                    p_dict[key+f"_{self.name}"] = val if sym else cs.DM.zeros(val.shape)
                 else:
-                    p_dict[key] = val
+                    p_dict[key] = val if sym else cs.DM.zeros(val.shape)
 
             return p_dict
+    
+    def get_p_dict_default(self, stage_e=False):
+        p_dict = self.get_p_dict(False)
+        if p_dict is not None:
+            p_cost = self.cost_fcn_obj.get_p_dict_default(stage_e)
+            p_dict.update(p_cost)
+            
+        return p_dict
     
 class SignedDistanceConstraint(NonlinearConstraint):
     def __init__(self, robot_mdl, signed_distance_fcn, d_safe, name="obstacle"):

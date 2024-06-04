@@ -183,6 +183,7 @@ class CasadiModelInterface:
         self.sdf_map = sdf_class(config)  
         if config["sdf_type"][-3:] == "New":
             self.sdf_map_SymMdl = self.sdf_map.sdf_fcn
+            print("--------------------Using new map mdl-----------------")
         else:
             self.sdf_map_SymMdl = CBF('sdf', self.sdf_map, self.sdf_map.dim)
 
@@ -249,12 +250,13 @@ class CasadiModelInterface:
         if self.sdf_map.dim == 2:
             self.collision_pairs["sdf"] = self._addCollisionPairFromTwoGroups(["map"],
                                                                               self.robot.collision_link_names["base"])
-        elif self.sdf_map.dim ==3:
+        elif self.sdf_map.dim == 3:
             self.collision_pairs["sdf"] = self._addCollisionPairFromTwoGroups(["map"],
-                                                                              self.robot.collision_link_names["base"] +
+                                                                              self.robot.collision_link_names["base"]+
                                                                               self.robot.collision_link_names["wrist"] +
                                                                               self.robot.collision_link_names["forearm"] +
-                                                                              self.robot.collision_link_names["upper_arm"])
+                                                                              self.robot.collision_link_names["upper_arm"] + 
+                                                                              self.robot.collision_link_names["tool"])
 
     def _setupSelfCollisionSymMdl(self):
         sd_syms = []
@@ -306,7 +308,7 @@ class CasadiModelInterface:
                 sd_sym = self.sdf_map_SymMdl(pt_sym[0][:2], *sdf_map_params_sym) - o.geometry.radius 
             else:
                 if pair[1] == "base_collision_link":
-                    sd_sym = self.sdf_map_SymMdl(cs.vertcat(pt_sym[0][:2],cs.MX.zeros(1)), *sdf_map_params_sym) - o.geometry.radius 
+                    sd_sym = self.sdf_map_SymMdl(cs.vertcat(pt_sym[0][:2],cs.MX.ones(1)*0.1), *sdf_map_params_sym) - o.geometry.radius 
                 else:
                     sd_sym = self.sdf_map_SymMdl(pt_sym[0], *sdf_map_params_sym) - o.geometry.radius 
 

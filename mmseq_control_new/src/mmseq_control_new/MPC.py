@@ -10,8 +10,8 @@ from acados_template import AcadosModel, AcadosOcp, AcadosOcpSolver
 from mmseq_control.robot import MobileManipulator3D as MM
 from mmseq_control.robot import CasadiModelInterface as ModelInterface
 from mmseq_utils.math import wrap_pi_array
-from mmseq_utils.casadi import casadi_sym_struct
-from mmseq_control_new.MPCCostFunctions import EEPos3CostFunction, BasePos2CostFunction, ControlEffortCostFunction, EEPos3BaseFrameCostFunction, SoftConstraintsRBFCostFunction
+from mmseq_utils.casadi_struct import casadi_sym_struct
+from mmseq_control_new.MPCCostFunctions import EEPos3CostFunction, BasePos2CostFunction, ControlEffortCostFunction, EEPos3BaseFrameCostFunction, SoftConstraintsRBFCostFunction, RegularizationCostFunction
 from mmseq_control_new.MPCConstraints import SignedDistanceConstraint
 import mobile_manipulation_central as mm
 INF = 1e15
