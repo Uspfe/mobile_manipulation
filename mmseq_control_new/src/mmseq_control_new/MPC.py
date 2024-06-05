@@ -11,10 +11,10 @@ from mmseq_control.robot import MobileManipulator3D as MM
 from mmseq_control.robot import CasadiModelInterface as ModelInterface
 from mmseq_utils.math import wrap_pi_array
 from mmseq_utils.casadi_struct import casadi_sym_struct
-from mmseq_control_new.MPCCostFunctions import EEPos3CostFunction, BasePos2CostFunction, ControlEffortCostFunction, EEPos3BaseFrameCostFunction, SoftConstraintsRBFCostFunction, RegularizationCostFunction
+from mmseq_control_new.MPCCostFunctions import EEPos3CostFunction, BasePos2CostFunction, ControlEffortCostFunction, EEPos3BaseFrameCostFunction, SoftConstraintsRBFCostFunction, RegularizationCostFunction, CostFunctions
 from mmseq_control_new.MPCConstraints import SignedDistanceConstraint
 import mobile_manipulation_central as mm
-INF = 1e15
+INF = 1e5
 
 class MPC():
     def __init__(self, config):
@@ -37,7 +37,7 @@ class MPC():
         self.EEPos3BaseFrameCost = EEPos3BaseFrameCostFunction(self.robot, config["cost_params"]["EEPos3"])
         self.BasePos2Cost = BasePos2CostFunction(self.robot, config["cost_params"]["BasePos2"])
         self.CtrlEffCost = ControlEffortCostFunction(self.robot, config["cost_params"]["Effort"])
-
+        self.RegularizationCost = RegularizationCostFunction(self.nx, self.nu)
         self.collision_link_names = ["self"] if self.params["self_collision_avoidance_enabled"] else []
         self.collision_link_names += self.model_interface.scene.collision_link_names["static_obstacles"] \
             if self.params["static_obstacles_collision_avoidance_enabled"] else []
@@ -102,12 +102,33 @@ class MPC():
         self.xu_bar_init = False
 
         self.v_cmd = np.zeros(self.nx - self.DoF)
+    
+    def evaluate_cost_function(self, cost_function: CostFunctions, x_bar, u_bar, nlp_p_map_bar):
+        ps = []
+        cost_p_dict = cost_function.get_p_dict()
+        cost_p_struct = casadi_sym_struct(cost_p_dict)
+        cost_p_map = cost_p_struct(0)
+
+        vals = []
+        for k in range(self.N):
+            nlp_p_map = nlp_p_map_bar[k]
+            for key in cost_p_map.keys():
+                cost_p_map[key] = nlp_p_map[key]
+            
+            vals.append(cost_function.evaluate(x_bar[k], u_bar[k], cost_p_map.cat.full().flatten()))
+        return np.sum(vals)
 
 class STMPC(MPC):
 
     def __init__(self, config):
         super().__init__(config)
         self._construct()
+        self.cost_iter = 0
+        self.cost_final = 0
+        self.step_size = 0
+        self.sqp_iter = 0
+        self.solver_status = 0
+        self.qp_iter = 0
 
     def _construct(self):
         # Construct AcadosModel
@@ -148,18 +169,26 @@ class STMPC(MPC):
             cost_expr.append(Ji)
         ocp.model.cost_expr_ext_cost = sum(cost_expr)
 
-        custom_hess_expr = []
         if self.params["use_custom_hess"]:
+            custom_hess_expr = []
+
             for cost in costs:
                 H_fcn = cost.get_custom_H_fcn()
                 H_expr_i = H_fcn(model.x, model.u, cost.p_sym)
                 custom_hess_expr.append(H_expr_i)
-        ocp.model.cost_expr_ext_cost_custom_hess = sum(custom_hess_expr)
+            ocp.model.cost_expr_ext_cost_custom_hess = sum(custom_hess_expr)
 
-        # TODO: fix this. Terminal Cost function doesn't work for EE tracking
-        # ocp.cost.cost_type_e = 'NONLINEAR_LS'
-        # cost_expr_e = sum(cost_expr[:num_terminal_cost])
-        # cost_expr_e = cs.substitute(cost_expr_e, model.u, [])
+        if self.params["use_terminal_cost"]:
+            ocp.cost.cost_type_e = 'EXTERNAL'
+            cost_expr_e = sum(cost_expr[:num_terminal_cost])
+            cost_expr_e = cs.substitute(cost_expr_e, model.u, [])
+            model.cost_expr_ext_cost_e = cost_expr_e
+            if self.params["use_custom_hess"]:
+                cost_hess_expr_e = sum(custom_hess_expr[:num_terminal_cost])
+                cost_hess_expr_e = cs.substitute(cost_hess_expr_e, model.u, [])
+                model.cost_expr_ext_cost_custom_hess_e = cost_hess_expr_e
+
+        # self.terminal_cost = cs.Function("Terminal", [model.x, model.p], [cost_expr_e])
         # fk_ee = self.robot.kinSymMdls[self.robot.tool_link_name]
         # Pee,_ = fk_ee(model.x[:9])
         # ocp.model.cost_y_expr_e = Pee
@@ -176,9 +205,9 @@ class STMPC(MPC):
         ocp.constraints.ubx = np.array(self.ssSymMdl["ub_x"])
         ocp.constraints.idxbx = np.arange(self.nx)
 
-        # ocp.constraints.lbx_e = np.array(self.ssSymMdl["lb_x"])
-        # ocp.constraints.ubx_e = np.array(self.ssSymMdl["ub_x"])
-        # ocp.constraints.idxbx_e = np.arange(self.nx)
+        ocp.constraints.lbx_e = np.array(self.ssSymMdl["lb_x"])
+        ocp.constraints.ubx_e = np.array(self.ssSymMdl["ub_x"])
+        ocp.constraints.idxbx_e = np.arange(self.nx)
 
         # nonlinear constraints
         # TODO: what about the initial and terminal shooting nodes.
@@ -260,23 +289,24 @@ class STMPC(MPC):
             elif planner.type == "base":
                 self.rbase_bar = r_bar
 
-        curr_p_map = self.p_struct(0)
     
         if map is not None:
             self.model_interface.sdf_map.update_map(*map)
 
-        if self.params["sdf_collision_avoidance_enabled"]:
-            params = self.model_interface.sdf_map.get_params()
-            curr_p_map["x_grid_sdf"] = params[0]
-            curr_p_map["y_grid_sdf"] = params[1]
-            if self.model_interface.sdf_map.dim == 3:
-                curr_p_map["z_grid_sdf"] = params[2]
-                curr_p_map["value_sdf"] = params[3]
-            else:
-                curr_p_map["value_sdf"] = params[2]
-        
-
+        curr_p_map_bar = []
         for i in range(self.N+1):
+            curr_p_map = self.p_struct(0)
+
+            if self.params["sdf_collision_avoidance_enabled"]:
+                params = self.model_interface.sdf_map.get_params()
+                curr_p_map["x_grid_sdf"] = params[0]
+                curr_p_map["y_grid_sdf"] = params[1]
+                if self.model_interface.sdf_map.dim == 3:
+                    curr_p_map["z_grid_sdf"] = params[2]
+                    curr_p_map["value_sdf"] = params[3]
+                else:
+                    curr_p_map["value_sdf"] = params[2]
+        
             # set initial guess
             self.ocp_solver.set(i, 'x', self.x_bar[i])
 
@@ -299,10 +329,15 @@ class STMPC(MPC):
                     self.py_logger.warning(f"unknown p name {p_name_r}")
 
             self.ocp_solver.set(i, 'p', curr_p_map.cat.full().flatten())
+            curr_p_map_bar.append(curr_p_map)
 
+        print(self.evaluate_cost_function(self.EEPos3Cost, self.x_bar, self.u_bar, curr_p_map_bar))
         self.ocp_solver.solve_for_x0(xo, fail_on_nonzero_status=False)
         self.ocp_solver.print_statistics() # encapsulates: stat = ocp_solver.get_stats("statistics")
         self.solver_status = self.ocp_solver.status
+        self.step_size = np.mean(self.ocp_solver.get_stats('alpha'))
+        self.nlp_iter = self.ocp_solver.get_stats('sqp_iter')
+        self.qp_iter = sum(self.ocp_solver.get_stats('qp_iter'))
 
         if self.solver_status !=0:
             for i in range(self.N):

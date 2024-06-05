@@ -36,7 +36,7 @@ class HTMPC(MPC):
         model.name = name
 
         # get params from constraints
-        num_terminal_cost = 2
+        num_terminal_cost = 1
         costs += [cost for cost in self.collisionSoftCsts.values()]
         p_dict = {}
         for cost in costs:
@@ -61,24 +61,26 @@ class HTMPC(MPC):
             cost_expr.append(Ji)
         ocp.model.cost_expr_ext_cost = sum(cost_expr)
 
-        custom_hess_expr = []
         if self.params["use_custom_hess"]:
+            custom_hess_expr = []
+
             for cost in costs:
                 H_fcn = cost.get_custom_H_fcn()
                 H_expr_i = H_fcn(model.x, model.u, cost.p_sym)
                 custom_hess_expr.append(H_expr_i)
-        ocp.model.cost_expr_ext_cost_custom_hess = sum(custom_hess_expr)
+            ocp.model.cost_expr_ext_cost_custom_hess = sum(custom_hess_expr)
 
-        # TODO: fix this. Terminal Cost function doesn't work for EE tracking
-        # ocp.cost.cost_type_e = 'EXTERNAL'
-        # cost_expr_e = sum(cost_expr[:num_terminal_cost])
-        # cost_expr_e = cs.substitute(cost_expr_e, model.u, [])
-        # ocp.model.cost_expr_ext_cost_e = cost_expr_e
-        # fk_ee = self.robot.kinSymMdls[self.robot.tool_link_name]
-        # Pee,_ = fk_ee(model.x[:9])
-        # ocp.model.cost_y_expr_e = Pee
-        # ocp.cost.W_e = np.eye(3) * self.params["cost_params"]["EEPos3"]["P"]
-        # ocp.cost.yref_e = np.zeros(3)
+        # TODO: fix this. Terminal Cost function doesn't work
+        if self.params["use_terminal_cost"]:
+            ocp.cost.cost_type_e = 'EXTERNAL'
+            cost_expr_e = sum(cost_expr[:num_terminal_cost])
+            cost_expr_e = cs.substitute(cost_expr_e, model.u, [])
+            model.cost_expr_ext_cost_e = cost_expr_e
+            if self.params["use_custom_hess"]:
+                cost_hess_expr_e = sum(custom_hess_expr[:num_terminal_cost])
+                cost_hess_expr_e = cs.substitute(cost_hess_expr_e, model.u, [])
+                model.cost_expr_ext_cost_custom_hess_e = cost_hess_expr_e
+
 
         # control input constraints
         ocp.constraints.lbu = np.array(self.ssSymMdl["lb_u"])
@@ -90,9 +92,9 @@ class HTMPC(MPC):
         ocp.constraints.ubx = np.array(self.ssSymMdl["ub_x"])
         ocp.constraints.idxbx = np.arange(self.nx)
 
-        # ocp.constraints.lbx_e = np.array(self.ssSymMdl["lb_x"])
-        # ocp.constraints.ubx_e = np.array(self.ssSymMdl["ub_x"])
-        # ocp.constraints.idxbx_e = np.arange(self.nx)
+        ocp.constraints.lbx_e = np.array(self.ssSymMdl["lb_x"])
+        ocp.constraints.ubx_e = np.array(self.ssSymMdl["ub_x"])
+        ocp.constraints.idxbx_e = np.arange(self.nx)
 
         # nonlinear constraints
         # TODO: what about the initial and terminal shooting nodes.
@@ -199,9 +201,11 @@ class HTMPC(MPC):
         self.cost_final = np.zeros(task_num)
         self.solver_status = np.zeros(task_num)
         self.step_size = np.zeros(task_num)
-        self.nlp_iter = np.zeros(task_num)
+        self.sqp_iter = np.zeros(task_num)
+        self.qp_iter = np.zeros(task_num)
 
         tracking_cost_fcns = []
+        ps = []
         for task_id, (stmpc, stmpc_solver, p_struct) in enumerate(zip(self.stmpcs, self.stmpc_solvers, self.stmpc_p_structs)):
             tracking_cost_fcn_name = stmpc.name
             tracking_cost_fcn = self.EEPos3Cost if tracking_cost_fcn_name == "EEPos3" else self.BasePos2Cost
@@ -311,32 +315,20 @@ class HTMPC(MPC):
             self.solver_status[task_id] = stmpc_solver.status
             self.step_size[task_id] = np.mean(stmpc_solver.get_stats('alpha'))
             self.cost_iter[task_id, 1] = self.evaluate_cost_function(tracking_cost_fcn, self.x_bar, self.u_bar, curr_p_map_bar)
-            self.nlp_iter[task_id] = stmpc_solver.get_stats('sqp_iter')
+            self.sqp_iter[task_id] = stmpc_solver.get_stats('sqp_iter')
+            self.qp_iter[task_id] = sum(stmpc_solver.get_stats('qp_iter'))
+            ps.append(curr_p_map_bar)
 
         # Log: final cost for each task after all stmpcs have been solved
         for i, tracking_cost_fcn in enumerate(tracking_cost_fcns):
             self.cost_final[i] = self.evaluate_cost_function(tracking_cost_fcn, 
                                                              self.x_bar,
                                                              self.u_bar,
-                                                             curr_p_map_bar)
+                                                             ps[i])
 
         self.v_cmd = self.x_bar[0][self.robot.DoF:].copy()
         self.ee_bar, self.base_bar = self._getEEBaseTrajectories(self.x_bar)
 
         return self.v_cmd, self.u_bar[0].copy(), self.u_bar.copy()
     
-    def evaluate_cost_function(self, cost_function: CostFunctions, x_bar, u_bar, nlp_p_map_bar):
-        ps = []
-        cost_p_dict = cost_function.get_p_dict()
-        cost_p_struct = casadi_sym_struct(cost_p_dict)
-        cost_p_map = cost_p_struct(0)
-
-        vals = []
-        for k in range(self.N):
-            nlp_p_map = nlp_p_map_bar[k]
-            for key in cost_p_map.keys():
-                cost_p_map[key] = nlp_p_map[key]
-            
-            vals.append(cost_function.evaluate(x_bar[k], u_bar[k], cost_p_map.cat.full().flatten()))
-        return np.sum(vals)
             

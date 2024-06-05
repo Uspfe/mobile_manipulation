@@ -339,12 +339,13 @@ class DataPlotter:
         qb = self.data["xs"][0, :3]
 
         self.data["r_ew_bs"] = self._transform_w2b_SE3(qb, self.data["r_ew_ws"])
-        self.data["r_ew_b_ds"] = self._transform_w2b_SE3(qb, self.data["r_ew_w_ds"])
-
+        if "r_ew_w_ds" in self.data.keys():
+            self.data["r_ew_b_ds"] = self._transform_w2b_SE3(qb, self.data["r_ew_w_ds"])
 
         # has_rb = self.data.get("r_bw_w_ds", None)
         self.data["r_bw_bs"] = self._transform_w2b_SE2(qb, self.data["r_bw_ws"])
-        self.data["r_bw_b_ds"] = self._transform_w2b_SE2(qb, self.data["r_bw_w_ds"])
+        if "r_bw_w_ds" in self.data.keys():
+            self.data["r_bw_b_ds"] = self._transform_w2b_SE2(qb, self.data["r_bw_w_ds"])
 
 
     def _get_statistics(self):
@@ -1011,7 +1012,20 @@ class DataPlotter:
             print("Ignore cost_htmpc")
             return
 
-        N, HT_iter_num, task_num, ST_iter_num = cost.shape
+        if len(cost.shape) == 4:
+            N, HT_iter_num, task_num, ST_iter_num = cost.shape
+        elif len(cost.shape) == 3:
+            N, task_num, ST_iter_num = cost.shape
+            HT_iter_num = 1
+            cost = cost.reshape(N, HT_iter_num, task_num, ST_iter_num)
+            cost_final = cost_final.reshape(N, task_num)
+
+        elif len(cost.shape) == 1:
+            N = len(cost)
+            task_num, ST_iter_num, HT_iter_num = 1,1,1
+            cost = cost.reshape(N, HT_iter_num, task_num, ST_iter_num)
+            cost_final = cost_final.reshape(N, task_num)
+            
 
         if legend is None:
             legend = self.data["name"]
@@ -1061,11 +1075,23 @@ class DataPlotter:
         # Time x HT-Iter x Task x ST-ITer
         status = self.data.get("mpc_solver_statuss")
         step_size = self.data.get("mpc_step_sizes")
+        print(f"status {status.shape}")
         if status is None or step_size is None:
             print("Ignore solver status")
             return
+        if len(status.shape) == 4:
+            N, HT_iter_num, task_num, ST_iter_num = status.shape
+        elif len(status.shape) == 2:
+            N, task_num = status.shape
+            HT_iter_num, ST_iter_num = 1, 1
+            status = status.reshape(N, HT_iter_num, task_num, ST_iter_num)
+            step_size = step_size.reshape(N, HT_iter_num, task_num, ST_iter_num)
+        elif len(status.shape) == 1:
+            N = len(status)
+            task_num, ST_iter_num, HT_iter_num = 1,1,1
+            status = status.reshape(N, HT_iter_num, task_num, ST_iter_num)
+            step_size = step_size.reshape(N, HT_iter_num, task_num, ST_iter_num)
 
-        N, HT_iter_num, task_num, ST_iter_num = status.shape
         t_sim = self.data["ts"]
         if legend is None:
             legend = self.data["name"]
@@ -1079,6 +1105,48 @@ class DataPlotter:
         for l in range(task_num):
             axes[l].plot(status[:, :, l, :].flatten(), "x-", label=legend + " solver status", linewidth=2, markersize=8)
             axes[l].plot(step_size[:, :, l, :].flatten(), "x-", label=legend + " step size", linewidth=2, markersize=8)
+            axes[l].set_title("Task" + str(l))
+            axes[l].set_xticks(xticks)
+            axes[l].set_xticklabels(xlables)
+        axes[0].legend()
+        # plt.show(block=block)
+
+        return axes
+
+    def plot_solver_iters_htmpc(self, axes=None, index=0, block=True, legend=None):
+        # Time x HT-Iter x Task x ST-ITer
+        qp_iters = self.data.get("mpc_qp_iters")
+        sqp_iters = self.data.get("mpc_sqp_iters")
+        if qp_iters is None or sqp_iters is None:
+            print("Ignore solver status")
+            return
+        
+        if len(qp_iters.shape) == 4:
+            N, HT_iter_num, task_num, ST_iter_num = qp_iters.shape
+        elif len(qp_iters.shape) == 2:
+            N, task_num = qp_iters.shape
+            HT_iter_num, ST_iter_num = 1, 1
+            qp_iters = qp_iters.reshape(N, HT_iter_num, task_num, ST_iter_num)
+            sqp_iters = sqp_iters.reshape(N, HT_iter_num, task_num, ST_iter_num)
+        elif len(qp_iters.shape) == 1:
+            N = len(qp_iters)
+            task_num, ST_iter_num, HT_iter_num = 1,1,1
+            qp_iters = qp_iters.reshape(N, HT_iter_num, task_num, ST_iter_num)
+            sqp_iters = sqp_iters.reshape(N, HT_iter_num, task_num, ST_iter_num)
+
+        t_sim = self.data["ts"]
+        if legend is None:
+            legend = self.data["name"]
+
+        if axes is None:
+            f, axes = plt.subplots(task_num, 1, sharex=True)
+        if task_num == 1:
+            axes = [axes]
+        xticks = np.arange(N) * (HT_iter_num * ST_iter_num)
+        xlables = [str(t) for t in t_sim]
+        for l in range(task_num):
+            axes[l].plot(qp_iters[:, :, l, :].flatten(), "x-", label=legend + " qp iters", linewidth=2, markersize=8)
+            axes[l].plot(sqp_iters[:, :, l, :].flatten(), "x-", label=legend + " sqp iters", linewidth=2, markersize=8)
             axes[l].set_title("Task" + str(l))
             axes[l].set_xticks(xticks)
             axes[l].set_xticklabels(xlables)
@@ -1196,6 +1264,7 @@ class DataPlotter:
 
         self.plot_cost_htmpc()
         self.plot_solver_status_htmpc()
+        self.plot_solver_iters_htmpc()
         self.plot_run_time()
 
         figs = [plt.figure(n) for n in plt.get_fignums()]
@@ -1205,14 +1274,17 @@ class DataPlotter:
     def plot_mpc(self):
         self.plot_cost_htmpc()
         self.plot_solver_status_htmpc()
+        self.plot_solver_iters_htmpc()
+        # self.plot_solver_iters()
+
         self.plot_run_time()
 
     def plot_robot(self):
         self.plot_cmd_vs_real_vel()
         self.plot_state()
         self.plot_state_normalized()
-        # self.plot_cmds()
-        self.plot_cmds_normalized()
+        self.plot_cmds()
+        # self.plot_cmds_normalized()
         self.plot_du()
         self.plot_collision()
 
