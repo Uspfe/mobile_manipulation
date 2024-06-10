@@ -292,10 +292,9 @@ class STMPC(MPC):
 
         tp1 = time.perf_counter()
         curr_p_map_bar = []
-        self.log["time_ocp_set_params_map"] = 0
-        self.log["time_ocp_set_params_set_x"] = 0
-        self.log["time_ocp_set_params_tracking"] = 0
-        self.log["time_ocp_set_params_setp"] = 0
+        for key in self.log.keys():
+            if "time" in key:
+                self.log[key] = 0
 
         for i in range(self.N+1):
             curr_p_map = self.p_struct(0)
@@ -396,8 +395,11 @@ class STMPC(MPC):
                "time_map_update": 0,
                "time_ocp_set_params": 0,
                "time_ocp_solve": 0,
+               "time_ocp_set_params_map" : 0,
+               "time_ocp_set_params_set_x" : 0,
+               "time_ocp_set_params_tracking" : 0,
+               "time_ocp_set_params_setp" : 0,
                }
-        
         return log
 
 

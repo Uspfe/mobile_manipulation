@@ -1,5 +1,6 @@
 import numpy as np
 import casadi as cs
+import time
 from acados_template import AcadosModel, AcadosOcp, AcadosOcpSolver
 
 from mmseq_utils.math import wrap_pi_array
@@ -42,8 +43,11 @@ class HTMPC(MPC):
         self.ree_bar = []
         self.rbase_bar = []
 
+        t1 = time.perf_counter()
         if map is not None:
             self.model_interface.sdf_map.update_map(*map)
+        t2 = time.perf_counter()
+        self.log["time_map_update"][:] = t2 - t1
 
         for pid, planner in enumerate(planners):
             r_bar = [planner.getTrackingPoint(t + k * self.dt, (self.x_bar[k, :self.DoF], self.x_bar[k, self.DoF:]))[0]
@@ -68,12 +72,7 @@ class HTMPC(MPC):
         e_p_bar_map = {}
 
         # for logging
-        self.cost_iter = np.zeros((task_num, 2))
-        self.cost_final = np.zeros(task_num)
-        self.solver_status = np.zeros(task_num)
-        self.step_size = np.zeros(task_num)
-        self.sqp_iter = np.zeros(task_num)
-        self.qp_iter = np.zeros(task_num)
+        self.log = self._get_log(task_num=task_num)
 
         tracking_cost_fcns = []
         ps = []
@@ -85,11 +84,12 @@ class HTMPC(MPC):
             if self.params["sdf_collision_avoidance_enabled"]:
                 sdf_params = self.model_interface.sdf_map.get_params()
 
+            t1 = time.perf_counter()
             curr_p_map_bar = []
             for k in range(self.N+1):
                 # set parameters
                 curr_p_map = p_struct(0)
-
+                
                 # Set regularization
                 if task_id == 0:
                     curr_p_map["eps_Regularization"] = self.params["cost_params"]["Regularization"]["eps"]
@@ -139,12 +139,18 @@ class HTMPC(MPC):
 
                 stmpc_solver.set(k, 'p', curr_p_map.cat.full().flatten())
                 curr_p_map_bar.append(curr_p_map)
+            t2 = time.perf_counter()
+            self.log["time_stmpc_set_params"][task_id] = t2 - t1
 
             # Log: initial cost
-            self.cost_iter[task_id, 0] = self.evaluate_cost_function(tracking_cost_fcn, self.x_bar, self.u_bar, curr_p_map_bar)
+            self.log["cost_iter"][task_id, 0] = self.evaluate_cost_function(tracking_cost_fcn, self.x_bar, self.u_bar, curr_p_map_bar)
 
             # Solve stmpc
+            t1 = time.perf_counter()
             stmpc_solver.solve_for_x0(xo, fail_on_nonzero_status=False)
+            t2 = time.perf_counter()
+            self.log["time_stmpc_solve"][task_id] = t2 - t1
+
             stmpc_solver.print_statistics() # encapsulates: stat = ocp_solver.get_stats("statistics")
 
             if stmpc_solver.status !=0:
@@ -167,9 +173,6 @@ class HTMPC(MPC):
                 self.u_bar[i,:] = stmpc_solver.get(i, "u")
             self.x_bar[self.N,:] = stmpc_solver.get(self.N, "x")
 
-            # for i in range(self.N):
-            #     print(f"time {i}: h: {self.h_fcn(self.x_bar[i], self.u_bar[i], curr_p_map.cat.full().flatten())}")
-
             # get e_p_bar
             e_p_bar_map[tracking_cost_fcn_name] = []
             for k in range(self.N+1):
@@ -183,16 +186,16 @@ class HTMPC(MPC):
             print(f"cost {tracking_cost_fcn_name}: {stmpc_solver.get_cost()}")
 
             # Log: solver status, step size, cost after stmpc
-            self.solver_status[task_id] = stmpc_solver.status
-            self.step_size[task_id] = np.mean(stmpc_solver.get_stats('alpha'))
-            self.cost_iter[task_id, 1] = self.evaluate_cost_function(tracking_cost_fcn, self.x_bar, self.u_bar, curr_p_map_bar)
-            self.sqp_iter[task_id] = stmpc_solver.get_stats('sqp_iter')
-            self.qp_iter[task_id] = sum(stmpc_solver.get_stats('qp_iter'))
+            self.log["solver_status"][task_id] = stmpc_solver.status
+            self.log["step_size"][task_id] = np.mean(stmpc_solver.get_stats('alpha'))
+            self.log["cost_iter"][task_id, 1] = self.evaluate_cost_function(tracking_cost_fcn, self.x_bar, self.u_bar, curr_p_map_bar)
+            self.log["sqp_iter"][task_id] = stmpc_solver.get_stats('sqp_iter')
+            self.log["qp_iter"][task_id] = sum(stmpc_solver.get_stats('qp_iter'))
             ps.append(curr_p_map_bar)
 
         # Log: final cost for each task after all stmpcs have been solved
         for i, tracking_cost_fcn in enumerate(tracking_cost_fcns):
-            self.cost_final[i] = self.evaluate_cost_function(tracking_cost_fcn, 
+            self.log["cost_final"][i] = self.evaluate_cost_function(tracking_cost_fcn, 
                                                              self.x_bar,
                                                              self.u_bar,
                                                              ps[i])
@@ -202,4 +205,15 @@ class HTMPC(MPC):
 
         return self.v_cmd, self.u_bar[0].copy(), self.u_bar.copy()
     
-            
+    def _get_log(self, task_num=2):
+        log = {"cost_iter": np.zeros((task_num, 2)),
+        "cost_final": np.zeros(task_num),
+        "solver_status": np.zeros(task_num),
+        "step_size": np.zeros(task_num),
+        "sqp_iter": np.zeros(task_num),
+        "qp_iter": np.zeros(task_num),
+        "time_map_update": np.zeros(task_num),
+        "time_stmpc_set_params": np.zeros(task_num),
+        "time_stmpc_solve": np.zeros(task_num),
+        }
+        return log

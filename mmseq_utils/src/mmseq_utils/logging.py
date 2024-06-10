@@ -1008,25 +1008,33 @@ class DataPlotter:
         t_sim = self.data["ts"]
         cost = self.data.get("mpc_cost_iters")
         cost_final = self.data.get("mpc_cost_finals")
-        if cost is None or cost_final is None:
-            print("Ignore cost_htmpc")
-            return
 
-        if len(cost.shape) == 4:
-            N, HT_iter_num, task_num, ST_iter_num = cost.shape
-        elif len(cost.shape) == 3:
-            N, task_num, ST_iter_num = cost.shape
-            HT_iter_num = 1
-            cost = cost.reshape(N, HT_iter_num, task_num, ST_iter_num)
-            cost_final = cost_final.reshape(N, task_num)
+        if cost is None and cost_final is None:
+            print("htmpc ignored. mpc_cost_iters and mpc_cost_finals found")
+            return 
+        
+        if cost is not None:
+            if len(cost.shape) == 4:
+                N, HT_iter_num, task_num, ST_iter_num = cost.shape
+            elif len(cost.shape) == 3:
+                N, task_num, ST_iter_num = cost.shape
+                HT_iter_num = 1
+                cost = cost.reshape(N, HT_iter_num, task_num, ST_iter_num)
+                cost_final = cost_final.reshape(N, task_num)
 
-        elif len(cost.shape) == 1:
-            N = len(cost)
-            task_num, ST_iter_num, HT_iter_num = 1,1,1
-            cost = cost.reshape(N, HT_iter_num, task_num, ST_iter_num)
-            cost_final = cost_final.reshape(N, task_num)
+            elif len(cost.shape) == 1:
+                N = len(cost)
+                task_num, ST_iter_num, HT_iter_num = 1,1,1
+                cost = cost.reshape(N, HT_iter_num, task_num, ST_iter_num)
+                cost_final = cost_final.reshape(N, task_num)
+        else:
+            if len(cost_final.shape) == 2:
+                N, task_num = cost_final.shape
+            else:
+                N = len(cost_final)
+                task_num = 1
+                cost_final = cost_final.reshape(N, task_num)
             
-
         if legend is None:
             legend = self.data["name"]
 
@@ -1042,19 +1050,17 @@ class DataPlotter:
         else:
             ax = [axes[0]]
 
-        xticks = np.arange(N) * (HT_iter_num * ST_iter_num)
-        xlables = [str(t) for t in t_sim]
-        print(cost.shape)
-        prop_cycle = plt.rcParams["axes.prop_cycle"]
-        colors = prop_cycle.by_key()["color"]
-        for l in range(task_num):
-            ax[l].plot(cost[:, :, l, :].flatten(), "x-", label=legend + " iter", linewidth=3, markersize=10)
-            ax[l].plot(xticks + HT_iter_num * ST_iter_num - 1, cost_final[:, l], "x-",
-                       label=legend + " final", linewidth=2, markersize=8)
-            ax[l].set_title("Task" + str(l) + " Cost", fontsize=20)
-            ax[l].set_xticks(xticks)
-        ax[-1].set_xticklabels(xlables)
-        ax[0].legend(fontsize=20)
+        if cost is not None:
+            xticks = np.arange(N) * (HT_iter_num * ST_iter_num)
+            xlables = [str(t) for t in t_sim]
+            for l in range(task_num):
+                ax[l].plot(cost[:, :, l, :].flatten(), "x-", label=legend + " iter", linewidth=3, markersize=10)
+                ax[l].plot(xticks + HT_iter_num * ST_iter_num - 1, cost_final[:, l], "x-",
+                        label=legend + " final", linewidth=2, markersize=8)
+                ax[l].set_title("Task" + str(l) + " Cost", fontsize=20)
+                ax[l].set_xticks(xticks)
+            ax[-1].set_xticklabels(xlables)
+            ax[0].legend(fontsize=20)
         # plt.show(block=False)
 
         # Fig 2: Cost for each task over time
@@ -1063,76 +1069,53 @@ class DataPlotter:
         else:
             ax = [axes[1]]
 
-        for l in range(task_num):
-            ax[l].plot(t_sim, cost_final[:, l], ".-", label=legend, linewidth=3, markersize=10)
-            ax[l].set_title("Task " + str(l) + " Final Cost", fontsize=20)
+        if cost_final is not None:
+            for l in range(task_num):
+                ax[l].plot(t_sim, cost_final[:, l], ".-", label=legend, linewidth=3, markersize=10)
+                ax[l].set_title("Task " + str(l) + " Final Cost", fontsize=20)
 
-        ax[0].legend(fontsize=20)
-        # plt.show(block=block)
+            ax[0].legend(fontsize=20)
+        plt.show(block=block)
         return axes
 
     def plot_solver_status_htmpc(self, axes=None, index=0, block=True, legend=None):
-        # Time x HT-Iter x Task x ST-ITer
-        status = self.data.get("mpc_solver_statuss")
-        step_size = self.data.get("mpc_step_sizes")
-        print(f"status {status.shape}")
-        if status is None or step_size is None:
-            print("Ignore solver status")
-            return
-        if len(status.shape) == 4:
-            N, HT_iter_num, task_num, ST_iter_num = status.shape
-        elif len(status.shape) == 2:
-            N, task_num = status.shape
-            HT_iter_num, ST_iter_num = 1, 1
-            status = status.reshape(N, HT_iter_num, task_num, ST_iter_num)
-            step_size = step_size.reshape(N, HT_iter_num, task_num, ST_iter_num)
-        elif len(status.shape) == 1:
-            N = len(status)
-            task_num, ST_iter_num, HT_iter_num = 1,1,1
-            status = status.reshape(N, HT_iter_num, task_num, ST_iter_num)
-            step_size = step_size.reshape(N, HT_iter_num, task_num, ST_iter_num)
-
-        t_sim = self.data["ts"]
-        if legend is None:
-            legend = self.data["name"]
-
-        if axes is None:
-            f, axes = plt.subplots(task_num, 1, sharex=True)
-        if task_num == 1:
-            axes = [axes]
-        xticks = np.arange(N) * (HT_iter_num * ST_iter_num)
-        xlables = [str(t) for t in t_sim]
-        for l in range(task_num):
-            axes[l].plot(status[:, :, l, :].flatten(), "x-", label=legend + " solver status", linewidth=2, markersize=8)
-            axes[l].plot(step_size[:, :, l, :].flatten(), "x-", label=legend + " step size", linewidth=2, markersize=8)
-            axes[l].set_title("Task" + str(l))
-            axes[l].set_xticks(xticks)
-            axes[l].set_xticklabels(xlables)
-        axes[0].legend()
-        # plt.show(block=block)
+        axes = self.plot_time_series_data_htmpc("mpc_solver_statuss", axes, index, False, legend)
+        self.plot_time_series_data_htmpc("mpc_step_sizes", axes, index, block, legend)
 
         return axes
 
     def plot_solver_iters_htmpc(self, axes=None, index=0, block=True, legend=None):
+
+        axes = self.plot_time_series_data_htmpc("mpc_qp_iters", axes, index, False, legend)
+        self.plot_time_series_data_htmpc("mpc_sqp_iters", axes, index, block, legend)
+
+        return axes
+    
+    def plot_time_htmpc(self, axes=None, index=0, block=True, legend=None):
+        
+        for data_name in self.data.keys():
+            if "mpc_time" in data_name:
+                axes = self.plot_time_series_data_htmpc(data_name, axes, index, False, legend)
+
+        return axes
+
+    def plot_time_series_data_htmpc(self, data_name, axes=None, index=0, block=True, legend=None):
         # Time x HT-Iter x Task x ST-ITer
-        qp_iters = self.data.get("mpc_qp_iters")
-        sqp_iters = self.data.get("mpc_sqp_iters")
-        if qp_iters is None or sqp_iters is None:
-            print("Ignore solver status")
+        data = self.data.get(data_name)
+        if data is None:
+            print(f"Did not find {data_name}. Stop plotting.")
             return
         
-        if len(qp_iters.shape) == 4:
-            N, HT_iter_num, task_num, ST_iter_num = qp_iters.shape
-        elif len(qp_iters.shape) == 2:
-            N, task_num = qp_iters.shape
+        if len(data.shape) == 4:
+            N, HT_iter_num, task_num, ST_iter_num = data.shape
+        elif len(data.shape) == 2:
+            N, task_num = data.shape
             HT_iter_num, ST_iter_num = 1, 1
-            qp_iters = qp_iters.reshape(N, HT_iter_num, task_num, ST_iter_num)
-            sqp_iters = sqp_iters.reshape(N, HT_iter_num, task_num, ST_iter_num)
-        elif len(qp_iters.shape) == 1:
-            N = len(qp_iters)
+            data = data.reshape(N, HT_iter_num, task_num, ST_iter_num)
+        elif len(data.shape) == 1:
+            N = len(data)
             task_num, ST_iter_num, HT_iter_num = 1,1,1
-            qp_iters = qp_iters.reshape(N, HT_iter_num, task_num, ST_iter_num)
-            sqp_iters = sqp_iters.reshape(N, HT_iter_num, task_num, ST_iter_num)
+            data = data.reshape(N, HT_iter_num, task_num, ST_iter_num)
 
         t_sim = self.data["ts"]
         if legend is None:
@@ -1140,21 +1123,20 @@ class DataPlotter:
 
         if axes is None:
             f, axes = plt.subplots(task_num, 1, sharex=True)
-        if task_num == 1:
-            axes = [axes]
+            if task_num == 1:
+                axes = [axes]
         xticks = np.arange(N) * (HT_iter_num * ST_iter_num)
         xlables = [str(t) for t in t_sim]
         for l in range(task_num):
-            axes[l].plot(qp_iters[:, :, l, :].flatten(), "x-", label=legend + " qp iters", linewidth=2, markersize=8)
-            axes[l].plot(sqp_iters[:, :, l, :].flatten(), "x-", label=legend + " sqp iters", linewidth=2, markersize=8)
+            axes[l].plot(data[:, :, l, :].flatten(), "x-", label=" ".join([legend]+ data_name.split("_")[1:]), linewidth=2, markersize=8)
             axes[l].set_title("Task" + str(l))
             axes[l].set_xticks(xticks)
             axes[l].set_xticklabels(xlables)
         axes[0].legend()
-        # plt.show(block=block)
+        plt.show(block=block)
 
         return axes
-
+    
     def plot_task_performance(self, axes=None, index=0, legend=None):
         if axes is None:
             f, axes = plt.subplots(4, 1, sharex=True)
@@ -1272,9 +1254,10 @@ class DataPlotter:
         multipage(Path(str(self.data["dir_path"])) / "data.pdf", figs)
 
     def plot_mpc(self):
-        self.plot_cost_htmpc()
-        self.plot_solver_status_htmpc()
-        self.plot_solver_iters_htmpc()
+        self.plot_cost_htmpc(block=False)
+        self.plot_solver_status_htmpc(block=False)
+        self.plot_solver_iters_htmpc(block=False)
+        self.plot_time_htmpc(block=False)
         # self.plot_solver_iters()
 
         self.plot_run_time()
