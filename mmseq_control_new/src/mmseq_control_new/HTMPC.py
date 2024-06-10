@@ -44,7 +44,7 @@ class HTMPC(MPC):
         self.rbase_bar = []
 
         t1 = time.perf_counter()
-        if map is not None:
+        if map is not None and self.params["sdf_collision_avoidance_enabled"]:
             self.model_interface.sdf_map.update_map(*map)
         t2 = time.perf_counter()
         self.log["time_map_update"][:] = t2 - t1

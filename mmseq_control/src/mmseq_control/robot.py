@@ -174,16 +174,22 @@ class CasadiModelInterface:
         self.robot = MobileManipulator3D(config)
         self.scene = Scene(config)  
         self.pinocchio_interface = PinocchioInterface(config)
+        
         #TODO: set robot init pose
-        sdf_class = getattr(map, config["sdf_type"], None)
-        if sdf_class is None:
-            sdf_class = getattr(map, "SDF2D", None)
-            print(f"sdf_type {config['sdf_type']} can not be found. Using SDF2D instead.")
+        sdf_type = config.get("sdf_type", None)
+        if sdf_type is None:
+            sdf_type = "SDF2DNew"
+            config_path = parsing.parse_ros_path({"package": "mmseq_run", "path": "config/map/SDF2D.yaml"})
+            config_map_default = parsing.load_config(config_path)
+            config = parsing.recursive_dict_update(config, config_map_default["controller"])
+            print(f"sdf_type was not specified in the config.")
 
+        sdf_class = getattr(map, sdf_type)
         self.sdf_map = sdf_class(config)  
+        print(f"Using {sdf_type} Map Model")
+        
         if config["sdf_type"][-3:] == "New":
             self.sdf_map_SymMdl = self.sdf_map.sdf_fcn
-            print("--------------------Using new map mdl-----------------")
         else:
             self.sdf_map_SymMdl = CBF('sdf', self.sdf_map, self.sdf_map.dim)
 

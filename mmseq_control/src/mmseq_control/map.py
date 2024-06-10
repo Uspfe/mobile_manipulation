@@ -12,7 +12,7 @@ from mpl_toolkits.mplot3d import Axes3D # <--- This is important for 3d plotting
 from mmseq_utils import parsing
 
 class SDF2D:
-    def __init__(self, init_pose=np.eye(4)):
+    def __init__(self, config, init_pose=np.eye(4)):
         self.mutex = threading.Lock()
         self.map = None
         self.valid = True
@@ -141,7 +141,7 @@ class SDF2D:
         return np.hstack((grad_x, grad_y))
 
 class SDF3D:
-    def __init__(self, init_pose=np.eye(4)):
+    def __init__(self, config, init_pose=np.eye(4)):
         self.mutex = threading.Lock()
         self.pose_mutex = threading.Lock()
 

@@ -15,7 +15,7 @@ simulation:
 
 include:
     - "$PROJECTMM3D_HOME/experiments/config/robot/thing.yaml"
-    - "$PROJECTMM3D_HOME/experiments/config/controller/HTMPC.yaml"
+    - "$PROJECTMM3D_HOME/experiments/config/controller/MPC.yaml"
     - "$PROJECTMM3D_HOME/experiments/config/sim/simulation.yaml"
 
 logging:

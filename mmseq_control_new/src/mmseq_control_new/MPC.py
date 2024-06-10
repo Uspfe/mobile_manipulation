@@ -25,7 +25,7 @@ class MPC():
         self.nx = self.ssSymMdl["nx"]
         self.nu = self.ssSymMdl["nu"]
         self.DoF = self.robot.DoF
-        self.home = mm.load_home_position(config["home"])
+        self.home = mm.load_home_position(config.get("home", "default"))
 
         self.params = config
         self.dt = self.params["dt"]
@@ -285,7 +285,7 @@ class STMPC(MPC):
                 self.rbase_bar = r_bar
 
         t1 = time.perf_counter()
-        if map is not None:
+        if map is not None and self.params["sdf_collision_avoidance_enabled"]:
             self.model_interface.sdf_map.update_map(*map)
         t2 = time.perf_counter()
         self.log["time_map_update"] = t2 - t1

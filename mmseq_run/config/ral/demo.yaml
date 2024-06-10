@@ -83,7 +83,8 @@ controller:
   home: "demo"
 
   ee_upward_constraint_enabled: True
-  collision_safety_margin: 0.2
+  collision_safety_margin:
+    self: 0.2
   ee_upward_deviation_angle_max: 0.17    #rad, 0.26 rad ~ 15 degree
 
 
@@ -93,8 +94,9 @@ controller:
     mu: 0.003
     zeta: 0.005
   collision_soft:
-    mu: 0.001
-    zeta: 0.005
+    self:
+      mu: 0.001
+      zeta: 0.005
   ee_upward_soft:
     mu: 0.001
     zeta: 0.01
@@ -142,7 +144,7 @@ include:
   - package: "mmseq_run"
     path: "config/robot/thing.yaml"
   - package: "mmseq_run"
-    path: "config/controller/HTMPC.yaml"
+    path: "config/controller/MPC.yaml"
   - package: "mmseq_run"
     path: "config/sim/simulation.yaml"
   - package: "mmseq_run"
