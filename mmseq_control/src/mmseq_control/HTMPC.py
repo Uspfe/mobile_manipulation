@@ -165,7 +165,7 @@ class HTMPCSQP(MPC):
                      for k in range(self.N + 1)]
             r_bars.append([[np.array(r_bar)], [-self.u_prev]])
 
-            if planner.type == "EE" and planner.ref_data_type == "Vec3" and planner.__class__.__name__ == "EESimplePlanner":
+            if planner.type == "EE" and planner.ref_data_type == "Vec3" and (planner.__class__.__name__ == "EESimplePlanner" or planner.__class__.__name__ == "EEPosTrajectoryLine"):
                 cost_fcns.append([self.EEPos3Cost, self.CtrlEffCost])
             elif planner.type == "EE" and planner.ref_data_type == "Vec3" and planner.__class__.__name__ == "EESimplePlannerBaseFrame":
                 cost_fcns.append([self.EEPos3BaseFrameCost, self.CtrlEffCost])
@@ -692,14 +692,14 @@ class HTMPCSQPNEW(MPC):
 
         t0 = time.perf_counter()
         for id, planner in enumerate(planners):
-            if planner.type == "EE" and planner.ref_data_type == "Vec3" and planner.__class__.__name__ == "EESimplePlanner":
+            if planner.type == "EE" and planner.ref_data_type == "Vec3" and (planner.__class__.__name__ == "EESimplePlanner" or planner.__class__.__name__ == "EEPosTrajectoryLine"):
                 ht_cost_fcns.append(self.st_cost_EEPos3)
             elif planner.type == "EE" and planner.ref_data_type == "Vec3" and planner.__class__.__name__ == "EESimplePlannerBaseFrame":
                 ht_cost_fcns.append(self.st_cost_EEPos3BaseFrameCost)
             elif planner.type == "base" and planner.ref_data_type == "Vec2":
                 ht_cost_fcns.append(self.st_cost_BasePos2Cost)
             else:
-                self.py_logger.warning("unknown cost type, planner # %d", id)
+                self.py_logger.warning(f"unknown cost type, planner {planner.__class__.__name__}")
 
             r_bar = [planner.getTrackingPoint(t + k * self.dt, (self.x_bar[k, :self.DoF], self.x_bar[k, self.DoF:]))[0]
                      for k in range(self.N + 1)]
