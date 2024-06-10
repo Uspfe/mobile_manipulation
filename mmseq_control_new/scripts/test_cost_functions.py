@@ -1,6 +1,7 @@
 import numpy as np
 from mmseq_control.robot import MobileManipulator3D
 from mmseq_control_new.MPCCostFunctions import BasePos2CostFunction,EEPos3CostFunction, ControlEffortCostFunction
+from mmseq_utils.casadi_struct import casadi_sym_struct
 
 if __name__ == "__main__":
     dt = 0.1
@@ -23,15 +24,15 @@ if __name__ == "__main__":
     u = np.zeros(9)
 
     p_map_base = cost_base.p_struct(0)
-    print(p_map_base)
     p_map_base['W'] = config["controller"]["cost_params"]["BasePos2"]["Qk"]
     p_map_base['r'] = np.array([1,0])
     J_base = cost_base.evaluate(x, u, p_map_base.cat)
     print(J_base)
+    print(p_map_base)
     
     p_map_ee = cost_ee.p_struct(0)
     p_map_ee['W'] = config["controller"]["cost_params"]["EEPos3"]["Qk"]
-    p_map_ee['r'] = np.array([1,0,0])
+    p_map_ee['r'] = np.array([1.194, 0.374, 1.596])
     J_ee = cost_ee.evaluate(x, u, p_map_ee.cat)
     print(J_ee)
 

@@ -8,7 +8,6 @@ import matplotlib.pyplot as plt
 def test_3d(config):
 
     map_ros_interface = MapInterfaceNew(config["controller"])
-    # sdf = SDF2D()
     sdf = SDF3DNew(config["controller"])
     rate = rospy.Rate(100)
 
@@ -30,15 +29,12 @@ def test_3d(config):
             if map_ros_interface.valid:
                 sdf.vis(x_lim=x_lim,
                         y_lim=y_lim,
-                        z_lim=[0.25, 0.25],
+                        z_lim=[0.0, 0.0],
                         block=False)
                 sdf.vis(x_lim=x_lim,
                         y_lim=y_lim,
                         z_lim=[0.5, 0.5],
                         block=False)
-                # X,Y = np.meshgrid(sdf.xs, sdf.ys, indexing='ij')
-                # plt.plot(X.flatten(), Y.flatten(), 'r.')
-                
                 sdf.vis(x_lim=x_lim,
                         y_lim=y_lim,
                         z_lim=[0.75, 0.75],
@@ -47,12 +43,13 @@ def test_3d(config):
             else:
                 print("map invalid")
             t0 = time.perf_counter()
-            sdf.query_val(xs, ys, np.ones_like(xs)*0.25)
+            val = sdf.query_val(xs, ys, np.ones_like(xs)*0.25)
             t1 = time.perf_counter()
-            sdf.query_grad(xs, ys, np.ones_like(xs)*0.25)
+            grad = sdf.query_grad(xs, ys, np.ones_like(xs)*0.25)
             t2= time.perf_counter()
-            print(sdf.query_val([2],[1],[0.75]))
-            print(f"Query Val {t1-t0}, Grad {t2-t1}")
+            hess = sdf.query_hessian(xs, ys, np.ones_like(xs)*0.25)
+            t3= time.perf_counter()
+            print(f"Time: Query Val {t1-t0}, Grad {t2-t1}, Hess {t3-t2}")
 
         rate.sleep()
 
@@ -85,6 +82,22 @@ def test_2d(config):
 if __name__ == "__main__":
     rospy.init_node("map_tester")
     from mmseq_utils import parsing
-    config = parsing.load_config("/home/tracy/Projects/mm_slam/mm_ws/src/mm_sequential_tasks/mmseq_run/config/simple_experiment.yaml")
-    # test_3d()
-    test_2d(config)
+    import argparse
+    import sys
+    config_path = parsing.parse_ros_path({"package": "mmseq_run",
+                                          "path": "config/simple_experiment.yaml"})
+    config = parsing.load_config(config_path)
+
+    argv = rospy.myargv(argv=sys.argv)
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--map2d", action="store_true",
+                        help="Test SDF3DNew")
+    parser.add_argument("--map3d", action="store_true",
+                        help="Test SDF2DNew")
+
+    args = parser.parse_args(argv[1:])
+
+    if args.map2d:
+        test_2d(config)
+    elif args.map3d:
+        test_3d(config)

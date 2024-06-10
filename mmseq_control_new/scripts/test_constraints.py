@@ -24,12 +24,14 @@ def test_HierarchicalTrackingConstraint(config):
     # param_val['e_p'] = np.ones(3)*0.5
     param_val['r_BasePos2'] = np.ones(2)
     param_val['e_p'] = np.ones(2)*0.5
+    print(param_val)
                             
     print(test_cst.check(x, u, param_val.cat))
     print(test_cst.get_p_dict())
+    print(test_cst.get_p_dict_default())
 
 
-def test_SignedDistanceConstraint(config):
+def test_SignedDistanceConstraint_2D(config):
 
     from mobile_manipulation_central.ros_interface import MapInterfaceNew
     map_ros_interface = MapInterfaceNew(config["controller"])
@@ -50,15 +52,18 @@ def test_SignedDistanceConstraint(config):
         ys = pts[:,1]
         x_lim = [min(xs), max(xs)]
         y_lim = [min(ys), max(ys)]
+
         # Plot sdf map
         casadi_model_interface.sdf_map.vis(x_lim=x_lim,
                                         y_lim=y_lim,
                                         block=False)
 
+
         qbs_x = np.linspace(x_lim[0], x_lim[1], int(1.0/0.1 * (x_lim[1] - x_lim[0]))+1)
         qbs_y = np.linspace(y_lim[0], y_lim[1], int(1.0/0.1 * (y_lim[1] - y_lim[0]))+1)
         X,Y= np.meshgrid(qbs_x, qbs_y)
 
+        # Plot collision constraint
         robot_mdl = casadi_model_interface.robot
         N = X.size
         nx = robot_mdl.ssSymMdl["nx"]
@@ -68,17 +73,17 @@ def test_SignedDistanceConstraint(config):
         x[1, :] = Y.flatten()
         u = np.ones((nu,N)) * 0
         d_safe = 0.15
-        const = SignedDistanceConstraint(robot_mdl, casadi_model_interface.getSignedDistanceSymMdls("sdf"), d_safe, "sdf_2d")
+        const = SignedDistanceConstraint(robot_mdl, casadi_model_interface.getSignedDistanceSymMdls("sdf"), d_safe, "sdf")
         params = casadi_model_interface.sdf_map.get_params()
         param_map = const.p_struct(0)
         param_map["x_grid"] = params[0]
         param_map["y_grid"] = params[1]
         param_map["value"] = params[2]
+
         g_sdf = const.check(x, u, param_map.cat).toarray()
         g_sdf = g_sdf.flatten().reshape(X.shape)
         print(const.get_p_dict())
 
-        # Plot collision constraint
         fig_g, ax_g = plt.subplots()
         levels = np.linspace(-2., 0.5, int(2.5/0.25)+1)
         cs = ax_g.contour(X,Y,g_sdf, levels)
@@ -89,7 +94,7 @@ def test_SignedDistanceConstraint(config):
         ax_g.set_ylabel("y(m)")
         plt.show(block=False)
 
-
+        # Plot Softened collision function
         mu = config["controller"]["collision_soft"]['sdf']["mu"]
         zeta = config["controller"]["collision_soft"]['sdf']["zeta"]
         print(const.get_p_dict())
@@ -112,10 +117,24 @@ def test_SignedDistanceConstraint(config):
 if __name__ == "__main__":
     # robot mdl
     from mmseq_utils import parsing
-    config = parsing.load_config(
-        "/home/tracy/Projects/mm_slam/mm_ws/src/mm_sequential_tasks/mmseq_run/config/simple_experiment.yaml")
+    import argparse
+    import sys
+    config_path = parsing.parse_ros_path({"package": "mmseq_run",
+                                          "path": "config/simple_experiment.yaml"})
+    config = parsing.load_config(config_path)
     rospy.init_node("constraints_tester")
 
-    test_SignedDistanceConstraint(config)
-    # test_HierarchicalTrackingConstraint(config)
+    argv = rospy.myargv(argv=sys.argv)
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--sdf2d", action="store_true",
+                        help="Test SignedDistanceConstraint")
+    parser.add_argument("--lex", action="store_true",
+                        help="Test HierarchicalTrackingConstraint")
+
+    args = parser.parse_args(argv[1:])
+
+    if args.sdf2d:
+        test_SignedDistanceConstraint_2D(config)
+    elif args.lex:
+        test_HierarchicalTrackingConstraint(config)
     
