@@ -384,7 +384,7 @@ class STMPC(MPC):
         self.v_cmd = self.x_bar[0][self.robot.DoF:].copy()
 
         self.ee_bar, self.base_bar = self._getEEBaseTrajectories(self.x_bar)
-        return self.v_cmd, self.u_prev, self.u_bar.copy()
+        return self.v_cmd, self.u_prev, self.u_bar.copy(), self.x_bar[:, 9:].copy()
 
     def _get_log(self):
         log = {"cost_final": 0,

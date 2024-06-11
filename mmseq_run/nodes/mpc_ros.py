@@ -10,7 +10,7 @@ import sys
 import numpy as np
 import rospy
 from spatialmath.base import rotz
-
+from scipy.interpolate import interp1d
 from visualization_msgs.msg import Marker
 from geometry_msgs.msg import Point, Transform, Twist
 from trajectory_msgs.msg import MultiDOFJointTrajectory, MultiDOFJointTrajectoryPoint
@@ -131,7 +131,7 @@ class ControllerROSNode:
         dt_pub = 1./ self.cmd_vel_pub_rate
         dt_pub_sec = int(dt_pub)
         dt_pub_nsec = int((dt_pub - dt_pub_sec) * 1e9)
-        self.cmd_vel_timer = rospy.Timer(rospy.Duration(dt_pub_sec, dt_pub_nsec), self._publish_cmd_vel)
+        self.cmd_vel_timer = rospy.Timer(rospy.Duration(dt_pub_sec, dt_pub_nsec), self._publish_cmd_vel_new)
 
         self.lock = threading.Lock()
         self.sot_lock = threading.Lock()
@@ -155,6 +155,16 @@ class ControllerROSNode:
             acc_indx = int(t_elasped/self.mpc_dt)
             self.cmd_vel += self.mpc_plan[acc_indx] * (event.current_real - event.last_real).to_sec()
 
+            self.lock.release()
+
+        self.robot_interface.publish_cmd_vel(self.cmd_vel)
+    
+    def _publish_cmd_vel_new(self, event):
+        if self.mpc_plan is not None:
+            self.lock.acquire()
+            t = rospy.Time.now().to_sec()
+            t_elasped = t - self.mpc_plan_time_stamp
+            self.cmd_vel = self.mpc_plan_interp(t_elasped)
             self.lock.release()
 
         self.robot_interface.publish_cmd_vel(self.cmd_vel)
@@ -395,13 +405,16 @@ class ControllerROSNode:
             self.sot_lock.release()
 
             tc1 = time.perf_counter()
-            u, acc, u_bar = self.controller.control(t-t0, robot_states, planners, map_latest)
+            u, acc, u_bar, v_bar = self.controller.control(t-t0, robot_states, planners, map_latest)
             tc2 = time.perf_counter()
             self.controller_log.log(20, "Controller Run Time: {}".format(tc2 - tc1))
 
             self.lock.acquire()
-            self.mpc_plan = u_bar
+            self.mpc_plan = v_bar
             self.mpc_plan_time_stamp = t
+            N = self.mpc_plan.shape[0]
+            t_mpc = np.arange(N) * self.mpc_dt
+            self.mpc_plan_interp = interp1d(t_mpc, self.mpc_plan, axis=0)
             self.lock.release()
 
             # publish data
