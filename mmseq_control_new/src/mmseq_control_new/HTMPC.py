@@ -166,7 +166,7 @@ class HTMPC(MPC):
                 for i in range(self.N):
                     print(f"stage {i}: pi: {stmpc_solver.get(i, 'pi')}")
 
-                if self.params["raise_exception_on_failure"]:
+                if self.params["acados"]["raise_exception_on_failure"]:
                     raise Exception(f'acados acados_ocp_solver returned status {stmpc_solver.status}')
                 
             # get solution
@@ -219,3 +219,11 @@ class HTMPC(MPC):
         "time_stmpc_solve": np.zeros(task_num),
         }
         return log
+
+if __name__ == "__main__":
+    # robot mdl
+    from mmseq_utils import parsing
+    config = parsing.load_config(
+        "/home/tracy/Projects/mm_slam/mm_ws/src/mm_sequential_tasks/mmseq_run/config/simple_experiment.yaml")
+
+    HTMPC(config["controller"])

@@ -114,8 +114,8 @@ class MPC():
             nlp_p_map = nlp_p_map_bar[k]
             for key in cost_p_map.keys():
                 cost_p_map[key] = nlp_p_map[key]
-            
-            vals.append(cost_function.evaluate(x_bar[k], u_bar[k], cost_p_map.cat.full().flatten()))
+            v = cost_function.evaluate(x_bar[k], u_bar[k], cost_p_map.cat.full().flatten())
+            vals.append(v)
         return np.sum(vals)
 
 
@@ -154,7 +154,7 @@ class MPC():
             cost_expr.append(Ji)
         ocp.model.cost_expr_ext_cost = sum(cost_expr)
 
-        if self.params["use_custom_hess"]:
+        if self.params["acados"]["use_custom_hess"]:
             custom_hess_expr = []
 
             for cost in costs:
@@ -163,12 +163,12 @@ class MPC():
                 custom_hess_expr.append(H_expr_i)
             ocp.model.cost_expr_ext_cost_custom_hess = sum(custom_hess_expr)
 
-        if self.params["use_terminal_cost"]:
+        if self.params["acados"]["use_terminal_cost"]:
             ocp.cost.cost_type_e = 'EXTERNAL'
             cost_expr_e = sum(cost_expr[:num_terminal_cost])
             cost_expr_e = cs.substitute(cost_expr_e, model.u, [])
             model.cost_expr_ext_cost_e = cost_expr_e
-            if self.params["use_custom_hess"]:
+            if self.params["acados"]["use_custom_hess"]:
                 cost_hess_expr_e = sum(custom_hess_expr[:num_terminal_cost])
                 cost_hess_expr_e = cs.substitute(cost_hess_expr_e, model.u, [])
                 model.cost_expr_ext_cost_custom_hess_e = cost_hess_expr_e
@@ -212,19 +212,14 @@ class MPC():
 
         ocp.parameter_values = p_map.cat.full().flatten()
 
-        # set options
-        ocp.solver_options.qp_solver = 'FULL_CONDENSING_HPIPM' # FULL_CONDENSING_QPOASES
-        # PARTIAL_CONDENSING_HPIPM, FULL_CONDENSING_QPOASES, FULL_CONDENSING_HPIPM,
-        # PARTIAL_CONDENSING_QPDUNES, PARTIAL_CONDENSING_OSQP, FULL_CONDENSING_DAQP
-        ocp.solver_options.hessian_approx = 'GAUSS_NEWTON' # 'GAUSS_NEWTON', 'EXACT'
-        ocp.solver_options.integrator_type = 'IRK'
-        # ocp.solver_options.print_level = 1
-        ocp.solver_options.nlp_solver_type = 'SQP' # SQP_RTI, SQP
-        ocp.solver_options.globalization = 'MERIT_BACKTRACKING' # turns on globalization
-        ocp.solver_options.qp_solver_iter_max = 100
-        ocp.solver_options.nlp_solver_tol_stat = 1e-3
-        ocp.solver_options.qp_solver_warm_start = True
-
+        # set options from config
+        for key, val in self.params["acados"]["ocp_solver_options"].items():
+            property = getattr(ocp.solver_options, key, None)
+            if property is not None:
+                setattr(ocp.solver_options, key, val)
+            else:
+                self.py_logger.warning(f"{key} not found in Acados solver options. Parameter is ignored.")
+                
         # Construct AcadosOCPSolver
         ocp_solver = AcadosOcpSolver(ocp, json_file = 'acados_ocp_stmpc.json')
 
@@ -370,7 +365,7 @@ class STMPC(MPC):
             for i in range(self.N):
                 print(f"stage {i}: pi: {self.ocp_solver.get(i, 'pi')}")
 
-            if self.params["raise_exception_on_failure"]:
+            if self.params["acados"]["raise_exception_on_failure"]:
                 raise Exception(f'acados acados_ocp_solver returned status {self.solver_status}')
 
 

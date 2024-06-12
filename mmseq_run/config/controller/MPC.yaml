@@ -64,6 +64,22 @@ controller:
   alpha: 0.05
 
   # ACADOS solver option
-  raise_exception_on_failure: False
-  use_custom_hess: True
-  use_terminal_cost: False
+  acados:
+    raise_exception_on_failure: False
+    use_custom_hess: True
+    use_terminal_cost: False
+    ocp_solver_options:
+      qp_solver: "FULL_CONDENSING_QPOASES"
+      # FULL_CONDENSING_QPOASES
+      # PARTIAL_CONDENSING_HPIPM, FULL_CONDENSING_QPOASES, FULL_CONDENSING_HPIPM,
+      # PARTIAL_CONDENSING_QPDUNES, PARTIAL_CONDENSING_OSQP, FULL_CONDENSING_DAQP
+      hessian_approx: "GAUSS_NEWTON"
+      integrator_type: "IRK"
+      print_level: 1
+      nlp_solver_type: "SQP"  #SQP_RTI, SQP
+      globalization: "MERIT_BACKTRACKING"
+      qp_solver_iter_max: 100
+      nlp_solver_tol_stat: 1.0e-05
+      nlp_solver_tol_eq: 1.0e-03
+      nlp_solver_tol_ineq: 1.0e-04
+      qp_solver_warm_start: 2
