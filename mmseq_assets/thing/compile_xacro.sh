@@ -3,7 +3,7 @@
 # libraries. This is mainly used to resolve ROS package paths without
 # hardcoding.
 mkdir -p urdf
-xacro xacro/collision.urdf.xacro -o urdf/collision.urdf
+xacro xacro/test.urdf.xacro -o urdf/test.urdf
 # xacro mm_ocs2.urdf.xacro -o mm_ocs2.urdf
 #xacro xacro/ocs2/mm_ocs2_tray.urdf.xacro -o urdf/mm_ocs2_tray.urdf
 #xacro xacro/ocs2/mm_ocs2_fingers.urdf.xacro -o urdf/mm_ocs2_fingers.urdf
