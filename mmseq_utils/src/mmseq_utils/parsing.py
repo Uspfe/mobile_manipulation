@@ -133,7 +133,7 @@ def parse_and_compile_urdf(d, max_runs=10, compare_existing=True):
 
     s = """
     <?xml version="1.0" ?>
-    <robot name="robot" xmlns:xacro="http://www.ros.org/wiki/xacro">
+    <robot name="thing" xmlns:xacro="http://www.ros.org/wiki/xacro">
     """.strip()
     for incl in d["includes"]:
         s += xacro_include(incl)
@@ -234,3 +234,10 @@ def parse_to_yaml_dict(d):
             d[key] = d[key].tolist()
 
     return d
+
+def parse_single_camera_yaml(dict_cam):
+    path_to_cam_params = parse_ros_path(dict_cam["params"])
+    dict_params = load_config(path_to_cam_params)
+    dict_cam = recursive_dict_update(dict_cam, dict_params)
+
+    return dict_cam

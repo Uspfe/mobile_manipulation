@@ -10,16 +10,8 @@ simulation:
 #    home: [ -0., 0, 0.pi, 0.5pi, -0.25pi, 0.5pi, 0.25pi, 0.5pi, 0.417pi ]  # grasping box directly
     tool_vicon_name: ThingContainer
 
-  pybullet_connection: "DIRECT"  # "Direct" or "GUI"
-
-  static_obstacles:
-    enabled: False
-
-  dynamic_obstacles:
-    enabled: False
-
 include:
   - package: "mmseq_run"
     path: "config/robot/thing.yaml"
-
-
+  - package: "mmseq_run"
+    path: "config/sensor/cameras.yaml"
