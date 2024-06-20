@@ -7,10 +7,12 @@
   <arg name="planner_config" default="default" doc="alternative controller config overwriting the one in config"/>
   <arg name="use_mpc" default="false" doc="use mpc as controller"/>
   <arg name="logging_sub_folder"  default="default" doc="save data to a sub folder if set"/>
+  <arg name="isaac-venv" default="$(env ISAACSIM_PYTHON_EXE_1)" />
 
   <!-- Simulation -->
   <include file="$(find mmseq_run)/launch/isaac_sim.launch">
     <arg name="config" value="$(arg config)" />
+    <arg name="isaac-venv" value="$(arg isaac-venv)" />
   </include>
   
   <!-- Controller -->
