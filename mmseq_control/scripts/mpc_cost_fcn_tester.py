@@ -4,39 +4,39 @@ import numpy as np
 import casadi as cs
 import os
 import matplotlib.pyplot as plt
-from mmseq_control.MPCCostFunctions import RBF, RBFNew
+from mmseq_control.MPCCostFunctions import RBF, RBFOld
 import timeit
 
 def rbf_plot(h, mu, zeta, axes):
     s = np.where(h<zeta, 1, 0)
-    B = RBF.B_fcn(s, h, mu, zeta)
-    dBdh = RBF.B_grad_fcn(s, h, mu, zeta)
-    ddBddh = RBF.B_hess_fcn(s, h ,mu, zeta)
+    B = RBFOld.B_fcn(s, h, mu, zeta)
+    dBdh = RBFOld.B_grad_fcn(s, h, mu, zeta)
+    ddBddh = RBFOld.B_hess_fcn(s, h ,mu, zeta)
 
     axes[0].plot(h, B, linewidth=2, label=f"$\mu = $ {mu}, $\zeta = $ {zeta}")
     axes[1].plot(h, dBdh, linewidth=2, label=f"$\mu = $ {mu}, $\zeta = $ {zeta}")
     axes[2].plot(h, ddBddh, linewidth=2, label=f"$\mu = $ {mu}, $\zeta = $ {zeta}")
 
-    axes[0].plot(zeta, RBF.B_fcn(0, zeta, mu, zeta), 'r.', markersize=8)
-    axes[1].plot(zeta, RBF.B_grad_fcn(0, zeta, mu, zeta), 'r.', markersize=8)
-    axes[2].plot(zeta, RBF.B_hess_fcn(0, zeta, mu, zeta), 'r.', markersize=8)
+    axes[0].plot(zeta, RBFOld.B_fcn(0, zeta, mu, zeta), 'r.', markersize=8)
+    axes[1].plot(zeta, RBFOld.B_grad_fcn(0, zeta, mu, zeta), 'r.', markersize=8)
+    axes[2].plot(zeta, RBFOld.B_hess_fcn(0, zeta, mu, zeta), 'r.', markersize=8)
 
 def rbfnew_plot(h, mu, zeta, axes):
-    B = RBFNew.B_fcn(h, mu, zeta)
-    dBdh = RBFNew.B_grad_fcn(h, mu, zeta)
-    ddBddh = RBFNew.B_hess_fcn(h ,mu, zeta)
+    B = RBF.B_fcn(h, mu, zeta)
+    dBdh = RBF.B_grad_fcn(h, mu, zeta)
+    ddBddh = RBF.B_hess_fcn(h ,mu, zeta)
 
     axes[0].plot(h, B, linewidth=2, label=f"new $\mu = $ {mu}, $\zeta = $ {zeta}")
     axes[1].plot(h, dBdh, linewidth=2, label=f"new $\mu = $ {mu}, $\zeta = $ {zeta}")
     axes[2].plot(h, ddBddh, linewidth=2, label=f"$new \mu = $ {mu}, $\zeta = $ {zeta}")
 
-    axes[0].plot(zeta, RBFNew.B_fcn(zeta, mu, zeta), 'r.', markersize=8)
-    axes[1].plot(zeta, RBFNew.B_grad_fcn(zeta, mu, zeta), 'r.', markersize=8)
-    axes[2].plot(zeta, RBFNew.B_hess_fcn(zeta, mu, zeta), 'r.', markersize=8)
+    axes[0].plot(zeta, RBF.B_fcn(zeta, mu, zeta), 'r.', markersize=8)
+    axes[1].plot(zeta, RBF.B_grad_fcn(zeta, mu, zeta), 'r.', markersize=8)
+    axes[2].plot(zeta, RBF.B_hess_fcn(zeta, mu, zeta), 'r.', markersize=8)
 
 def testRBFNew():
-    mu = 0.01
-    zeta = 0.01
+    mu = 0.001
+    zeta = 0.005
     h = np.arange(start=-1, stop=1, step=0.01)
     fig_basic, axes_basic = plt.subplots(3,1,sharex=True)
     rbf_plot(h, mu, zeta, axes_basic)
@@ -46,10 +46,12 @@ def testRBFNew():
     axes_basic[1].set_title("dBdh(h)")
     axes_basic[2].set_title("ddBddh(h)")
     plt.legend()
-    plt.show(block=False)
+    plt.show(block=True)
 
     setup = """
-from mmseq_control.MPCCostFunctions import RBF, RBFNew
+from mmseq_control.MPCCostFunctions import RBF as RBFNew
+from mmseq_control.MPCCostFunctions import RBFOld as RBF
+
 import numpy as np
 mu = 0.01
 zeta = 0.01
@@ -232,8 +234,8 @@ if __name__ == "__main__":
     from mmseq_utils import parsing
     config = parsing.load_config("/home/tracy/Projects/mm_slam/mm_ws/src/mm_sequential_tasks/mmseq_run/config/simple_experiment.yaml")
 
-    # testRBF()
     testRBFNew()
+    # testRBFNew()
     # testMPCCosts(config)
     # timeMPCCosts(config)
     # timeQuad()

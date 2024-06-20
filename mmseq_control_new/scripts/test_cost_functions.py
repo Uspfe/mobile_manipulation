@@ -2,6 +2,7 @@ import numpy as np
 from mmseq_control.robot import MobileManipulator3D
 from mmseq_control_new.MPCCostFunctions import BasePos2CostFunction,EEPos3CostFunction, ControlEffortCostFunction
 from mmseq_utils.casadi_struct import casadi_sym_struct
+import casadi as cs
 
 if __name__ == "__main__":
     dt = 0.1
@@ -16,7 +17,7 @@ if __name__ == "__main__":
     cost_base = BasePos2CostFunction(robot, config["controller"]["cost_params"]["BasePos2"])
     cost_ee = EEPos3CostFunction(robot, config["controller"]["cost_params"]["EEPos3"])
     cost_eff = ControlEffortCostFunction(robot, config["controller"]["cost_params"]["Effort"])
-    cost_fcn = cost_base
+    cost_fcn = cost_eff
 
     q = [0.0, 0.0, 0.0] + [0.0, -2.3562, -1.5708, -2.3562, -1.5708, 1.5708]
     v = np.zeros(9)
@@ -38,3 +39,12 @@ if __name__ == "__main__":
 
     J_eff = cost_eff.evaluate(x, u, [])
     print(J_eff)
+
+    H_eqn, _ = cs.hessian(cost_fcn.J_eqn, cs.veccat(cost_fcn.u_sym, cost_fcn.x_sym))
+    H_fcn = cs.Function('H', [cost_fcn.x_sym, cost_fcn.u_sym, cost_fcn.p_sym], [H_eqn])
+
+    H_val = H_fcn(x, u, cost_fcn.p_struct(0)).toarray()
+    H_approx_val = cost_fcn.H_approx_fcn(x, u, cost_fcn.p_struct(0)).toarray()
+    print(f"Hess Eval{H_val}")
+    print(f"Hess Approx Eval{H_approx_val}")
+    print(f"Diff{np.linalg.norm(H_val - H_approx_val)}")
