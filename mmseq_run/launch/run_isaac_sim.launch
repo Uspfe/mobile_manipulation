@@ -14,9 +14,8 @@
   </include>
   
   <!-- Controller -->
-  <node pkg="mmseq_run" type="controller_ros.py" name="controller_idk" output="screen" required="true" args="--config $(arg config) --ctrl_config $(arg ctrl_config) --planner_config $(arg planner_config) --logging_sub_folder $(arg logging_sub_folder)" unless="$(arg use_mpc)"/>
-  <node pkg="mmseq_run" type="mpc_ros.py" name="controller_mpc" output="screen" required="true" args="--config $(arg config) --ctrl_config $(arg ctrl_config)  --planner_config $(arg planner_config) --logging_sub_folder $(arg logging_sub_folder)" if="$(arg use_mpc)"/>
-  
+  <include file="$(find mmseq_run)/launch/controller.launch" pass_all_args="true"/>
+
   <!-- Robot Model -->
   <include file="$(find mmseq_run)/launch/thing_description.launch">
     <!-- <arg name="visual_params" value="$(find ur_description)/config/ur10/visual_parameters.yaml" /> -->
