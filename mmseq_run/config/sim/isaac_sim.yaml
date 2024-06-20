@@ -1,17 +1,7 @@
 simulation:
   timestep: 0.01
   duration: 25.
-  gravity: [0, 0, -9.81]
-
-  robot:
-#    home: [0, 0, 0, 0.5pi, -0.5pi, 0, -0.pi, 0.5pi, 0]  # upright
-#    home: [0, 0, 0, 0.5pi, 0., 0., 0., 0.5pi, 0.]  # upright
-    home: [ 0., -0, 0.pi, 0.5pi, -0.25pi, 0.5pi, -0.25pi, 0.5pi, -0.261 ]  # standard
-#    home: [ -0., 0, 0.pi, 0.5pi, -0.25pi, 0.5pi, 0.25pi, 0.5pi, 0.417pi ]  # grasping box directly
-    tool_vicon_name: ThingContainer
 
 include:
-  - package: "mmseq_run"
-    path: "config/robot/thing.yaml"
   - package: "mmseq_run"
     path: "config/sensor/cameras.yaml"

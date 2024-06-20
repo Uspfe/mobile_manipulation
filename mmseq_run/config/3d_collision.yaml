@@ -55,7 +55,7 @@ include:
   - package: "mmseq_run"
     path: "config/controller/MPC.yaml"
   - package: "mmseq_run"
-    path: "config/sim/simulation.yaml"
+    path: "config/sim/isaac_sim.yaml"
   - package: "mmseq_run"
     path: "config/scene/empty.yaml"
   - package: "mmseq_run"
