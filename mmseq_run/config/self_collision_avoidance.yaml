@@ -24,6 +24,10 @@ planner:
 
 controller:
   home: "default"
+  self_collision_avoidance_enabled: True
+  sdf_collision_avoidance_enabled: False
+  type: "HTMPC"
+
 
 simulation:
   duration: 200
@@ -41,5 +45,5 @@ include:
     path: "config/map/SDF2D.yaml"
 
 logging:
-  log_dir: "/home/tracy/PhD/data/self_collision/benchmark"
+  log_dir: "/home/tracy/PhD/data/self_collision"
   log_level: 4 # 0 - not set, 10 - debug, 20 - info
