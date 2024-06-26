@@ -429,7 +429,7 @@ class MobileManipulator3D:
 
         self.numjoint = self.kindyn.nq()
         self.DoF = self.numjoint + 3
-
+        self.dt = config["dt"]
         self.ub_x = parsing.parse_array(config["robot"]["limits"]["state"]["upper"])
         self.lb_x = parsing.parse_array(config["robot"]["limits"]["state"]["lower"])
         self.ub_u = parsing.parse_array(config["robot"]["limits"]["input"]["upper"])
@@ -493,7 +493,7 @@ class MobileManipulator3D:
         self.ssSymMdl["fmdl"] = fmdl.expand()
         self.ssSymMdl["A"] = A
         self.ssSymMdl["B"] = B
-        self.ssSymMdl["fmdlk"] = self._discretizefmdl(self.ssSymMdl)
+        self.ssSymMdl["fmdlk"] = self._discretizefmdl(self.ssSymMdl, self.dt)
 
     def _setupRobotKinSymMdl(self):
         """ Create kinematic symbolic model for MM links keyed by link name
@@ -560,7 +560,7 @@ class MobileManipulator3D:
 
         return cs.Function(link_name + "_fcn", [self.q_sym], [Hwl[:3, 3], Hwl[:3, :3]], ["q"], ["pos", "rot"])
 
-    def _discretizefmdl(self, ss_mdl):
+    def _discretizefmdl(self, ss_mdl, dt):
         if "linear" in ss_mdl["mdl_type"]:
             x_sym = ss_mdl["x"]
             u_sym = ss_mdl["u"]
@@ -573,7 +573,7 @@ class MobileManipulator3D:
             M = np.zeros((nx + nu, nx + nu))
             M[:nx, :nx] = A
             M[:nx, nx:] = B
-            Md = expm(M * 0.1)
+            Md = expm(M * dt)
             Ad = Md[:nx, :nx]
             Bd = Md[:nx, nx:]
 
