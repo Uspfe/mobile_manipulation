@@ -229,7 +229,8 @@ class HTMPC(MPC):
 if __name__ == "__main__":
     # robot mdl
     from mmseq_utils import parsing
-    config = parsing.load_config(
-        "/home/tracy/Projects/mm_slam/mm_ws/src/mm_sequential_tasks/mmseq_run/config/simple_experiment.yaml")
+    path_to_config = parsing.parse_ros_path({"package": "mmseq_run",
+                                             "path":"config/self_collision_avoidance.yaml"})
+    config = parsing.load_config(path_to_config)
 
     HTMPC(config["controller"])

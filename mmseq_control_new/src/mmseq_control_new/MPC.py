@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 import time
 import logging
+from pathlib import Path
 
 import numpy as np
 import casadi as cs
@@ -11,6 +12,7 @@ from mmseq_control.robot import MobileManipulator3D as MM
 from mmseq_control.robot import CasadiModelInterface as ModelInterface
 from mmseq_utils.math import wrap_pi_array
 from mmseq_utils.casadi_struct import casadi_sym_struct
+from mmseq_utils.parsing import parse_ros_path
 from mmseq_control_new.MPCCostFunctions import EEPos3CostFunction, BasePos2CostFunction, ControlEffortCostFunction, EEPos3BaseFrameCostFunction, SoftConstraintsRBFCostFunction, RegularizationCostFunction, CostFunctions
 from mmseq_control_new.MPCConstraints import SignedDistanceConstraint
 import mobile_manipulation_central as mm
@@ -68,6 +70,10 @@ class MPC():
 
         self.py_logger = logging.getLogger("Controller")
         self.log = self._get_log()
+
+        self.output_dir = Path(parse_ros_path({"package": "mmseq_control_new", "path":"acados_outputs"}))
+        if not self.output_dir.exists():
+            self.output_dir.mkdir()
 
     @abstractmethod
     def control(self, t, robot_states, planners, map=None):
@@ -146,6 +152,7 @@ class MPC():
         ocp.model = model
         ocp.dims.N = self.N
         ocp.solver_options.tf = self.tf
+        ocp.code_export_directory = str(self.output_dir / "c_generated_code")
 
         ocp.cost.cost_type = 'EXTERNAL'
         cost_expr = []
@@ -286,7 +293,7 @@ class MPC():
                 self.py_logger.warning(f"{key} not found in Acados solver options. Parameter is ignored.")
                 
         # Construct AcadosOCPSolver
-        ocp_solver = AcadosOcpSolver(ocp, json_file = f"acados_ocp_{name}.json")
+        ocp_solver = AcadosOcpSolver(ocp, json_file = str(self.output_dir/f"acados_ocp_{name}.json"))
 
         return ocp, ocp_solver, p_struct
 
@@ -472,7 +479,8 @@ class STMPC(MPC):
 if __name__ == "__main__":
     # robot mdl
     from mmseq_utils import parsing
-    config = parsing.load_config(
-        "/home/tracy/Projects/mm_slam/mm_ws/src/mm_sequential_tasks/mmseq_run/config/simple_experiment.yaml")
+    path_to_config = parse_ros_path({"package": "mmseq_run",
+                           "path":"config/simple_experiment.yaml"})
+    config = parsing.load_config(path_to_config)
 
     STMPC(config["controller"])
