@@ -4,6 +4,7 @@ import argparse
 import datetime
 import logging
 import time
+import os
 
 import numpy as np
 from spatialmath.base import rotz
@@ -11,6 +12,8 @@ from spatialmath.base import rotz
 import mmseq_control.HTMPC as HTMPC
 import mmseq_control.HTIDKC as HTIDKC
 import mmseq_control.STMPC as STMPC
+import mmseq_control_new.MPC as MPC
+import mmseq_control_new.HTMPC as HTMPCNew
 import mmseq_plan.TaskManager as TaskManager
 from mmseq_simulator import simulation
 from mmseq_utils import parsing
@@ -52,16 +55,27 @@ def main():
         const="",
         help="Record video. Optionally specify prefix for video directory.",
     )
-    parser.add_argument("--type", type=str, default=None,
-                        help="controller type, HTMPCSQP or HTMPCLex. This overwrites the yaml settings")
+    parser.add_argument("--ctrl_config", type=str, default="default",
+                        help="controller config. This overwrites the yaml settings in config if not set to default")
+    parser.add_argument("--planner_config", type=str, default="default",
+                        help="plannner config. This overwrites the yaml settings in config if not set to default")
+    parser.add_argument("--logging_sub_folder", type=str, default="default",
+                        help="save data in a sub folder of logging director")
     parser.add_argument("--GUI", action="store_true",
                         help="Pybullet GUI. This overwrites the yaml settings")
-    args = parser.parse_args()
+    args = parser.parse_args() 
 
     # load configuration and overwrite with args
     config = parsing.load_config(args.config)
-    if args.type is not None:
-        config["controller"]["type"] = args.stmpctype
+    if args.ctrl_config != "default":
+        ctrl_config = parsing.load_config(args.ctrl_config)
+        config = parsing.recursive_dict_update(config, ctrl_config)
+    if args.planner_config != "default":
+        planner_config = parsing.load_config(args.planner_config)
+        config = parsing.recursive_dict_update(config, planner_config)
+
+    if args.logging_sub_folder != "default":
+        config["logging"]["log_dir"] = os.path.join(config["logging"]["log_dir"], args.logging_sub_folder)
 
     if args.GUI:
         config["simulation"]["pybullet_connection"] = "GUI"
@@ -83,9 +97,12 @@ def main():
     # Controller
     control_class = getattr(HTMPC, ctrl_config["type"], None)
     if control_class is None:
-        control_class = getattr(HTIDKC, ctrl_config["type"], None)
-    if control_class is None:
         control_class = getattr(STMPC, ctrl_config["type"], None)
+    if control_class is None:
+        control_class = getattr(MPC, ctrl_config["type"], None)
+    if control_class is None:
+        control_class = getattr(HTMPCNew, ctrl_config["type"], None)
+
     controller = control_class(ctrl_config)
 
     # Stack of Tasks
@@ -103,6 +120,9 @@ def main():
     controller_log = logging.getLogger("Controller")
     controller_log.setLevel(config["logging"]["log_level"])
     controller_log.addHandler(ch)
+    sim_log = logging.getLogger("Simulator")
+    sim_log.setLevel(config["logging"]["log_level"])
+    sim_log.addHandler(ch)
 
     # initial time, state, input
     t = 0.0
@@ -122,6 +142,7 @@ def main():
     finished = False
     sot.activatePlanners()
     u = np.zeros(sim_config["robot"]["dims"]["v"])
+
     while t <= sim.duration:
         # open-loop command
         robot_states = robot.joint_states(add_noise=False)
@@ -129,12 +150,14 @@ def main():
 
         t0 = time.perf_counter()
         results = controller.control(t, robot_states, planners)
+        t1 = time.perf_counter()
+        controller_log.log(20, "Controller Run Time: {}".format(t1 - t0))
+
         if "MPC" in ctrl_config["type"]:
-            _, acc, mpc_plan = results
-            u += mpc_plan[0] * sim.timestep
+            _, acc, u_bar, v_bar = results
+            u += u_bar[0] * sim.timestep
         else:
             u, acc = results
-        t1 = time.perf_counter()
 
         robot.command_velocity(u)
         t, _ = sim.step(t, step_robot=False)
@@ -161,7 +184,6 @@ def main():
         for planner in planners:
             if planner.type == "EE":
                 r_ew_wd, _ = planner.getTrackingPoint(t, robot_states)
-                print(r_ew_wd)
             elif planner.type == "base":
                 r_bw_wd, _ = planner.getTrackingPoint(t, robot_states)
         logger.append("ts", t)
@@ -169,28 +191,22 @@ def main():
         logger.append("controller_run_time", t1 - t0)
         logger.append("cmd_vels", u)
         logger.append("cmd_accs", acc)
-        if len(r_ew_wd)>0:
-            logger.append("r_ew_w_ds", r_ew_wd)
+
         logger.append("r_ew_ws", r_ew_w)
         logger.append("Q_wes", Q_we)
         logger.append("v_ew_ws", v_ew_w)
         logger.append("ω_ew_ws", ω_ew_w)
-
-        if len(r_bw_wd)>0:
-            logger.append("r_bw_w_ds", r_bw_wd)
         logger.append("r_bw_ws", robot_states[0][:2])
 
-        # if controller.solver_status is not None:
-        #     logger.append("mpc_solver_statuss", controller.solver_status)
-        # logger.append("mpc_cost_iters", controller.cost_iter)
-        # logger.append("mpc_cost_finals", controller.cost_final)
-        # if controller.step_size is not None:
-        #     logger.append("mpc_step_sizes", controller.step_size)
+        if len(r_ew_wd)>0:
+            logger.append("r_ew_w_ds", r_ew_wd)
+        if len(r_bw_wd)>0:
+            logger.append("r_bw_w_ds", r_bw_wd)
+        if "MPC" in ctrl_config["type"]:
+            for (key, val) in controller.log.items():
+                    logger.append("_".join(["mpc", key])+"s", val)
 
-        # if controller.stmpc_run_time is not None:
-        #     logger.append("stmpc_run_time", controller.stmpc_run_time)
-
-        print("Time {}".format(t))
+        sim_log.log(20, "Time {}".format(t))
         time.sleep(sim.timestep)
 
     data_name = ctrl_config["type"]
