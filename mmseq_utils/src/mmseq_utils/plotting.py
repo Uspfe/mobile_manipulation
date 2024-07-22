@@ -1078,13 +1078,19 @@ class DataPlotter:
             f, axes = plt.subplots(task_num, 1, sharex=True)
             if task_num == 1:
                 axes = [axes]
-        xticks = np.arange(N) * (HT_iter_num * ST_iter_num)
-        xlables = [str(t) for t in t_sim]
-        for l in range(task_num):
-            axes[l].plot(data[:, :, l, :].flatten(), "x-", label=" ".join([legend]+ data_name.split("_")[1:]), linewidth=2, markersize=8)
-            axes[l].set_title("Task" + str(l))
-            axes[l].set_xticks(xticks)
-            axes[l].set_xticklabels(xlables)
+        if HT_iter_num == task_num == ST_iter_num == 1:
+            axes[0].plot(t_sim, data.squeeze(), ".-", label=" ".join([legend]+ data_name.split("_")[1:]), linewidth=2, markersize=8)
+            axes[0].grid('on')
+        
+        else:
+            xticks = np.arange(N) * (HT_iter_num * ST_iter_num)
+            xlables = [str(t) for t in t_sim]
+            for l in range(task_num):
+                axes[l].plot(data[:, :, l, :].flatten(), "x-", label=" ".join([legend]+ data_name.split("_")[1:]), linewidth=2, markersize=8)
+                axes[l].set_title("Task" + str(l))
+                axes[l].set_xticks(xticks)
+                axes[l].set_xticklabels(xlables)
+                axes[l].grid('on')
         axes[0].legend()
         plt.show(block=block)
 
@@ -1186,6 +1192,44 @@ class DataPlotter:
 
         return axes
 
+    def plot_mpc_prediction(self, data_name, axes=None, index=0, block=True, legend=None):
+        # Time x prediction step x data dim
+        data = self.data.get(data_name)
+        if data is None:
+            print(f"Did not find {data_name}. Stop plotting.")
+            return
+        print(data.shape)
+        
+        data = data.squeeze(axis=-1)
+
+        print(data.shape)
+        if len(data.shape) == 3:
+            N, P, D = data.shape
+
+        t_sim = self.data["ts"]
+        if legend is None:
+            legend = self.data["name"]
+
+        if axes is None:
+            f, axes = plt.subplots(D, 1, sharex=True)
+            if D ==1:
+                axes=[axes]
+
+        mpc_dt = self.config["controller"]["dt"]
+        t_prediction = np.arange(P) * mpc_dt
+        t_all = t_sim.reshape((N, 1)) + t_prediction.reshape((1, P))
+
+        for i in range(D):
+            axes[i].plot(t_all[:, 0].flatten(), data[:,0, i].flatten(), "o-", label=" ".join(["actual", legend]), linewidth=2, markersize=8)
+            axes[i].plot(t_all[::2].T, data[::2, :, i].T, "o-", linewidth=1, fillstyle='none')
+            
+            axes[i].set_title(" ".join(data_name.split("_")[1:]))
+            axes[i].legend()
+            axes[i].grid()
+        plt.show(block=block)
+
+        return axes
+
     def show(self):
         plt.show()
 
@@ -1212,6 +1256,12 @@ class DataPlotter:
         self.plot_solver_iters_htmpc(block=False)
         self.plot_time_htmpc(block=False)
         # self.plot_solver_iters()
+        self.plot_mpc_prediction("mpc_obstacle_cylinder_2_link_constraints")
+
+        # f, axes = plt.subplots(2, 1, sharex=True)
+        # self.plot_mpc_prediction("mpc_obstacle_cylinder_1_link_constraints", axes=[axes[0]], block=False)
+        # self.plot_time_series_data_htmpc("mpc_solver_statuss", axes=[axes[1]])
+
 
         self.plot_run_time()
 
@@ -1228,6 +1278,8 @@ class DataPlotter:
     def plot_tracking(self):
         # self.plot_ee_position()
         # self.plot_base_position()
+        axes = self.plot_base_path()
+        self.plot_base_ref_path(axes)
         self.plot_tracking_err()
         # self.plot_cmd_vs_real_vel()
         self.plot_task_performance()

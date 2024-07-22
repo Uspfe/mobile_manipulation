@@ -135,7 +135,21 @@ class MPC():
             v = cost_function.evaluate(x_bar[k], u_bar[k], cost_p_map.cat.full().flatten())
             vals.append(v)
         return np.sum(vals)
+    
+    def evaluate_constraints(self, constraints: MPCConstraints.Constraint, x_bar, u_bar, nlp_p_map_bar):
+        ps = []
+        cost_p_dict = constraints.get_p_dict()
+        cost_p_struct = casadi_sym_struct(cost_p_dict)
+        cost_p_map = cost_p_struct(0)
 
+        vals = []
+        for k in range(self.N):
+            nlp_p_map = nlp_p_map_bar[k]
+            for key in cost_p_map.keys():
+                cost_p_map[key] = nlp_p_map[key]
+            v = constraints.check(x_bar[k], u_bar[k], cost_p_map.cat.full().flatten())
+            vals.append(v)
+        return vals
 
     def _construct(self, costs, constraints, num_terminal_cost, name="MM"):
         # Construct AcadosModel
@@ -472,8 +486,11 @@ class STMPC(MPC):
         self.x_bar[self.N,:] = self.ocp_solver.get(self.N, "x")
 
         self.v_cmd = self.x_bar[0][self.robot.DoF:].copy()
-
         self.ee_bar, self.base_bar = self._getEEBaseTrajectories(self.x_bar)
+
+        for name in self.collision_link_names: 
+            self.log["_".join([name, "constraint"])] = self.evaluate_constraints(self.collisionCsts[name], 
+                                                                   self.x_bar, self.u_bar, curr_p_map_bar)
         return self.v_cmd, self.u_prev, self.u_bar.copy(), self.x_bar[:, 9:].copy()
 
     def _get_log(self):
@@ -490,6 +507,9 @@ class STMPC(MPC):
                "time_ocp_set_params_tracking" : 0,
                "time_ocp_set_params_setp" : 0,
                }
+        for name in self.collision_link_names:
+            log["_".join([name, "constraint"])]= 0
+
         return log
 
 
