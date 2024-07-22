@@ -290,21 +290,21 @@ class MPC():
         if ns > 0:
             ocp.cost.Zl = np.eye(ns) * 10
             ocp.cost.Zu = np.eye(ns) * 10
-            ocp.cost.zl = np.ones(ns) * 0
-            ocp.cost.zu = np.ones(ns) * 0
+            ocp.cost.zl = np.ones(ns) * 1000
+            ocp.cost.zu = np.ones(ns) * 1000
 
         ns_e = nsx_e + nsh_e
         if ns_e > 0:
-            ocp.cost.Zl_e = np.eye(ns_e) * 1
-            ocp.cost.Zu_e = np.eye(ns_e) * 1
-            ocp.cost.zl_e = np.ones(ns_e) * 0
-            ocp.cost.zu_e = np.ones(ns_e) * 0
+            ocp.cost.Zl_e = np.eye(ns_e) * 10
+            ocp.cost.Zu_e = np.eye(ns_e) * 10
+            ocp.cost.zl_e = np.ones(ns_e) * 1000
+            ocp.cost.zu_e = np.ones(ns_e) * 1000
         
         if nsh_0 > 0:
             ocp.cost.Zl_0 = np.eye(nsh_0) * 10
             ocp.cost.Zu_0 = np.eye(nsh_0) * 10
-            ocp.cost.zl_0 = np.ones(nsh_0) * 0
-            ocp.cost.zu_0 = np.ones(nsh_0) * 0
+            ocp.cost.zl_0 = np.ones(nsh_0) * 1000
+            ocp.cost.zu_0 = np.ones(nsh_0) * 1000
         # initial condition
         ocp.constraints.x0 = self.x_bar[0]
 

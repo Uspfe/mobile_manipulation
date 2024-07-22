@@ -32,7 +32,16 @@ controller:
     self: False
     sdf: False
     static_obstacles: False
-
+  acados:
+    ocp_solver_options:
+      nlp_solver_max_iter: 100
+      qp_solver_warm_start: 1
+    slack_enabled:
+      x: True
+      x_e: True
+      h_0: True
+      h: False
+      h_e: False
 include:
   - package: "mmseq_run"
     path: "config/robot/thing.yaml"
