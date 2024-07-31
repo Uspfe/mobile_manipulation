@@ -150,6 +150,7 @@ if __name__ == "__main__":
     parser.add_argument("--compareidkc", action="store_true",
                         help="plot comparisons")
     parser.add_argument("--benchmark", action="store_true", help="gather benchmark results")
+    parser.add_argument("--savefigs", action="store_true", help="export figures to file")
 
     args = parser.parse_args()
 
@@ -169,6 +170,9 @@ if __name__ == "__main__":
             data_plotter.plot_robot()
         if args.check:
             data_plotter.plot_quick_check()
-
+        if args.savefigs:
+            data_plotter.save_figs()
         plt.show()
+
+
 

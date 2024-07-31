@@ -931,6 +931,7 @@ class DataPlotter:
 
         if legend is None:
             legend = self.data["name"]
+        print(self.data["name"])
 
         if axes is None:
             axes = []
@@ -1205,28 +1206,40 @@ class DataPlotter:
         print(data.shape)
         if len(data.shape) == 3:
             N, P, D = data.shape
+        
+        data_per_figure = 12
+        if D%data_per_figure == 0:
+            figs_num = D//data_per_figure
+        else:
+            figs_num = D//data_per_figure + 1
 
-        t_sim = self.data["ts"]
+
+
         if legend is None:
             legend = self.data["name"]
 
-        if axes is None:
-            f, axes = plt.subplots(D, 1, sharex=True)
-            if D ==1:
-                axes=[axes]
-
+        t_sim = self.data["ts"]
         mpc_dt = self.config["controller"]["dt"]
         t_prediction = np.arange(P) * mpc_dt
         t_all = t_sim.reshape((N, 1)) + t_prediction.reshape((1, P))
 
-        for i in range(D):
-            axes[i].plot(t_all[:, 0].flatten(), data[:,0, i].flatten(), "o-", label=" ".join(["actual", legend]), linewidth=2, markersize=8)
-            axes[i].plot(t_all[::2].T, data[::2, :, i].T, "o-", linewidth=1, fillstyle='none')
-            
-            axes[i].set_title(" ".join(data_name.split("_")[1:]))
-            axes[i].legend()
-            axes[i].grid()
-        plt.show(block=block)
+        for fi in range(figs_num):
+            if axes is None or fi!=0:
+                data_num = data_per_figure if fi < figs_num - 1 else D - fi*data_per_figure
+                f, axes = plt.subplots(data_num, 1, sharex=True)
+                if data_num ==1:
+                    axes=[axes]
+            else:
+                data_num = len(axes)
+
+            for i in range(data_num):
+                axes[i].plot(t_all[:, 0].flatten(), data[:,0, i+fi*3].flatten(), "o-", label=" ".join(["actual", legend]), linewidth=2, markersize=8)
+                axes[i].plot(t_all[1::2].T, data[1::2, :, i+fi*3].T, "o-", linewidth=1, fillstyle='none')
+                
+                axes[i].set_title(" ".join(data_name.split("_")[1:] + ["figure", str(fi)+"/"+str(figs_num)]))
+                axes[i].legend()
+                axes[i].grid()
+            plt.show(block=block)
 
         return axes
 
@@ -1246,7 +1259,12 @@ class DataPlotter:
         self.plot_solver_iters_htmpc()
         self.plot_run_time()
 
+        self.save_figs()
+
+    def save_figs(self):
+
         figs = [plt.figure(n) for n in plt.get_fignums()]
+        print(len(figs))
         print(self.data["dir_path"])
         multipage(Path(str(self.data["dir_path"])) / "data.pdf", figs)
 
@@ -1256,11 +1274,14 @@ class DataPlotter:
         self.plot_solver_iters_htmpc(block=False)
         self.plot_time_htmpc(block=False)
         # self.plot_solver_iters()
-        self.plot_mpc_prediction("mpc_obstacle_cylinder_2_link_constraints")
+        # self.plot_mpc_prediction("mpc_obstacle_cylinder_1_link_constraints")
+        # self.plot_mpc_prediction("mpc_sdf_constraints", block=False)
+        self.plot_mpc_prediction("mpc_control_constraints",block=False)
+        self.plot_mpc_prediction("mpc_state_constraints", block=False)
 
-        # f, axes = plt.subplots(2, 1, sharex=True)
-        # self.plot_mpc_prediction("mpc_obstacle_cylinder_1_link_constraints", axes=[axes[0]], block=False)
-        # self.plot_time_series_data_htmpc("mpc_solver_statuss", axes=[axes[1]])
+        f, axes = plt.subplots(2, 1, sharex=True)
+        self.plot_mpc_prediction("mpc_sdf_constraints", axes=[axes[0]], block=False)
+        self.plot_time_series_data_htmpc("mpc_solver_statuss", axes=[axes[1]], block=False)
 
 
         self.plot_run_time()
@@ -1276,7 +1297,7 @@ class DataPlotter:
         self.plot_collision_detailed()
 
     def plot_tracking(self):
-        # self.plot_ee_position()
+        self.plot_ee_position()
         # self.plot_base_position()
         axes = self.plot_base_path()
         self.plot_base_ref_path(axes)
