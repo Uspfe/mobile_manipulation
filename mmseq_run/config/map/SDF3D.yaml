@@ -5,7 +5,7 @@ controller:
     map_coverage: [4, 4, 1.49]
     voxel_size: 0.1
     
-    filter_enabled: False
+    filter_enabled: True
     filter_type: "tv"   # gaussian or tv
     guassian_filter_sigma: 3
     tv_filter_weight: 0.2
