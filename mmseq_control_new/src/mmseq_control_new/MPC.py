@@ -79,6 +79,7 @@ class MPC():
         self.x_bar = np.zeros((self.N + 1, self.nx))  # current best guess x0,...,xN
         self.x_bar[:, :self.DoF] = self.home
         self.u_bar = np.zeros((self.N, self.nu))  # current best guess u0,...,uN-1
+        self.t_bar = None
         self.zopt = np.zeros(self.QPsize)  # current lineaization point
         self.u_prev = np.zeros(self.nu)
         self.xu_bar_init = False
@@ -365,9 +366,15 @@ class STMPC(MPC):
         xo = np.hstack((q, v))
 
         # 0.1 Get warm start point
-        self.u_bar[:-1] = self.u_bar[1:]
-        self.u_bar[-1] = 0
-        self.x_bar = self._predictTrajectories(xo, self.u_bar)            
+        # self.u_bar[:-1] = self.u_bar[1:].copy()
+        # self.u_bar[-1] = 0
+        # self.x_bar = self._predictTrajectories(xo, self.u_bar)
+        if self.t_bar is not None:
+            self.u_t = interp1d(self.t_bar, self.u_bar, axis=0, 
+                                bounds_error=False, fill_value="extrapolate")
+            t_bar_new = t + np.arange(self.N)* self.dt
+            self.u_bar = self.u_t(t_bar_new)
+            self.x_bar = self._predictTrajectories(xo, self.u_bar)
 
 
         # 0.2 Get ref, sdf map,
@@ -506,6 +513,7 @@ class STMPC(MPC):
             self.x_bar[i,:] = self.ocp_solver.get(i, "x")
             self.u_bar[i,:] = self.ocp_solver.get(i, "u")
         self.x_bar[self.N,:] = self.ocp_solver.get(self.N, "x")
+        self.t_bar = t + np.arange(self.N) * self.dt
 
         self.v_cmd = self.x_bar[0][self.robot.DoF:].copy()
         self.ee_bar, self.base_bar = self._getEEBaseTrajectories(self.x_bar)
