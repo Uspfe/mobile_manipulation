@@ -291,7 +291,7 @@ class ControllerROSNode:
         self.controller_visualization_pub.publish(marker_base)
 
         # ee tracking points
-        marker_ree = self._make_marker(Marker.POINTS, 2, rgba=[1.0, 0, 0, 1], scale=[0.1, 0.1, 0.1])
+        marker_ree = self._make_marker(Marker.POINTS, 2, rgba=[0.0, 1.0, 1.0, 1], scale=[0.1, 0.1, 0.1])
         marker_ree.points = [Point(*pt) for pt in controller.ree_bar]
         self.controller_visualization_pub.publish(marker_ree)
 
@@ -387,8 +387,8 @@ class ControllerROSNode:
         t0 = t
         self.sot.started = True
 
-        # sot_num_plans = 1 if self.ctrl_config["type"][:2] == "ST" else 2
-        sot_num_plans = 2
+        sot_num_plans = 1 if self.ctrl_config["type"][:2] == "ST" else 2
+        # sot_num_plans = 2
         while not self.ctrl_c:
             t = rospy.Time.now().to_sec()
             if self.ctrl_config["sdf_collision_avoidance_enabled"]:
