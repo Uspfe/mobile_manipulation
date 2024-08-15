@@ -466,7 +466,7 @@ class SDF2DNew:
         cs = ax.contour(X,Y,Z, levels)
         ax.clabel(cs, levels)
         ax.grid()
-        ax.quiver(X, Y, dZdX[0],dZdX[1], scale_units="xy", scale=1, color='gray')
+        ax.quiver(X, Y, dZdX[0]/10,dZdX[1]/10, scale_units="xy", scale=1, color='gray')
 
         ax.set_title("Signed Distance Field $sd(x)$")   # 0.6 is base collision radius
         ax.set_xlabel("x(m)")
@@ -490,6 +490,8 @@ class SDF2DNew:
 
 class SDF3DNew:
     def __init__(self, config):
+        """ 3D Signed Distance Field Interface for MPC
+        """
 
         self.dim = 3
         self.default_val = config["map"]["default_val"]
@@ -517,15 +519,20 @@ class SDF3DNew:
         self.v = np.ones(self.map_size[0]* self.map_size[1]*self.map_size[2]) * self.default_val
 
     def update_map(self, xg, yg, zg, v):
-        self.xg, self.yg, self.zg, self.v = xg, yg, zg, v
+        self.xg = xg.copy()
+        self.yg = yg.copy()
+        self.zg = zg.copy()
+        self.v = v.copy()
+
+        # self.xg, self.yg, self.zg, self.v = xg, yg, zg, v
     
     def get_params(self):
-        return [self.xg, self.yg, self.zg, self.v]
+        return [self.xg.copy(), self.yg.copy(), self.zg.copy(), self.v.copy()]
 
     def vis(self, x_lim, y_lim, z_lim, block=True):
-        Nx = int(1.0/0.1 * (x_lim[1] - x_lim[0]))+1
-        Ny = int(1.0/0.1 * (y_lim[1] - y_lim[0]))+1
-        Nz = int(1.0/0.1 * (z_lim[1] - z_lim[0]))+1
+        Nx = int(1.0/0.01 * (x_lim[1] - x_lim[0]))+1
+        Ny = int(1.0/0.01 * (y_lim[1] - y_lim[0]))+1
+        Nz = int(1.0/0.01 * (z_lim[1] - z_lim[0]))+1
 
         dims = ['x', 'y', 'z']
         labels = ['x (m)', 'y (m)', 'z (m)']
@@ -544,35 +551,73 @@ class SDF3DNew:
 
         x_idx = shown[0]
         y_idx = shown[1]
+        z_idx = not_shown
         X,Y=np.meshgrid(data_1d[x_idx], data_1d[y_idx])
-        Z=np.zeros(X.shape)
-        dZdX = np.zeros((3, X.shape[0], X.shape[1]))
-        # This makes the unobserved area free space
-        for i in range(Nx):
-            for j in range(Ny):
-                for k in range(Nz):
-                    val = self.query_val(data_1d[0][i], data_1d[1][j], data_1d[2][k])
-                    temp = [i,j,k]
-                    Z[temp[y_idx]][temp[x_idx]] = val
-                    # print(f" {(data_1d[0][i], data_1d[1][j], data_1d[2][k])} = {val}")
-                    dZdX[:, temp[y_idx], temp[x_idx]] = self.query_grad(data_1d[0][i], data_1d[1][j], data_1d[2][k]).flatten()
+        Z=np.ones_like(X) * data_1d[z_idx][0]
 
+
+        data_perm = [X,Y,Z]
+        data = [0, 0, 0]
+        for i,j in enumerate([x_idx, y_idx, z_idx]):
+            data[j] = data_perm[i]
+        V = self.query_val(*[g.flatten() for g in data])
+        V = V.reshape(X.shape)
+        G = self.query_grad(*[g.flatten() for g in data])
+        G = G.reshape((3, X.shape[0], X.shape[1]))
 
         fig, ax = plt.subplots()
-        levels = np.linspace(-1.0, 2.5, int(3.5/0.25)+1)
+        levels = np.linspace(-1.0, 2.5, int(3.5/0.1)+1)
 
-        cs = ax.contour(X,Y,Z, levels)
+        cs = ax.contour(X,Y,V, levels)
         ax.clabel(cs, levels)   
-        ax.quiver(X, Y, dZdX[x_idx],dZdX[y_idx], scale_units="xy", scale=1, color='gray')
+        ax.quiver(X, Y, G[x_idx]/100,G[y_idx]/100, scale_units="xy", scale=1, color='gray')
         ax.grid()
         ax.set_title(f"Signed Distance Field sd({dims[x_idx]}, {dims[y_idx]}, {data_1d[not_shown][0]})")   # 0.6 is base collision radius
         ax.set_xlabel(labels[x_idx])
         ax.set_ylabel(labels[y_idx])
+
+        # fig1= plt.figure()
+        # ax1 = fig1.add_subplot(111, projection='3d')
+        # ax1.plot_surface(X,Y,np.linalg.norm(G, axis=0))
+        # ax1.set_xlabel(labels[x_idx])
+        # ax1.set_ylabel(labels[y_idx])
         plt.show(block=block)
+
+    def vis3d(self, x_lim, y_lim, z_lim, block=True):
+        Nx = int(1.0/0.01 * (x_lim[1] - x_lim[0]))+1
+        Ny = int(1.0/0.01 * (y_lim[1] - y_lim[0]))+1
+        Nz = int(1.0/0.01 * (z_lim[1] - z_lim[0]))+1
+
+        dims = ['x', 'y', 'z']
+        labels = ['x (m)', 'y (m)', 'z (m)']
+        lims = np.vstack((x_lim, y_lim, z_lim))
+        grid_1d = []
+        for i, N in enumerate([Nx, Ny, Nz]):
+            grid_1d.append(np.linspace(lims[i][0], lims[i][1], N))
+
+        X,Y,Z=np.meshgrid(*grid_1d)
+        V = self.query_val(X.flatten(), Y.flatten(), Z.flatten())
+        V = V.reshape(X.shape)
+        dVdx = self.query_grad(X.flatten(), Y.flatten(), Z.flatten())
+        dVdx = dVdx.reshape((3, X.shape[0], X.shape[1], X.shape[2]))
+        # # check
+        # grad = self.query_grad(X[1, 2, 0],Y[1, 2, 0],Z[1, 2, 0])
+        # print("expected: {}, got: {}".format(grad, dVdx[:,1,2,0]))
+        fig1= plt.figure()
+        ax1 = fig1.add_subplot(111, projection='3d')
+        ax1.quiver(X, Y, Z, dVdx[0,:,:,:],dVdx[1,:,:,:],dVdx[2,:,:,:], length=0.2, arrow_length_ratio=0.2, normalize=True)
+        # ax1.quiver(X, Y, Z, np.arange(X.flatten().shape[0]).reshape(X.shape), np.ones_like(X)*0, np.ones_like(X)*0, length=0.2, arrow_length_ratio=0.01, normalize=True)
+        print(np.arange(X.flatten().shape[0]).reshape(X.shape))
+        ax1.set_xlabel('x')
+        ax1.set_ylabel('y')
+        ax1.set_zlabel('z')
+        ax1.set_aspect('equal')
+        plt.show(block=block)
+
 
     def query_val(self, x, y, z):
         input = np.vstack((x,y,z))
-        val = self.sdf_fcn(input, self.xg, self.yg, self.zg, self.v)
+        val = self.sdf_fcn(input, self.xg, self.yg, self.zg, self.v).toarray()
 
         return val
     
