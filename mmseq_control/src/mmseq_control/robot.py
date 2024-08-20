@@ -3,8 +3,10 @@ import datetime
 import matplotlib.pyplot as plt
 import pinocchio as pin
 from pinocchio.visualize import MeshcatVisualizer as visualizer
+from typing import List, Dict
 
 import numpy as np
+from numpy import ndarray
 import casadi as cs
 import casadi_kin_dyn.py3casadi_kin_dyn as cas_kin_dyn
 import rospkg
@@ -343,45 +345,53 @@ class CasadiModelInterface:
         print(name + " signed distance function does not exist")
         return None
 
-    def evaluteSignedDistance(self, qs):
+    def evaluteSignedDistance(self, names:List[str], qs:ndarray, params:Dict[str, List[ndarray]]={}):
         sd = {}
-        names = ["self"]
-        names += [n for n in self.collision_pairs["static_obstacles"].keys()]
-
         N = len(qs)
+        names.remove("static_obstacles")
+        static_obstacle_names = [n for n in self.collision_pairs["static_obstacles"].keys()]
+        names += static_obstacle_names
         for name in names:
             sd_fcn = self.getSignedDistanceSymMdls(name)
             sdn_fcn = sd_fcn.map(N, 'thread', 2)
             # sds dimension: num collision pairs x num time step
-            sds = sdn_fcn(qs.T).toarray()
+            if name in static_obstacle_names:
+                args = [qs.T] + [p.T for p in params["static_obstacles"]]
+            else:
+                args = [qs.T] + [p.T for p in params[name]]
+            sds = sdn_fcn(*args).toarray()
             sd_mins = np.min(sds, axis=0)
             sd[name] = sd_mins
 
         return sd
     
-    def evaluteSignedDistancePerPair(self, qs):
+    def evaluteSignedDistancePerPair(self, names:List[str], qs:ndarray, params:Dict[str, List[ndarray]]={}):
         sd = {}
-        names = ["self", "static_obstacles"]
 
         N = len(qs)
         for name in names:
             if name != "static_obstacles":
+                sd[name] = {}
                 for pair in self.collision_pairs[name]:
                     sd_fcn = self.signedDistanceSymMdls[tuple(pair)]
                     sdn_fcn = sd_fcn.map(N, 'thread', 2)
                     # sds dimension: num collision pairs x num time step
-                    sds = sdn_fcn(qs.T).toarray()
-                    sd_mins = np.min(sds, axis=0)
-                    sd["&".join(pair)] = sd_mins
+                    args = [qs.T] + [p.T for p in params[name]]
+                    sds = sdn_fcn(*args).toarray()
+                    # sd_mins = np.min(sds, axis=0)
+                    sd[name]["&".join(pair)] = sds.flatten()
             else:
                 for obstacle, pairs in self.collision_pairs["static_obstacles"].items():
+                    sd[obstacle] = {}
                     for pair in pairs:
                         sd_fcn = self.signedDistanceSymMdls[tuple(pair)]
                         sdn_fcn = sd_fcn.map(N, 'thread', 2)
+                        args = [qs.T] + [p.T for p in params["static_obstacles"]]
+
                         # sds dimension: num collision pairs x num time step
-                        sds = sdn_fcn(qs.T).toarray()
-                        sd_mins = np.min(sds, axis=0)
-                        sd["&".join(pair)] = sd_mins
+                        sds = sdn_fcn(*args).toarray()
+                        # sd_mins = np.min(sds, axis=0)
+                        sd[obstacle]["&".join(pair)] = sds.flatten()
 
         return sd
 

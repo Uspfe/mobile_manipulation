@@ -237,8 +237,13 @@ class DataPlotter:
         # signed distance
         nq = self.data["nq"]
         qs = self.data["xs"][:, :nq]
+        sdf_param_names = ["_".join(["mpc","sdf","param", str(i)])+"s" for i in range(self.model_interface.sdf_map.dim+1)]
+        sdf_param = [self.data[name] for name in sdf_param_names]
         # keyed by obstacle names or "self"
-        sds_dict = self.model_interface.evaluteSignedDistance(qs)
+        names = ["self", "static_obstacles"]
+        names += ["sdf"] if self.config["controller"]["sdf_collision_avoidance_enabled"] else []
+        params = {"self": [], "static_obstacles":[],"sdf": sdf_param}
+        sds_dict = self.model_interface.evaluteSignedDistance(names, qs, params)
         sds = np.array([sd for sd in sds_dict.values()])
         self.data["signed_distance"] = np.min(sds, axis=0)
 
@@ -374,11 +379,14 @@ class DataPlotter:
 
         return stats
     
+    def _convert_np_array_to_dict(self, array):
+        return dict(enumerate(array.flatten(), 1))[1]
+    
     def run_mpc_iter(self, t):
         t_sim = self.data["ts"]
         t_index = np.argmin(np.abs(t_sim - t))
 
-        iter_snapshot = dict(enumerate(self.data["mpc_iter_snapshots"][t_index].flatten(), 1))[1]
+        iter_snapshot = self._convert_np_array_to_dict(self.data["mpc_iter_snapshots"][t_index])
         controller = self.controller
         ocp_solver = self.controller.ocp_solver
 
@@ -679,37 +687,47 @@ class DataPlotter:
 
         return axes
 
-    def plot_collision_detailed(self):
-        nq = int(self.data["nq"])
-        ts = self.data["ts"]
-        qs = self.data["xs"][:, :nq]
-        sds = self.model_interface.evaluteSignedDistancePerPair(qs)
-
-        f, ax = plt.subplots(1, 1)
-        for name, sd in sds.items():
-            ax.plot(ts, sd, label=name)
-           
-        ax.set_title("Signed Distance vs Time")
-        ax.set_xlabel("Time (s)")
-        ax.set_ylabel("Sd(q) (m)")
-        ax.legend()
-    
     def plot_collision(self):
         nq = int(self.data["nq"])
         ts = self.data["ts"]
         qs = self.data["xs"][:, :nq]
-        sds = self.model_interface.evaluteSignedDistance(qs)
+        names = []
+        params = {}
 
-        f, ax = plt.subplots(1, 1)
-        for name, sd in sds.items():
-            ax.plot(ts, sd, label=name)
+        if self.config["controller"]["self_collision_avoidance_enabled"]:
+            names += ["self"]
+            params = {"self": []}
+
+        if self.config["controller"]["sdf_collision_avoidance_enabled"]:
+            param_names =  ["_".join(["mpc","sdf", "param", str(i)])+"s" for i in range(self.model_interface.sdf_map.dim+1)]
+            sdf_params = [self.data[name] for name in param_names]
+            params["sdf"] = sdf_params
+            names += ["sdf"]
+
+        if self.config["controller"]["static_obstacles_collision_avoidance_enabled"]:
+            params["static_obstacles"] = []
+            names += ["static_obstacles"]
+
+        sds = self.model_interface.evaluteSignedDistancePerPair(names, qs, params)
+
+        axes = []
+        for name, sd_per_pair in sds.items():
+            f, ax = plt.subplots(1, 1)
+            for pair, sd in sd_per_pair.items():
+                ax.plot(ts, sd, label=pair)
+            
             margin = self.config["controller"]["collision_safety_margin"].get(name, None)
+            if margin is None:
+                margin = self.config["controller"]["collision_safety_margin"].get("static_obstacles", None)
+
             if margin:
-                ax.plot(ts, [margin]*len(ts), '--', linewidth=2, label=f"minimum clearance {name}")
-        ax.set_title("Signed Distance vs Time")
-        ax.set_xlabel("Time (s)")
-        ax.set_ylabel("Sd(q) (m)")
-        ax.legend()
+                ax.plot(ts, [margin]*len(ts), 'r--', linewidth=2, label=f"minimum clearance")
+
+            ax.set_title("{} Distance".format(name))
+            ax.set_xlabel("Time (s)")
+            ax.set_ylabel("Sd(q) (m)")
+            ax.legend()
+
 
     def plot_cmds(self, axes=None, index=0, legend=None):
         ts = self.data["ts"]
@@ -1348,7 +1366,6 @@ class DataPlotter:
         # self.plot_cmds_normalized()
         self.plot_du()
         self.plot_collision()
-        self.plot_collision_detailed()
 
     def plot_tracking(self):
         self.plot_ee_position()
