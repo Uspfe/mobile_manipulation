@@ -671,6 +671,9 @@ class STMPC(MPC):
         self.log["ocp_param"] = curr_p_map_bar.copy()
         self.log["x_bar"] = self.x_bar.copy()
         self.log["u_bar"] = self.u_bar.copy()
+        sdf_param = self.model_interface.sdf_map.get_params()
+        for i, param in enumerate(sdf_param):
+            self.log["_".join(["sdf", "param", str(i)])] = param
 
         return self.v_cmd, self.u_prev, self.u_bar.copy(), self.x_bar[:, 9:].copy()
 
@@ -700,6 +703,8 @@ class STMPC(MPC):
             log["_".join([name, "constraint"])]= 0
             log["_".join([name, "constraint", "gradient"])]= 0
 
+        for i in range(self.model_interface.sdf_map.dim+1):
+            log["_".join(["sdf", "param", str(i)])] = 0
         return log
 
 
