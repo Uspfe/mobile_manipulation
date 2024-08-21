@@ -7,8 +7,8 @@ controller:
     
     filter_enabled: True
     filter_type: "tv"   # gaussian or tv
-    guassian_filter_sigma: 3
-    tv_filter_weight: 0.2
+    guassian_filter_sigma: 10.
+    tv_filter_weight: 1.0
   
   
   # Signed Distance Field Type, SDF3D vs SDF2D
