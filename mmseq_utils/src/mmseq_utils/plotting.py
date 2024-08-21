@@ -1437,8 +1437,8 @@ class DataPlotter:
 
         g_sdf = const.g_fcn(x_bar[:-1].T, u_bar.T, cst_param_map.cat).toarray()
         print(f"g_sdf{g_sdf}")
-        h_sdf = const.h_fcn(x_bar[:-1].T, u_bar.T, cst_param_map.cat).toarray()
-        print(f"h_sdf{h_sdf}")
+        # h_sdf = const.h_fcn(x_bar[:-1].T, u_bar.T, cst_param_map.cat).toarray()
+        # print(f"h_sdf{h_sdf}")
 
 
         # sample around one point
@@ -1520,17 +1520,17 @@ class DataPlotter:
             z_lim=[0.4, 0.4],
             block=False)
         
-        g_hess_fd = []
-        for i in range(u_bar.shape[0]):
-            g_hess_fd.append(const.g_hess_fd_fcn(x_bar[i], u_bar[i], cst_param_map.cat).toarray())
+        # g_hess_fd = []
+        # for i in range(u_bar.shape[0]):
+        #     g_hess_fd.append(const.g_hess_fd_fcn(x_bar[i], u_bar[i], cst_param_map.cat).toarray())
         
-        tr_g_hess_fd = [np.trace(g) for g in g_hess_fd]
+        # tr_g_hess_fd = [np.trace(g) for g in g_hess_fd]
 
-        fig2= plt.figure()
-        plt.plot(tr_g_hess_fd, '-x')
-        plt.plot(prediction_index, tr_g_hess_fd[prediction_index], 'r-x')
-        plt.xlabel("MPC prediction step")
-        plt.ylabel("tr(g_cbf_hess)")
+        # fig2= plt.figure()
+        # plt.plot(tr_g_hess_fd, '-x')
+        # plt.plot(prediction_index, tr_g_hess_fd[prediction_index], 'r-x')
+        # plt.xlabel("MPC prediction step")
+        # plt.ylabel("tr(g_cbf_hess)")
 
 
 

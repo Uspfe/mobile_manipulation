@@ -663,8 +663,8 @@ class STMPC(MPC):
         for name in self.collision_link_names: 
             self.log["_".join([name, "constraint"])] = self.evaluate_constraints(self.collisionCsts[name], 
                                                                    self.x_bar, self.u_bar, curr_p_map_bar)
-            self.log["_".join([name, "constraint", "gradient"])] = self.evaluate_constraints_gradient(self.collisionCsts[name], 
-                                                                   self.x_bar, self.u_bar, curr_p_map_bar)
+            # self.log["_".join([name, "constraint", "gradient"])] = self.evaluate_constraints_gradient(self.collisionCsts[name], 
+            #                                                        self.x_bar, self.u_bar, curr_p_map_bar)
         # For data plotting
         self.log["state_constraint"] = self.evaluate_constraints(self.stateCst, self.x_bar, self.u_bar, curr_p_map_bar)
         self.log["control_constraint"] = self.evaluate_constraints(self.controlCst, self.x_bar, self.u_bar, curr_p_map_bar)

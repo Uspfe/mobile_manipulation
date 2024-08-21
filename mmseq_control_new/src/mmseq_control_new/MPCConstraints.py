@@ -206,17 +206,17 @@ class SignedDistanceConstraintCBF(NonlinearConstraint):
 
         self.g_grad_eqn = cs.jacobian(self.g_eqn, cs.veccat(self.u_sym, self.x_sym))
         self.g_grad_fcn = cs.Function("g_grad", [self.x_sym, self.u_sym, self.p_sym], [self.g_grad_eqn])
-        self.h_fcn = cs.Function("h_fcn", [self.x_sym, self.u_sym, self.p_sym], [h_eqn])
-        self.xdot_fcn = cs.Function("xdot_fcn", [self.x_sym, self.u_sym, self.p_sym], [robot_mdl.ssSymMdl["fmdl"](self.x_sym, self.u_sym)])
-        self.h_grad_fcn = cs.Function("h_grad_fcn", [self.x_sym, self.u_sym, self.p_sym], [h_grad_eqn])
+        # self.h_fcn = cs.Function("h_fcn", [self.x_sym, self.u_sym, self.p_sym], [h_eqn])
+        # self.xdot_fcn = cs.Function("xdot_fcn", [self.x_sym, self.u_sym, self.p_sym], [robot_mdl.ssSymMdl["fmdl"](self.x_sym, self.u_sym)])
+        # self.h_grad_fcn = cs.Function("h_grad_fcn", [self.x_sym, self.u_sym, self.p_sym], [h_grad_eqn])
 
-        h_grad_fd_fcn = cs.Function("h_grad_fd_fcn", [self.x_sym, self.u_sym, self.p_sym], [h_grad_eqn],{"enable_fd":True})
-        h_hessian_fd_eqn = cs.jacobian(h_grad_fd_fcn(self.x_sym, self.u_sym, self.p_sym).T, self.x_sym)
-        self.h_hess_fd_fcn = cs.Function("h_hess_fd_fcn", [self.x_sym, self.u_sym, self.p_sym], [h_hessian_fd_eqn])
+        # h_grad_fd_fcn = cs.Function("h_grad_fd_fcn", [self.x_sym, self.u_sym, self.p_sym], [h_grad_eqn],{"enable_fd":True})
+        # h_hessian_fd_eqn = cs.jacobian(h_grad_fd_fcn(self.x_sym, self.u_sym, self.p_sym).T, self.x_sym)
+        # self.h_hess_fd_fcn = cs.Function("h_hess_fd_fcn", [self.x_sym, self.u_sym, self.p_sym], [h_hessian_fd_eqn])
 
-        g_fd_fcn = cs.Function("g_"+self.name+"_CBF", [self.x_sym, self.u_sym, self.p_sym], [self.g_eqn],{"enable_fd":True})
-        g_hess_fd_eqn,g_grad_fd_eqn = cs.hessian(g_fd_fcn(self.x_sym, self.u_sym, self.p_sym), self.x_sym)
-        self.g_hess_fd_fcn = cs.Function("g_hess_fd_fcn", [self.x_sym, self.u_sym, self.p_sym], [g_hess_fd_eqn])
+        # g_fd_fcn = cs.Function("g_"+self.name+"_CBF", [self.x_sym, self.u_sym, self.p_sym], [self.g_eqn],{"enable_fd":True})
+        # g_hess_fd_eqn,g_grad_fd_eqn = cs.hessian(g_fd_fcn(self.x_sym, self.u_sym, self.p_sym), self.x_sym)
+        # self.g_hess_fd_fcn = cs.Function("g_hess_fd_fcn", [self.x_sym, self.u_sym, self.p_sym], [g_hess_fd_eqn])
 
         self.slack_enabled = True
 
