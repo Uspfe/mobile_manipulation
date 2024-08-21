@@ -651,6 +651,8 @@ class STMPC(MPC):
         self.v_cmd = self.x_bar[0][self.robot.DoF:].copy()
 
         # For rviz visualization
+        t1 = time.perf_counter()
+
         self.ee_bar, self.base_bar = self._getEEBaseTrajectories(self.x_bar)
         self.sdf_bar["EE"] = self.model_interface.sdf_map.query_val(self.ee_bar[:, 0],self.ee_bar[:, 1],self.ee_bar[:, 2]).flatten()
         self.sdf_grad_bar["EE"] = self.model_interface.sdf_map.query_grad(self.ee_bar[:, 0],self.ee_bar[:, 1],self.ee_bar[:, 2]).reshape((3,-1))
@@ -663,18 +665,19 @@ class STMPC(MPC):
                                                                    self.x_bar, self.u_bar, curr_p_map_bar)
             self.log["_".join([name, "constraint", "gradient"])] = self.evaluate_constraints_gradient(self.collisionCsts[name], 
                                                                    self.x_bar, self.u_bar, curr_p_map_bar)
-        
+        # For data plotting
         self.log["state_constraint"] = self.evaluate_constraints(self.stateCst, self.x_bar, self.u_bar, curr_p_map_bar)
         self.log["control_constraint"] = self.evaluate_constraints(self.controlCst, self.x_bar, self.u_bar, curr_p_map_bar)
         self.log["ee_pos"] = self.ee_bar.copy()
         self.log["base_pos"] = self.base_bar.copy()
-        self.log["ocp_param"] = curr_p_map_bar.copy()
+        self.log["ocp_param"] = [p.cat.full().flatten() for p in curr_p_map_bar]
         self.log["x_bar"] = self.x_bar.copy()
         self.log["u_bar"] = self.u_bar.copy()
         sdf_param = self.model_interface.sdf_map.get_params()
         for i, param in enumerate(sdf_param):
             self.log["_".join(["sdf", "param", str(i)])] = param
-
+        t2 = time.perf_counter()
+        self.log["time_ocp_overhead"] = t2 - t1
         return self.v_cmd, self.u_prev, self.u_bar.copy(), self.x_bar[:, 9:].copy()
 
     def _get_log(self):
