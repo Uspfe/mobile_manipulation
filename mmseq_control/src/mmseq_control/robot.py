@@ -315,8 +315,8 @@ class CasadiModelInterface:
             if self.sdf_map.dim == 2:
                 sd_sym = self.sdf_map_SymMdl(pt_sym[0][:2], *sdf_map_params_sym) - o.geometry.radius 
             else:
-                if pair[1] == "base_collision_link":
-                    sd_sym = self.sdf_map_SymMdl(cs.vertcat(pt_sym[0][:2],cs.MX.ones(1)*0.1), *sdf_map_params_sym) - o.geometry.radius 
+                if pair[1] == self.robot.base_link_name:
+                    sd_sym = self.sdf_map_SymMdl(cs.vertcat(pt_sym[0][:2],cs.MX.ones(1)*0.2), *sdf_map_params_sym) - o.geometry.radius 
                 else:
                     sd_sym = self.sdf_map_SymMdl(pt_sym[0], *sdf_map_params_sym) - o.geometry.radius 
 
