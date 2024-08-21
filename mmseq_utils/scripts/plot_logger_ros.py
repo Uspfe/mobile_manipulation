@@ -148,7 +148,9 @@ if __name__ == "__main__":
                         help="plot sdf")
     parser.add_argument("--runmpc", action="store_true", help="rerun mpc iters")
     parser.add_argument("--timestep", type=float,help="control timestep to inspect")
-    parser.add_argument("--debug", action="store_true",
+    parser.add_argument("--sdfdebug", action="store_true",
+                        help="debug")
+    parser.add_argument("--mpcdebug", action="store_true",
                         help="debug")
     parser.add_argument("--compare", action="store_true",
                         help="plot comparisons")
@@ -170,15 +172,17 @@ if __name__ == "__main__":
         if args.htmpc:
             data_plotter.plot_mpc()
         if args.sdf:
-            data_plotter.check_sdf()
+            data_plotter.plot_sdf_map(args.timestep)
         if args.tracking:
             data_plotter.plot_tracking()
         if args.robot:
             data_plotter.plot_robot()
         if args.check:
             data_plotter.plot_quick_check()
-        if args.debug:
+        if args.sdfdebug:
             data_plotter.sdf_failure_debug(args.timestep)
+        if args.mpcdebug:
+            data_plotter.mpc_constraint_debug(args.timestep)
         if args.savefigs:
             data_plotter.save_figs()
         if args.runmpc:

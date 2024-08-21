@@ -1597,7 +1597,14 @@ class DataPlotter:
         self.plot_time_series_data_htmpc("mpc_solver_statuss", axes=[axes[1]], block=False)
         self.plot_sdf(t, use_iter_snapshot=True, block=True)
 
-        
+    def mpc_constraint_debug(self, t):
+        f, axes = plt.subplots(2, 1, sharex=True)
+        self.plot_mpc_prediction("mpc_sdf_constraints", t, axes=[axes[0]], block=False)
+        self.plot_time_series_data_htmpc("mpc_solver_statuss", axes=[axes[1]], block=False)
+
+        self.plot_mpc_prediction("mpc_sdf_constraints", t, axes=[axes[0]], block=False)
+        self.plot_mpc_prediction("mpc_control_constraints", t,block=False)
+        self.plot_mpc_prediction("mpc_state_constraints", t, block=False)
 
 class ROSBagPlotter:
     def __init__(self, bag_file, config_file="/home/tracy/Project/catkin_ws/src/mm_sequential_tasks/mmseq_run/config/robot/thing.yaml"):
