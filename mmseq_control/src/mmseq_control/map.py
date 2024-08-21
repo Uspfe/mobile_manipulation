@@ -530,9 +530,9 @@ class SDF3DNew:
         return [self.xg.copy(), self.yg.copy(), self.zg.copy(), self.v.copy()]
 
     def vis(self, x_lim, y_lim, z_lim, block=True):
-        Nx = int(1.0/0.01 * (x_lim[1] - x_lim[0]))+1
-        Ny = int(1.0/0.01 * (y_lim[1] - y_lim[0]))+1
-        Nz = int(1.0/0.01 * (z_lim[1] - z_lim[0]))+1
+        Nx = int(1.0/self.voxel_size * (x_lim[1] - x_lim[0]))+1
+        Ny = int(1.0/self.voxel_size * (y_lim[1] - y_lim[0]))+1
+        Nz = int(1.0/self.voxel_size * (z_lim[1] - z_lim[0]))+1
 
         dims = ['x', 'y', 'z']
         labels = ['x (m)', 'y (m)', 'z (m)']
@@ -570,7 +570,7 @@ class SDF3DNew:
 
         cs = ax.contour(X,Y,V, levels)
         ax.clabel(cs, levels)   
-        ax.quiver(X, Y, G[x_idx]/100,G[y_idx]/100, scale_units="xy", scale=1, color='gray')
+        ax.quiver(X, Y, G[x_idx]/10,G[y_idx]/10, scale_units="xy", scale=1, color='gray')
         ax.grid()
         ax.set_title(f"Signed Distance Field sd({dims[x_idx]}, {dims[y_idx]}, {data_1d[not_shown][0]})")   # 0.6 is base collision radius
         ax.set_xlabel(labels[x_idx])
