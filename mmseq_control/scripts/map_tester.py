@@ -20,13 +20,26 @@ def test_3d(config):
             sdf.update_map(*map)
             tsdf, tsdf_vals = map_ros_interface.tsdf, map_ros_interface.tsdf_vals
 
-            pts = np.around(np.array([np.array([p.x,p.y]) for p in tsdf]), 2).reshape((len(tsdf),2))
-            xs = pts[:,0]
-            ys = pts[:,1]
-            x_lim = [min(xs), max(xs)]
-            y_lim = [min(ys), max(ys)]
-            print(f"x:{x_lim}, y:{y_lim}")
+            if False:
+                #use tsdf range
+                pts = np.around(np.array([np.array([p.x,p.y]) for p in tsdf]), 2).reshape((len(tsdf),2))
+                xs = pts[:,0]
+                ys = pts[:,1]
+                x_lim = [min(xs), max(xs)]
+                y_lim = [min(ys), max(ys)]
+                print(f"using tsdf range")
+                print(f"x:{x_lim}, y:{y_lim}")
+            else:
+                # use robot local map range
+                params = sdf.get_params()
+                x_lim = [min(params[0]), max(params[0])]
+                y_lim = [min(params[1]), max(params[1])]
+                z_lim = [min(params[2]), max(params[2])]
+                print(f"using local map range")
+                print(f"x:{x_lim}, y:{y_lim}, z:{z_lim}")
+
             if map_ros_interface.valid:
+                # x-y
                 sdf.vis(x_lim=x_lim,
                         y_lim=y_lim,
                         z_lim=[0.0, 0.0],
@@ -37,19 +50,41 @@ def test_3d(config):
                         block=False)
                 sdf.vis(x_lim=x_lim,
                         y_lim=y_lim,
-                        z_lim=[0.75, 0.75],
+                        z_lim=[1.3, 1.3],
+                        block=False)
+                # y-z
+                sdf.vis(x_lim=[0, 0],
+                        y_lim=y_lim,
+                        z_lim=[0.1, 1.4],
+                        block=False)
+                sdf.vis(x_lim=[0.5, 0.5],
+                        y_lim=y_lim,
+                        z_lim=[0.1, 1.4],
+                        block=False)
+                sdf.vis(x_lim=[1.0, 1.0],
+                        y_lim=y_lim,
+                        z_lim=[0.1, 1.4],
+                        block=False)
+                # x-z
+                sdf.vis(x_lim=x_lim,
+                        y_lim=[0,0],
+                        z_lim=[0.1, 1.4],
+                        block=False)
+                sdf.vis(x_lim=x_lim,
+                        y_lim=[0.5,0.5],
+                        z_lim=[0.1, 1.4],
+                        block=False)
+                sdf.vis(x_lim=x_lim,
+                        y_lim=[-0.5, -0.5],
+                        z_lim=[0.1, 1.4],
                         block=True)
+                # sdf.vis3d(x_lim=x_lim,
+                #           y_lim=y_lim,
+                #           z_lim=[0.1, 1.5],
+                #           block=True)
                 
             else:
                 print("map invalid")
-            t0 = time.perf_counter()
-            val = sdf.query_val(xs, ys, np.ones_like(xs)*0.25)
-            t1 = time.perf_counter()
-            grad = sdf.query_grad(xs, ys, np.ones_like(xs)*0.25)
-            t2= time.perf_counter()
-            hess = sdf.query_hessian(xs, ys, np.ones_like(xs)*0.25)
-            t3= time.perf_counter()
-            print(f"Time: Query Val {t1-t0}, Grad {t2-t1}, Hess {t3-t2}")
 
         rate.sleep()
 
@@ -85,7 +120,7 @@ if __name__ == "__main__":
     import argparse
     import sys
     config_path = parsing.parse_ros_path({"package": "mmseq_run",
-                                          "path": "config/simple_experiment.yaml"})
+                                          "path": "config/3d_collision_sdf.yaml"})
     config = parsing.load_config(config_path)
 
     argv = rospy.myargv(argv=sys.argv)
