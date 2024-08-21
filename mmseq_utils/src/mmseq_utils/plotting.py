@@ -392,7 +392,6 @@ class DataPlotter:
 
         u_bar_init = iter_snapshot["u_bar_init"]
         x_bar_init = iter_snapshot["x_bar_init"]
-        p_map_bar = self.data["mpc_ocp_params"][t_index]
         p_map_bar = iter_snapshot["p_map_bar"]
 
         xo = iter_snapshot["xo"]+ np.array([0,0.0]+[0]*16)
@@ -465,7 +464,7 @@ class DataPlotter:
 
         if axes is None:
             axes = []
-            f, axes = plt.subplots(1, 1, sharex=True, figsize=(3.5, 2.))
+            f, axes = plt.subplots(1, 1, sharex=True)
 
         if legend is None:
             legend = self.data["name"]
@@ -488,6 +487,7 @@ class DataPlotter:
         axes.legend()
         axes.set_xlabel("x (m)")
         axes.set_ylabel("y (m)")
+        axes.set_title("Base Path Tracking")
 
         return axes
 
@@ -1344,13 +1344,13 @@ class DataPlotter:
         multipage(Path(str(self.data["dir_path"])) / "data.pdf", figs)
 
     def plot_mpc(self):
-        # self.plot_cost_htmpc(block=False)
-        # self.plot_solver_status_htmpc(block=False)
+        self.plot_cost_htmpc(block=False)
+        self.plot_solver_status_htmpc(block=False)
         # self.plot_solver_iters_htmpc(block=False)
-        # self.plot_time_htmpc(block=False)
+        self.plot_time_htmpc(block=False)
         # self.plot_solver_iters()
         # self.plot_mpc_prediction("mpc_obstacle_cylinder_1_link_constraints")
-        # self.plot_mpc_prediction("mpc_sdf_constraints", block=False)
+        self.plot_mpc_prediction("mpc_sdf_constraints", block=False)
         # self.plot_mpc_prediction("mpc_control_constraints",block=False)
         # self.plot_mpc_prediction("mpc_state_constraints", block=False)
         # self.plot_mpc_prediction("mpc_sdf_constraint_gradients", block=False)
@@ -1369,7 +1369,7 @@ class DataPlotter:
 
     def plot_tracking(self):
         self.plot_ee_position()
-        # self.plot_base_position()
+        self.plot_base_position()
         axes = self.plot_base_path()
         self.plot_base_ref_path(axes)
         self.plot_tracking_err()
@@ -1391,7 +1391,8 @@ class DataPlotter:
             x_bar = np.array(iter_snapshot["x_bar"])
             u_bar = np.array(iter_snapshot["u_bar"])
         else:
-            param_map = self.data["mpc_ocp_params"][t_index][0]
+            param_map_array = self.data["mpc_ocp_params"][t_index][0]
+            param_map = reconstruct_sym_struct_map_from_array(self.controller.p_struct, param_map_array)
             x_bar = self.data["mpc_x_bars"][t_index]
             u_bar = self.data["mpc_u_bars"][t_index]
         sdf_map = self.model_interface.sdf_map
@@ -1532,19 +1533,59 @@ class DataPlotter:
         # plt.xlabel("MPC prediction step")
         # plt.ylabel("tr(g_cbf_hess)")
 
-
-
         plt.show(block=block)
 
+    def plot_sdf_map(self, t, use_iter_snapshot=False, block=True):
+        t_sim = self.data["ts"]
+        t_index = np.argmin(np.abs(t_sim - t))
+        if use_iter_snapshot:
+            iter_snapshot = dict(enumerate(self.data["mpc_iter_snapshots"][t_index].flatten(), 1))[1]
+            param_map_array = iter_snapshot["p_map_bar"][0]
+            param_map = reconstruct_sym_struct_map_from_array(self.controller.p_struct, param_map_array)
+            x_bar = np.array(iter_snapshot["x_bar"])
+            u_bar = np.array(iter_snapshot["u_bar"])
+        else:
+            param_map_array = self.data["mpc_ocp_params"][t_index][0]
+            param_map = reconstruct_sym_struct_map_from_array(self.controller.p_struct, param_map_array)
+            x_bar = self.data["mpc_x_bars"][t_index]
+            u_bar = self.data["mpc_u_bars"][t_index]
+        sdf_map = self.model_interface.sdf_map
+        sdf_map.update_map(param_map["x_grid_sdf"].toarray().flatten(),
+                           param_map["y_grid_sdf"].toarray().flatten(),
+                           param_map["z_grid_sdf"].toarray().flatten(),
+                           param_map["value_sdf"].toarray().flatten())
         
+        x_lim = [np.min(param_map["x_grid_sdf"]), np.max(param_map["x_grid_sdf"])]
+        y_lim = [np.min(param_map["y_grid_sdf"]), np.max(param_map["y_grid_sdf"])]
+        z_lim = [np.min(param_map["z_grid_sdf"]), np.max(param_map["z_grid_sdf"])]
+
+        sdf_map.vis(x_lim=x_lim,
+                    y_lim=y_lim,
+                    z_lim=[0.1, 0.1],
+                    block=False)
+        sdf_map.vis(x_lim=x_lim,
+            y_lim=y_lim,
+            z_lim=[0.2, 0.2],
+            block=False)
+        sdf_map.vis(x_lim=x_lim,
+            y_lim=y_lim,
+            z_lim=[0.3, 0.3],
+            block=False)
+        sdf_map.vis(x_lim=x_lim,
+            y_lim=y_lim,
+            z_lim=[0.4, 0.4],
+            block=False)
+
 
     def check_sdf(self):
         t_sim = self.data["ts"]
         N = len(t_sim)
 
         for i in range(N-1):
-            param_map = self.data["mpc_ocp_params"][i][0]
-            param_map_next = self.data["mpc_ocp_params"][i+1][0]
+            param_map_array = self.data["mpc_ocp_params"][i][0]
+            param_map = reconstruct_sym_struct_map_from_array(self.controller.p_struct, param_map_array)
+            param_map_array_next = self.data["mpc_ocp_params"][i+1][0]
+            param_map_next = reconstruct_sym_struct_map_from_array(self.controller.p_struct, param_map_array_next)
             keys = ['x_grid_sdf', 'y_grid_sdf', 'z_grid_sdf', 'value_sdf']
             for key in keys:
                 diff = np.linalg.norm(param_map[key].toarray().flatten() - param_map_next[key].toarray().flatten())
