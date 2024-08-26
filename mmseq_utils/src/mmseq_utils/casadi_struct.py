@@ -29,8 +29,8 @@ def reconstruct_sym_struct_map_from_array(p_struct, p_map_array):
 
         index += size
     
-    print("Og: {}".format(p_map_array))
-    print("Re: {}".format(p_map_new.cat.full().flatten()))
+    # print("Og: {}".format(p_map_array))
+    # print("Re: {}".format(p_map_new.cat.full().flatten()))
 
     return p_map_new
 
