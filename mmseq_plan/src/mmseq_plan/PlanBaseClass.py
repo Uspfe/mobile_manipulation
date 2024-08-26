@@ -28,7 +28,7 @@ class TrajectoryPlanner(Planner):
 
 class WholeBodyPlanner(Planner):
     def __init__(self):
-        super().__init__()
+        pass
     
     @abstractmethod
     def generatePlanFromConfig(self):
@@ -74,8 +74,6 @@ class WholeBodyPlanner(Planner):
 
 class CasadiPartialPlanner(Planner):
     def __init__(self, config, pose_calculator_func, jacobian_calculator_func):
-        super().__init__()
-
         self.name = config["name"]
         self.type = config["type"]
         self.ref_type = "trajectory"
@@ -101,7 +99,7 @@ class CasadiPartialPlanner(Planner):
         p = self.pose_calculator_func(q)
         v = self.jacobian_calculator_func(q) @ q_dot
 
-        return p, v
+        return p.full().flatten(), v.full().flatten()
     
     def checkFinished(self, t, ee_curr_pos):
         return t > self.tf
