@@ -501,20 +501,21 @@ class STMPC(MPC):
             if "time" in key:
                 self.log[key] = 0
 
+        map_params = self.model_interface.sdf_map.get_params()
         for i in range(self.N+1):
             curr_p_map = self.p_struct(0)
             # curr_p_map["eps_Regularization"] = self.params["cost_params"]["Regularization"]["eps"]
 
             t1 = time.perf_counter()
             if self.params["sdf_collision_avoidance_enabled"]:
-                params = self.model_interface.sdf_map.get_params()
-                curr_p_map["x_grid_sdf"] = params[0]
-                curr_p_map["y_grid_sdf"] = params[1]
+                # params = self.model_interface.sdf_map.get_params()
+                curr_p_map["x_grid_sdf"] = map_params[0]
+                curr_p_map["y_grid_sdf"] = map_params[1]
                 if self.model_interface.sdf_map.dim == 3:
-                    curr_p_map["z_grid_sdf"] = params[2]
-                    curr_p_map["value_sdf"] = params[3]
+                    curr_p_map["z_grid_sdf"] = map_params[2]
+                    curr_p_map["value_sdf"] = map_params[3]
                 else:
-                    curr_p_map["value_sdf"] = params[2]
+                    curr_p_map["value_sdf"] = map_params[2]
             t2 = time.perf_counter()
             self.log["time_ocp_set_params_map"] += t2 - t1
 
