@@ -9,6 +9,7 @@ import yaml
 import rosbag
 import os
 from spatialmath.base import rotz, r2q
+import time
 
 from mmseq_utils.parsing import parse_path, load_config
 from mmseq_utils.casadi_struct import casadi_sym_struct, reconstruct_sym_struct_map_from_array
@@ -421,6 +422,7 @@ class DataPlotter:
         x_bar_init = iter_snapshot["x_bar_init"]
         p_map_bar = iter_snapshot["p_map_bar"]
 
+        t0 = time.perf_counter()
         xo = iter_snapshot["xo"]+ np.array([0,0.0]+[0]*16)
         x_bar_init = controller._predictTrajectories(xo, u_bar_init)
 
@@ -444,9 +446,11 @@ class DataPlotter:
 
         x_bar_diff = x_bar - iter_snapshot["x_bar"]
         u_bar_diff = u_bar - iter_snapshot["u_bar"]
+        t1 = time.perf_counter()
 
         print("x bar diff {}".format(x_bar_diff))
         print("u bar diff {}".format(u_bar_diff))
+        print("run time {}".format(t1-t0))
         
 
     def plot_ee_position(self, axes=None, index=0, legend=None):
@@ -1379,6 +1383,8 @@ class DataPlotter:
         # self.plot_solver_iters_htmpc(block=False)
         self.plot_time_htmpc(block=False)
         # self.plot_solver_iters()
+        self.plot_time_series_data_htmpc("time_get_map", block=False)
+
         self.plot_run_time()
 
         mpc_failure_steps = np.where(self.data["mpc_solver_statuss"] == 4)[0]
@@ -1950,3 +1956,15 @@ class ROSBagPlotter:
 
     def plot_show(self):
         plt.show()
+    
+    def plot_topic_frequency(self):
+        self.plot_frequency(self.data["ridgeback"]["joint_states"], "joint states")
+        self.plot_frequency(self.data["ridgeback"]["cmd_vels"], "cmd")
+
+    
+    def plot_frequency(self, data, name):
+        f1 = plt.figure()
+        dts = data["ts"][1:] - data["ts"][:-1]
+
+        plt.plot(data["ts"][:-1], dts)
+        plt.title(name + " time difference")
