@@ -1,13 +1,13 @@
 import rospy
 import numpy as np
 import time
-from mobile_manipulation_central.ros_interface import MapInterface, MapInterfaceNew
+from mobile_manipulation_central.ros_interface import MapInterface, MapInterfaceNew, MapGridInterface
 from mmseq_control.map import SDF2D, SDF3D, SDF2DNew, SDF3DNew
 import matplotlib.pyplot as plt
 
 def test_3d(config):
 
-    map_ros_interface = MapInterfaceNew(config["controller"])
+    map_ros_interface = MapGridInterface(config["controller"])
     sdf = SDF3DNew(config["controller"])
     rate = rospy.Rate(100)
 
@@ -18,7 +18,7 @@ def test_3d(config):
         is_map_updated, map = map_ros_interface.get_map()
         if is_map_updated:
             sdf.update_map(*map)
-            tsdf, tsdf_vals = map_ros_interface.tsdf, map_ros_interface.tsdf_vals
+            # tsdf, tsdf_vals = map_ros_interface.tsdf, map_ros_interface.tsdf_vals
 
             if False:
                 #use tsdf range
@@ -38,53 +38,50 @@ def test_3d(config):
                 print(f"using local map range")
                 print(f"x:{x_lim}, y:{y_lim}, z:{z_lim}")
 
-            if map_ros_interface.valid:
-                # x-y
-                sdf.vis(x_lim=x_lim,
-                        y_lim=y_lim,
-                        z_lim=[0.0, 0.0],
-                        block=False)
-                sdf.vis(x_lim=x_lim,
-                        y_lim=y_lim,
-                        z_lim=[0.5, 0.5],
-                        block=False)
-                sdf.vis(x_lim=x_lim,
-                        y_lim=y_lim,
-                        z_lim=[1.3, 1.3],
-                        block=False)
-                # y-z
-                sdf.vis(x_lim=[0, 0],
-                        y_lim=y_lim,
-                        z_lim=[0.1, 1.4],
-                        block=False)
-                sdf.vis(x_lim=[0.5, 0.5],
-                        y_lim=y_lim,
-                        z_lim=[0.1, 1.4],
-                        block=False)
-                sdf.vis(x_lim=[1.0, 1.0],
-                        y_lim=y_lim,
-                        z_lim=[0.1, 1.4],
-                        block=False)
-                # x-z
-                sdf.vis(x_lim=x_lim,
-                        y_lim=[0,0],
-                        z_lim=[0.1, 1.4],
-                        block=False)
-                sdf.vis(x_lim=x_lim,
-                        y_lim=[0.5,0.5],
-                        z_lim=[0.1, 1.4],
-                        block=False)
-                sdf.vis(x_lim=x_lim,
-                        y_lim=[-0.5, -0.5],
-                        z_lim=[0.1, 1.4],
-                        block=True)
-                # sdf.vis3d(x_lim=x_lim,
-                #           y_lim=y_lim,
-                #           z_lim=[0.1, 1.5],
-                #           block=True)
+            # x-y
+            sdf.vis(x_lim=x_lim,
+                    y_lim=y_lim,
+                    z_lim=[0.0, 0.0],
+                    block=False)
+            sdf.vis(x_lim=x_lim,
+                    y_lim=y_lim,
+                    z_lim=[0.5, 0.5],
+                    block=False)
+            sdf.vis(x_lim=x_lim,
+                    y_lim=y_lim,
+                    z_lim=[1.3, 1.3],
+                    block=False)
+            # y-z
+            sdf.vis(x_lim=[0, 0],
+                    y_lim=y_lim,
+                    z_lim=[0.1, 1.4],
+                    block=False)
+            sdf.vis(x_lim=[0.5, 0.5],
+                    y_lim=y_lim,
+                    z_lim=[0.1, 1.4],
+                    block=False)
+            sdf.vis(x_lim=[1.0, 1.0],
+                    y_lim=y_lim,
+                    z_lim=[0.1, 1.4],
+                    block=False)
+            # x-z
+            sdf.vis(x_lim=x_lim,
+                    y_lim=[0,0],
+                    z_lim=[0.1, 1.4],
+                    block=False)
+            sdf.vis(x_lim=x_lim,
+                    y_lim=[0.5,0.5],
+                    z_lim=[0.1, 1.4],
+                    block=False)
+            sdf.vis(x_lim=x_lim,
+                    y_lim=[-0.5, -0.5],
+                    z_lim=[0.1, 1.4],
+                    block=True)
+            # sdf.vis3d(x_lim=x_lim,
+            #           y_lim=y_lim,
+            #           z_lim=[0.1, 1.5],
+            #           block=True)
                 
-            else:
-                print("map invalid")
 
         rate.sleep()
 
