@@ -95,10 +95,10 @@ controller:
       nlp_solver_type: "SQP"  #SQP_RTI, SQP
       globalization: "MERIT_BACKTRACKING"
       qp_solver_iter_max: 100
-      nlp_solver_tol_stat: 1.0e-03
-      nlp_solver_tol_eq: 1.0e-03
+      nlp_solver_tol_stat: 1.0e-05
+      nlp_solver_tol_eq: 1.0e-02
       nlp_solver_tol_ineq: 1.0e-02
-      nlp_solver_max_iter: 50
+      nlp_solver_max_iter: 100
       qp_solver_warm_start: 2
       nlp_solver_ext_qp_res: 0
     slack_enabled:
@@ -106,5 +106,5 @@ controller:
       x_e: True
       u: True
       h_0: True
-      h: False
+      h: True
       h_e: False

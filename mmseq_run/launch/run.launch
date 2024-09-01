@@ -14,7 +14,7 @@
   <include file="$(find mmseq_run)/launch/controller.launch" pass_all_args="true"/>
 
   <!-- TF -->
-  <include file="$(find mobile_manipulation_central)/launch/thing_description.launch">
+  <include file="$(find mmseq_run)/launch/thing_description.launch">
     <arg name="visual_params" value="$(find ur_description)/config/ur10/visual_parameters.yaml" />
   </include>
 
