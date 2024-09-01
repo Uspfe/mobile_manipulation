@@ -1,22 +1,28 @@
 import casadi as ca
 import numpy as np
 import time
-
+import datetime
+import pickle
+import os
 
 from mmseq_utils.plot_casadi_time_optimal import decompose_X
 from mmseq_utils.point_mass_computation_scripts.casadi_initial_guess import initial_guess, initial_guess_simple
+import mobile_manipulation_central as mm
+
 # for now import the mobile manipulators, in future we should be able to import a file and not having to update this if more motion classses are introduced
 # todo this we could declare all the motion classes in a file and import that file ? 
 import mmseq_control.mobile_manipulator_point_mass.mobile_manipulator_class as MobileManipulatorPointMass
 import mmseq_control.robot as robot
 from mmseq_plan.PlanBaseClass import WholeBodyPlanner, CasadiPartialPlanner
 from mmseq_utils.parsing import load_config, parse_ros_path, parse_array
+from pyb_utils.frame import debug_frame_world
 
 class SequentialPlanner(WholeBodyPlanner):
-    def __init__(self, config, motion_class=None):
+    def __init__(self, config, motion_class=None, file_path=None):
         if motion_class is not None:
             self.motion_class = motion_class
             self.config = None
+            self.file_path = file_path
         else:
             possibly_motion_class = getattr(MobileManipulatorPointMass, config["motion_class_type"], None)
             if possibly_motion_class is None:
@@ -34,9 +40,18 @@ class SequentialPlanner(WholeBodyPlanner):
             self.dt_config = config['dt']
             self.init_config = config['initialization']
             self.obs_avoidance = config['obstacle_avoidance']
-            self.starting_configuration = parse_array(robot_config["robot"]["x0"])
+            self.self_collision_safety_margin = config["collision_safety_margin"]["self"]
+            # print(self.starting_configuration)
+            self.starting_configuration = mm.load_home_position(config.get("home", "default"))
             self.config = config
+            self.file_path = config["file_path"]
+            self.load_save_generate = config["load_save_generate"]
+            self.file_name = config["file_name"]
+            self.slowdown_enabled = config["slowdown_enabled"]
+            # for point in self.points:
+            #     debug_frame_world(0.5, point, line_width=3)
 
+        self.X_slow = None
         self.qs_num = self.motion_class.DoF
         self.q_max = self.motion_class.ub_x[:self.qs_num]
         self.q_min = self.motion_class.lb_x[:self.qs_num]
@@ -48,11 +63,11 @@ class SequentialPlanner(WholeBodyPlanner):
         self.forward_kinematic = self.motion_class.end_effector_pose_func()
 
     @classmethod
-    def initializeFromMotionClass(self, motion_class):
-        return SequentialPlanner(None, motion_class)
+    def initializeFromMotionClass(self, motion_class, file_path=os.path.join(os.getcwd(), "planner_solutions")):
+        return SequentialPlanner(None, motion_class, file_path)
 
 
-    def setup_single_problem(self, start, goal, motion_model, forward_kinematic, N=100, d_tol=0.01, initial_point=False, state_dim=2, iteration=0, obstacles_avoidance=None, obstacles=[]):
+    def setup_single_problem(self, start, goal, motion_model, forward_kinematic, N=100, d_tol=0.01, initial_point=False, state_dim=2, iteration=0, obstacles_avoidance=None, obstacles=[], end_zero_velocity=False):
         '''Function that generates the constraints needed to slove an NLP to minimize the time taken for a robot to move between two points'''
         # Check dimension of the points
         X = ca.MX.sym(f'X_{iteration}', state_dim*3, N)
@@ -102,13 +117,12 @@ class SequentialPlanner(WholeBodyPlanner):
             ubx.append(cur_ubx)
             # Obstacle constraints
             if obstacles_avoidance is not None:
-                obs = obstacles_avoidance(X[:vel_start_index, i])
+                obs = obstacles_avoidance(X[:vel_start_index, i]) - self.self_collision_safety_margin
                 g.append(obs)
                 lbg.append(ca.DM.zeros(obs.shape[0]))
                 # lbg.append(ca.DM.ones(obs.shape[0])*-np.inf)
                 ubg.append(ca.DM.ones(obs.shape[0])*np.inf)
 
-        
         # Final point constraints
         cur_lbx = ca.DM.ones(total_elements)*-np.inf
         cur_ubx = ca.DM.ones(total_elements)*np.inf
@@ -117,16 +131,18 @@ class SequentialPlanner(WholeBodyPlanner):
         ubg.append(ca.DM.zeros(len(goal)))
         cur_lbx[:vel_start_index] = ca.horzcat(*self.q_min)
         cur_ubx[:vel_start_index] = ca.horzcat(*self.q_max)
-        cur_lbx[vel_start_index:u_start_index] = ca.horzcat(*self.q_dot_min)
-        cur_ubx[vel_start_index:u_start_index] = ca.horzcat(*self.q_dot_max)
+        if not end_zero_velocity:
+            cur_lbx[vel_start_index:u_start_index] = ca.horzcat(*self.q_dot_min)
+            cur_ubx[vel_start_index:u_start_index] = ca.horzcat(*self.q_dot_max)
+        else:
+            cur_lbx[vel_start_index:u_start_index] = ca.DM.zeros(state_dim)
+            cur_ubx[vel_start_index:u_start_index] = ca.DM.zeros(state_dim)
         cur_lbx[u_start_index:] = ca.horzcat(*self.u_min)
         cur_ubx[u_start_index:] = ca.horzcat(*self.u_max)
         lbx.append(cur_lbx)
         ubx.append(cur_ubx)
         X = X.reshape((-1, 1))
-        return X, g, lbg, ubg, lbx, ubx, t
-
-                
+        return X, g, lbg, ubg, lbx, ubx, t      
 
     def optimize_sequential(self, points, prediction_horizon, X0, motion_model, forward_kinematic, Ns, d_tol=0.01, obstacles_avoidance=None):
         X = []
@@ -173,68 +189,78 @@ class SequentialPlanner(WholeBodyPlanner):
         #     print(result[i]/Ns[i])
         return X_final, X_dim, result[:prediction_horizon]
     
-    def generateTrajectory(self, points, starting_configuration, prediction_horizon, N=100, t_bound=np.inf, obs_avoidance=True, init_config='Pontryagin'):
+    def generateTrajectory(self, points, starting_configuration, prediction_horizon, N=100, t_bound=np.inf, obs_avoidance=True, init_config='Pontryagin', base_scaling_factor=0.1, ee_scaling_factor=0.5):
+        self.u_min = self.motion_class.lb_u*base_scaling_factor
+        self.u_max = self.motion_class.ub_u*base_scaling_factor
+        self.u_min[3:] = self.motion_class.lb_u[3:]*ee_scaling_factor
+        self.u_max[3:] = self.motion_class.ub_u[3:]*ee_scaling_factor
         points_full = [self.motion_class.end_effector_pose(starting_configuration).full().flatten()]
         points_full.extend(points)
         if init_config == 'Pontryagin':
+            start_time = time.time()
             X0_array, ts, Ns = initial_guess(self.motion_class, points_full, starting_configuration, prediction_horizon, N, is_sequential_guess=True)
+            self.initialization_time = time.time()-start_time
         elif init_config == 'InverseKinematics':
+            start_time = time.time()
             X0_array, ts, Ns = initial_guess_simple(self.motion_class, points_full, starting_configuration, prediction_horizon, N, is_sequential_guess=True)
+            self.initialization_time = time.time()-start_time
         else:
-            raise ValueError("Invalid initialization method")
+            raise ValueError(f"Invalid initialization method {init_config}")
         self.Ns = Ns
         X0 = ca.vertcat(*ts, *X0_array)
         obstacles_avoidance = None
         if obs_avoidance:
             obstacles_avoidance = self.motion_class.casadi_model_interface.signedDistanceSymMdlsPerGroup["self"]
+        start_time = time.time()
         X, total_elements, ts = self.optimize_sequential(points_full, prediction_horizon, X0, self.motion_model, self.forward_kinematic, Ns, obstacles_avoidance=obstacles_avoidance)
-        # print(ts)
-        self.tfs = ts.full().flatten()
+        self.optimization_time = time.time()-start_time
+        self.ts = ts
         self.X0 = ca.vertcat(float(ts[-1]), *X0_array)
         self.X = X
         self.total_elements = total_elements
+        self.points = points
+        self.prediction_horizon = prediction_horizon
+        self.starting_configuration = starting_configuration
+        self.init_config = init_config
+        self.obs_avoidance = obs_avoidance
         return X, total_elements
 
     def generatePlanFromConfig(self):
-        self.generateTrajectory(self.points, self.starting_configuration, self.prediction_horizon, N=self.N, t_bound=np.inf, init_config=self.init_config, obs_avoidance=self.obs_avoidance)
-        self.processResults()
-        self.initiliazePartialPlanners()
-    
-    def processResults(self):
-        self.dts = []
-        for i in range(len(self.Ns)):
-            self.dts.append(float(self.tfs[i]/self.Ns[i]))
-        # print(self.Ns)
-        qs, qs_dots, us = decompose_X(self.X, self.qs_num, self.total_elements)
-        qs_zero, qs_dot_zero, us_zero = decompose_X(self.X0, self.qs_num, self.total_elements)
-        self.qs, self.qs_dots, self.us = qs.T, qs_dots.T, us.T
-        self.qs_zero, self.qs_dot_zero, self.us_zero = qs_zero.T, qs_dot_zero.T, us_zero.T
-        self.tf = np.sum(self.tfs)
-        # print(self.qs_dots)
+        obstacles_avoidance = None
+        if self.obs_avoidance:
+            obstacles_avoidance = self.motion_class.casadi_model_interface.signedDistanceSymMdlsPerGroup["self"]
+        if self.load_save_generate == "load":
+            self.loadSolution(self.file_name)
+            self.processResults()
+            self.initiliazePartialPlanners()
+        elif self.load_save_generate == "generate":
+            X, total_elements = self.generateTrajectory(self.points, self.starting_configuration, self.prediction_horizon, N=self.N, t_bound=np.inf, init_config=self.init_config, obs_avoidance=self.obs_avoidance)
+            if self.slowdown_enabled:
+                self.slowDownTrajectory(X[-3*self.motion_class.DoF:], self.motion_class.end_effector_pose(self.starting_configuration).full().flatten(), self.motion_model, self.forward_kinematic, obstacle_avoidance=obstacles_avoidance)
+            self.processResults()
+            self.initiliazePartialPlanners()
+        elif self.load_save_generate == "save":
+            X, total_elements = self.generateTrajectory(self.points, self.starting_configuration, self.prediction_horizon, N=self.N, t_bound=np.inf, init_config=self.init_config, obs_avoidance=self.obs_avoidance)
+            if self.slowdown_enabled:
+                self.slowDownTrajectory(X[-3*self.motion_class.DoF:], self.motion_class.end_effector_pose(self.starting_configuration).full().flatten(), self.motion_model, self.forward_kinematic, obstacle_avoidance=obstacles_avoidance)
+            self.saveSolution(name=self.file_name)
 
-    def interpolate(self, t):
-        offset=0
-        print('t:', t, 'ts:', self.tfs, 'total time:', sum(self.tfs))
-        if t > sum(self.tfs):
-            return self.qs[-1], [0]*self.qs_num
-        for i in range(len(self.tfs)):
-            if t < self.tfs[i]:
-                break
-            t -= self.tfs[i]
-            offset += self.Ns[i]
-        # Interpolate
-        lower_index = int(t/self.dts[i]) + offset
-        lower_index_time = int(t/self.dts[i]) 
-        upper_index = lower_index_time + 1
-        if upper_index >= (self.Ns[i]-1):
-            return self.qs[lower_index], self.qs_dots[lower_index]
-        lower_time = lower_index_time*self.dts[i]
-        upper_time = (lower_index_time +1)*self.dts[i]
-        upper_index = upper_index + offset
-        
-        q = self.qs[lower_index] + (self.qs[upper_index] - self.qs[lower_index])*(t - lower_time)/(upper_time - lower_time)
-        q_dot = self.qs_dots[lower_index] + (self.qs_dots[upper_index] - self.qs_dots[lower_index])*(t - lower_time)/(upper_time - lower_time)
-        return q, q_dot
+    def saveSolution(self, name=None):
+        if name is None:
+            # set to default name
+            name = f'sequential_plan_{datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")}'
+
+        path = os.path.join(self.file_path, name)
+        # check if directory exists
+        if not os.path.exists(self.file_path):
+            os.makedirs(self.file_path)
+        with open(path, 'wb') as f:
+            pickle.dump((self.X, self.total_elements, self.ts, self.Ns, self.points, self.prediction_horizon, self.starting_configuration, self.X0, self.init_config, self.initialization_time, self.optimization_time, self.X_slow), f)
+
+    def loadSolution(self, name):
+        path = os.path.join(self.file_path, name)
+        with open(path, 'rb') as f:
+            self.X, self.total_elements, self.ts, self.Ns, self.points, self.prediction_horizon, self.starting_configuration, self.X0, self.init_config, self.initialization_time, self.optimization_time, self.X_slow = pickle.load(f)
 
     def returnWaypointConfigurations(self):
         offset = 0
@@ -250,59 +276,15 @@ class SequentialPlanner(WholeBodyPlanner):
 
     def initiliazePartialPlanners(self):
         if self.config is None:
-            base_config = {"name": "BasePosTrajectoryLine", "type": "base", "tracking_err_tol": 0.02, "frame_id": "base", "ref_data_type": "Vec2"}
-            ee_config = {"name": "EESimplePlanner", "type": "EE", "tracking_err_tol": 0.02, "frame_id": "EE", "ref_data_type": "Vec3"}
+            base_config = {"name": "PartialPlanner", "type": "base", "tracking_err_tol": 0.02, "frame_id": "base", "ref_data_type": "Vec2"}
+            ee_config = {"name": "PartialPlanner", "type": "EE", "tracking_err_tol": 0.02, "frame_id": "EE", "ref_data_type": "Vec3"}
 
         else:
-            base_config = {"name": "BasePosTrajectoryLine", "type": "base", "tracking_err_tol": self.config["tracking_err_tol"], "frame_id": "base", "ref_data_type": "Vec2"}
-            ee_config = {"name": "EESimplePlanner", "type": "EE", "tracking_err_tol": self.config["tracking_err_tol"], "frame_id": "EE", "ref_data_type": "Vec3"}
+            base_config = {"name": "PartialPlanner", "type": "base", "tracking_err_tol": self.config["tracking_err_tol"], "frame_id": "base", "ref_data_type": "Vec2"}
+            ee_config = {"name": "PartialPlanner", "type": "EE", "tracking_err_tol": self.config["tracking_err_tol"], "frame_id": "EE", "ref_data_type": "Vec3"}
 
-        self.base_planner = SequentialPartialPlanner(self.X, self.total_elements, base_config, self.qs_num, self.motion_class.base_xyz, self.motion_class.base_jacobian, self.tfs, self.Ns)
-        self.ee_planner = SequentialPartialPlanner(self.X, self.total_elements, ee_config, self.qs_num, self.motion_class.end_effector_pose, self.motion_class.compute_jacobian_whole, self.tfs, self.Ns)
-
-
-class SequentialPartialPlanner(CasadiPartialPlanner):
-    def __init__(self, X, total_elements, config, qs_num, pose_calculator_func, jacobian_calculator_func, tfs, Ns):
-        super().__init__(config, pose_calculator_func, jacobian_calculator_func)
-
-        self.X = X
-        self.total_elements = total_elements
-        self.qs_num = qs_num
-        self.tfs = tfs
-        self.Ns = Ns
-        self.processResults()
-    
-    def processResults(self):
-        self.dts = []
-        for i in range(len(self.Ns)):
-            self.dts.append(float(self.tfs[i]/self.Ns[i]))
-        qs, qs_dots, us = decompose_X(self.X, self.qs_num, self.total_elements)
-        self.qs, self.qs_dots, self.us = qs.T, qs_dots.T, us.T
-        # self.qs_zero, self.qs_dot_zero, self.us_zero = qs_zero.T, qs_dot_zero.T, us_zero.T
-        self.tf = np.sum(self.tfs)
-
-    def interpolate(self, t):
-        offset=0
-        if t > sum(self.tfs):
-            return self.qs[-1], [0]*self.qs_num
-        for i in range(len(self.tfs)):
-            if t < self.tfs[i]:
-                break
-            t -= self.tfs[i]
-            offset += self.Ns[i]
-        # Interpolate
-        lower_index = int(t/self.dts[i]) + offset
-        lower_index_time = int(t/self.dts[i]) 
-        upper_index = lower_index_time + 1
-        if upper_index >= (self.Ns[i]-1):
-            return self.qs[lower_index], self.qs_dots[lower_index]
-        lower_time = lower_index_time*self.dts[i]
-        upper_time = (lower_index_time +1)*self.dts[i]
-        upper_index = upper_index + offset
-        
-        q = self.qs[lower_index] + (self.qs[upper_index] - self.qs[lower_index])*(t - lower_time)/(upper_time - lower_time)
-        q_dot = self.qs_dots[lower_index] + (self.qs_dots[upper_index] - self.qs_dots[lower_index])*(t - lower_time)/(upper_time - lower_time)
-        return q, q_dot
+        self.base_planner = CasadiPartialPlanner(self.qs, self.qs_dots, self.us, self.tfs, self.Ns, base_config, self.motion_class.base_xyz, self.motion_class.base_jacobian)
+        self.ee_planner = CasadiPartialPlanner(self.qs, self.qs_dots, self.us, self.tfs, self.Ns, ee_config, self.motion_class.end_effector_pose, self.motion_class.compute_jacobian_whole)
 
     
 
