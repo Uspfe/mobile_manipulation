@@ -13,8 +13,8 @@ from spatialmath.base import rotz
 import mmseq_plan.TaskManager as TaskManager
 from mmseq_control.mobile_manipulator_point_mass.mobile_manipulator_class import MobileManipulatorPointMass
 from mmseq_control.robot import CasadiModelInterface
-from mmseq_plan.CPCPlanner import CPCPlanner
-from mmseq_plan.SequentialPlanner import SequentialPlanner
+import mmseq_plan.CPCPlanner as CPCPlanner
+import mmseq_plan.SequentialPlanner as SequentialPlanner
 from mmseq_simulator import simulation
 from mmseq_utils import parsing
 from mmseq_utils.logging import DataLogger
@@ -82,25 +82,19 @@ def main():
     # here probably put the code for generating trajectory
     # initialize robot (needed for generating trajectory)
 
-    future_points =  [[1, 2, 1], [4, 4, 1], [1, 2, 1]]
-    # future_points = [[5,5,1]]
-    for point in future_points:
-        debug_frame_world(0.5, point)
-    starting_configuration = robot.home
-    prediction_horizon = len(future_points)
-    N = 400
+    # initialize robot
+    planner_config = config["planner"]["tasks"][0]
 
-    mobile_robot = MobileManipulatorPointMass(ctrl_config)
-
-    # Calculate CPC Solution
-    # cpc_plan = CPCPlanner.initializeFromMotionClass(mobile_robot)
-    # X, total_elements = cpc_plan.generateTrajectory(future_points, starting_configuration, prediction_horizon, N)
-    # cpc_plan.processResults()
-
-    # Calculate Sequential Solution
-    sequential_plan = SequentialPlanner.initializeFromMotionClass(mobile_robot)
-    X, total_elements = sequential_plan.generateTrajectory(future_points, starting_configuration, prediction_horizon, N, obs_avoidance=True)
-    sequential_plan.processResults()
+    planner = getattr(CPCPlanner, planner_config["planner_type"], None)
+    optimization_type = 'cpc'
+    if planner is None:
+        planner = getattr(SequentialPlanner, planner_config["planner_type"], None)
+        optimization_type = 'sequential'
+    if planner is None:
+        raise ValueError("Planner type {} not found".format(planner_config["planner_type"]))
+    # generate plan
+    planner = planner(planner_config)
+    planner.generatePlanFromConfig()
 
     # set py logger level
     ch = logging.StreamHandler()
@@ -135,8 +129,8 @@ def main():
 
         t0 = time.perf_counter()
         # u = cpc_plan.control(t)
-        u = sequential_plan.control(t)
-        print(u)
+        u = planner.control(t)
+        # print(u)
         t1 = time.perf_counter()
 
         robot.command_velocity(u)
@@ -147,7 +141,7 @@ def main():
         states = {"base": (robot_states[0][:3], robot_states[1][:3]), "EE": ee_states}
 
         # ee, base = cpc_plan.getTrackingPoint(t)
-        ee, base = sequential_plan.getTrackingPoint(t)
+        # ee, base = sequential_plan.getTrackingPoint(t)
         # print("EE p", ee[0], "EE v", ee[1])
         # print("Base p", base[0], "Base v", base[1])
         # for point in future_points:

@@ -451,6 +451,7 @@ class DataPlotter:
         print("x bar diff {}".format(x_bar_diff))
         print("u bar diff {}".format(u_bar_diff))
         print("run time {}".format(t1-t0))
+        print("u0 {}".format(u_bar[0]))
         
 
     def plot_ee_position(self, axes=None, index=0, legend=None):
@@ -1426,10 +1427,17 @@ class DataPlotter:
     def plot_mpc(self):
         self.plot_cost_htmpc(block=False)
         self.plot_solver_status_htmpc(block=False)
-        # self.plot_solver_iters_htmpc(block=False)
+        self.plot_solver_iters_htmpc(block=False)
         self.plot_time_htmpc(block=False)
         # self.plot_solver_iters()
         self.plot_time_series_data_htmpc("time_get_map", block=False)
+        # self.plot_solver_iters(block=False)
+        # self.plot_mpc_prediction("mpc_obstacle_cylinder_1_link_constraints")
+        self.plot_mpc_prediction("mpc_sdf_constraints", block=False)
+        # self.plot_mpc_prediction("mpc_control_constraints",block=False)
+        # self.plot_mpc_prediction("mpc_state_constraints", block=False)
+        # self.plot_mpc_prediction("mpc_sdf_constraint_gradients", block=False)
+
 
         self.plot_run_time()
 

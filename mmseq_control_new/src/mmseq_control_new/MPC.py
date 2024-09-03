@@ -383,20 +383,20 @@ class MPC():
         if ns > 0:
             ocp.cost.Zl = np.ones(ns) * 10
             ocp.cost.Zu = np.ones(ns) * 10
-            ocp.cost.zl = np.ones(ns) * 0.5
-            ocp.cost.zu = np.ones(ns) * 0.5
+            ocp.cost.zl = np.ones(ns) * 10
+            ocp.cost.zu = np.ones(ns) * 10
 
         ns_e = nsx_e + nsh_e
         if ns_e > 0:
-            ocp.cost.Zl_e = np.ones(ns_e) * 1
-            ocp.cost.Zu_e = np.ones(ns_e) * 1
+            ocp.cost.Zl_e = np.ones(ns_e) * 10
+            ocp.cost.Zu_e = np.ones(ns_e) * 10
             ocp.cost.zl_e = np.ones(ns_e) * 0.5
             ocp.cost.zu_e = np.ones(ns_e) * 0.5
             
         ns_0 = nsh_0 + nsu
         if ns_0 > 0:
-            ocp.cost.Zl_0 = np.ones(ns_0) * 1
-            ocp.cost.Zu_0 = np.ones(ns_0) * 1
+            ocp.cost.Zl_0 = np.ones(ns_0) * 10
+            ocp.cost.Zu_0 = np.ones(ns_0) * 10
             ocp.cost.zl_0 = np.ones(ns_0) * 0.5
             ocp.cost.zu_0 = np.ones(ns_0) * 0.5
         # initial condition
