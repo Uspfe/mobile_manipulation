@@ -30,7 +30,7 @@ controller:
     static_obstacles: True
   
   collision_safety_margin:
-    self: 0.15
+    self: 0.25
     sdf: 0.15
     static_obstacles: 0.15
 
@@ -69,7 +69,7 @@ controller:
       Qva: 0.01
       Qvb: 0.1
       Qua: 0.005
-      Qub: 0.05
+      Qub: 0.025
       Qdua: 0.
       Qdub: 0.1
     Regularization:

@@ -16,6 +16,8 @@ import mmseq_control.robot as robot
 from mmseq_plan.PlanBaseClass import WholeBodyPlanner, CasadiPartialPlanner
 from mmseq_utils.parsing import load_config, parse_ros_path, parse_array
 from pyb_utils.frame import debug_frame_world
+from mmseq_utils.plot_casadi_time_optimal import plot_obstacle_avoidance, compare_trajectories_casadi_plot
+
 
 class SequentialPlanner(WholeBodyPlanner):
     def __init__(self, config, motion_class=None, file_path=None):
@@ -41,6 +43,7 @@ class SequentialPlanner(WholeBodyPlanner):
             self.init_config = config['initialization']
             self.obs_avoidance = config['obstacle_avoidance']
             self.self_collision_safety_margin = config["collision_safety_margin"]["self"]
+            self.ground_collision_safety_margin = config["collision_safety_margin"]["ground"]
             # print(self.starting_configuration)
             self.starting_configuration = mm.load_home_position(config.get("home", "default"))
             self.config = config
@@ -48,6 +51,8 @@ class SequentialPlanner(WholeBodyPlanner):
             self.load_save_generate = config["load_save_generate"]
             self.file_name = config["file_name"]
             self.slowdown_enabled = config["slowdown_enabled"]
+            self.base_scaling_factor = config["base_acc_sf"]
+            self.ee_scaling_factor = config["arm_acc_sf"]
             # for point in self.points:
             #     debug_frame_world(0.5, point, line_width=3)
 
@@ -57,6 +62,8 @@ class SequentialPlanner(WholeBodyPlanner):
         self.q_min = self.motion_class.lb_x[:self.qs_num]
         self.q_dot_max = self.motion_class.ub_x[self.qs_num:]
         self.q_dot_min = self.motion_class.lb_x[self.qs_num:]
+        self.jerk_max = self.motion_class.ub_udot
+        self.jerk_min = self.motion_class.lb_udot
         self.u_max = self.motion_class.ub_u
         self.u_min = self.motion_class.lb_u
         self.motion_model = self.motion_class.ssSymMdl["fmdl"]
@@ -66,8 +73,11 @@ class SequentialPlanner(WholeBodyPlanner):
     def initializeFromMotionClass(self, motion_class, file_path=os.path.join(os.getcwd(), "planner_solutions")):
         return SequentialPlanner(None, motion_class, file_path)
 
+    def second_slow_down(self, start_state, end_ee, motion_model, forward_kinematic, N=100, obstacle_avoidance=None, self_avoidance=None):
+        X, g, lbg, ubg, lbx, ubx, t = self.setup_single_problem(start_state, end_ee, motion_model, forward_kinematic, N=N, d_tol=0.01, initial_point=False, state_dim=self.motion_class.DoF, iteration=0, obstacles_avoidance=obstacle_avoidance, self_avoidance=self_avoidance, end_zero_velocity=True)
+        OPT_variables = ca.vertcat(t, X)
 
-    def setup_single_problem(self, start, goal, motion_model, forward_kinematic, N=100, d_tol=0.01, initial_point=False, state_dim=2, iteration=0, obstacles_avoidance=None, obstacles=[], end_zero_velocity=False):
+    def setup_single_problem(self, start, goal, motion_model, forward_kinematic, N=100, d_tol=0.01, initial_point=False, state_dim=2, iteration=0, obstacles_avoidance=None, self_avoidance=None, end_zero_velocity=False):
         '''Function that generates the constraints needed to slove an NLP to minimize the time taken for a robot to move between two points'''
         # Check dimension of the points
         X = ca.MX.sym(f'X_{iteration}', state_dim*3, N)
@@ -96,6 +106,10 @@ class SequentialPlanner(WholeBodyPlanner):
             # constraints on acceleration
             cur_lbx[u_start_index:] = ca.horzcat(*self.u_min)
             cur_ubx[u_start_index:] = ca.horzcat(*self.u_max)
+            # jerk constraints
+            g.append((X[u_start_index:, i+1] - X[u_start_index:, i])/dt)
+            lbg.append(ca.vertcat(*self.jerk_min))
+            ubg.append(ca.vertcat(*self.jerk_max))
             if i==0:
                 if initial_point:
                     cur_lbx[:vel_start_index] = start[:vel_start_index]
@@ -116,8 +130,13 @@ class SequentialPlanner(WholeBodyPlanner):
             lbx.append(cur_lbx)
             ubx.append(cur_ubx)
             # Obstacle constraints
+            if self_avoidance is not None:
+                self_avoid = self_avoidance(X[:vel_start_index, i]) - self.self_collision_safety_margin
+                g.append(self_avoid)
+                lbg.append(ca.DM.zeros(self_avoid.shape[0]))
+                ubg.append(ca.DM.ones(self_avoid.shape[0])*np.inf)
             if obstacles_avoidance is not None:
-                obs = obstacles_avoidance(X[:vel_start_index, i]) - self.self_collision_safety_margin
+                obs = obstacles_avoidance(X[:vel_start_index, i]) - self.ground_collision_safety_margin
                 g.append(obs)
                 lbg.append(ca.DM.zeros(obs.shape[0]))
                 # lbg.append(ca.DM.ones(obs.shape[0])*-np.inf)
@@ -139,12 +158,23 @@ class SequentialPlanner(WholeBodyPlanner):
             cur_ubx[vel_start_index:u_start_index] = ca.DM.zeros(state_dim)
         cur_lbx[u_start_index:] = ca.horzcat(*self.u_min)
         cur_ubx[u_start_index:] = ca.horzcat(*self.u_max)
+        if self_avoidance is not None:
+            self_avoid = self_avoidance(X[:vel_start_index, N-1]) - self.self_collision_safety_margin
+            g.append(self_avoid)
+            lbg.append(ca.DM.zeros(self_avoid.shape[0]))
+            ubg.append(ca.DM.ones(self_avoid.shape[0])*np.inf)
+        if obstacles_avoidance is not None:
+            obs = obstacles_avoidance(X[:vel_start_index, N-1]) - self.ground_collision_safety_margin
+            g.append(obs)
+            lbg.append(ca.DM.zeros(obs.shape[0]))
+            ubg.append(ca.DM.ones(obs.shape[0])*np.inf)
+
         lbx.append(cur_lbx)
         ubx.append(cur_ubx)
         X = X.reshape((-1, 1))
         return X, g, lbg, ubg, lbx, ubx, t      
 
-    def optimize_sequential(self, points, prediction_horizon, X0, motion_model, forward_kinematic, Ns, d_tol=0.01, obstacles_avoidance=None):
+    def optimize_sequential(self, points, prediction_horizon, X0, motion_model, forward_kinematic, Ns, d_tol=0.01, self_avoidance=None, obs_avoidance=None):
         X = []
         g = []
         lbg = []
@@ -161,7 +191,7 @@ class SequentialPlanner(WholeBodyPlanner):
                 start_point = X0[prediction_horizon:prediction_horizon+2*state_dim]
             else:
                 start_point = X[-3*state_dim:]
-            X_i, g_i, lbg_i, ubg_i, lbx_i, ubx_i, t_i = self.setup_single_problem(start_point, points[i+1], motion_model, forward_kinematic, N=Ns[i], d_tol=d_tol, initial_point=is_initial_point, state_dim=state_dim, iteration=i, obstacles_avoidance=obstacles_avoidance)
+            X_i, g_i, lbg_i, ubg_i, lbx_i, ubx_i, t_i = self.setup_single_problem(start_point, points[i+1], motion_model, forward_kinematic, N=Ns[i], d_tol=d_tol, initial_point=is_initial_point, state_dim=state_dim, iteration=i, obstacles_avoidance=obs_avoidance, self_avoidance=self_avoidance)
             X = ca.vertcat(X, X_i)
             g.extend(g_i)
             lbg.extend(lbg_i)
@@ -187,6 +217,9 @@ class SequentialPlanner(WholeBodyPlanner):
         # print dts
         # for i in range(len(Ns)):
         #     print(result[i]/Ns[i])
+        compare_trajectories_casadi_plot([X_final], points, None, None, forward_kinematic, [X_dim], [X_final[0]], [Ns], q_size=state_dim, show=True, a_bounds=[(self.u_min, self.u_max)], v_bounds=(self.q_dot_min, self.q_dot_max))
+        plot_obstacle_avoidance([X_final], self_avoidance, [X_dim], q_size=state_dim, show=True, labels=["Slow Down"], limit=self.self_collision_safety_margin)
+
         return X_final, X_dim, result[:prediction_horizon]
     
     def generateTrajectory(self, points, starting_configuration, prediction_horizon, N=100, t_bound=np.inf, obs_avoidance=True, init_config='Pontryagin', base_scaling_factor=0.1, ee_scaling_factor=0.5):
@@ -194,6 +227,8 @@ class SequentialPlanner(WholeBodyPlanner):
         self.u_max = self.motion_class.ub_u*base_scaling_factor
         self.u_min[3:] = self.motion_class.lb_u[3:]*ee_scaling_factor
         self.u_max[3:] = self.motion_class.ub_u[3:]*ee_scaling_factor
+        self.jerk_min = self.motion_class.lb_udot*base_scaling_factor
+        self.jerk_max = self.motion_class.ub_udot*base_scaling_factor
         points_full = [self.motion_class.end_effector_pose(starting_configuration).full().flatten()]
         points_full.extend(points)
         if init_config == 'Pontryagin':
@@ -210,9 +245,11 @@ class SequentialPlanner(WholeBodyPlanner):
         X0 = ca.vertcat(*ts, *X0_array)
         obstacles_avoidance = None
         if obs_avoidance:
-            obstacles_avoidance = self.motion_class.casadi_model_interface.signedDistanceSymMdlsPerGroup["self"]
+            self_avoidance = self.motion_class.casadi_model_interface.signedDistanceSymMdlsPerGroup["self"]
+            obstacles_avoidance = self.motion_class.casadi_model_interface.signedDistanceSymMdlsPerGroup["static_obstacles"]["ground"]
+
         start_time = time.time()
-        X, total_elements, ts = self.optimize_sequential(points_full, prediction_horizon, X0, self.motion_model, self.forward_kinematic, Ns, obstacles_avoidance=obstacles_avoidance)
+        X, total_elements, ts = self.optimize_sequential(points_full, prediction_horizon, X0, self.motion_model, self.forward_kinematic, Ns, self_avoidance=self_avoidance, obs_avoidance=obstacles_avoidance)
         self.optimization_time = time.time()-start_time
         self.ts = ts
         self.X0 = ca.vertcat(float(ts[-1]), *X0_array)
@@ -228,21 +265,22 @@ class SequentialPlanner(WholeBodyPlanner):
     def generatePlanFromConfig(self):
         obstacles_avoidance = None
         if self.obs_avoidance:
-            obstacles_avoidance = self.motion_class.casadi_model_interface.signedDistanceSymMdlsPerGroup["self"]
+            self_avoidance = self.motion_class.casadi_model_interface.signedDistanceSymMdlsPerGroup["self"]
+            ground_avoidance = self.motion_class.casadi_model_interface.signedDistanceSymMdlsPerGroup["static_obstacles"]["ground"]
         if self.load_save_generate == "load":
             self.loadSolution(self.file_name)
             self.processResults()
             self.initiliazePartialPlanners()
         elif self.load_save_generate == "generate":
-            X, total_elements = self.generateTrajectory(self.points, self.starting_configuration, self.prediction_horizon, N=self.N, t_bound=np.inf, init_config=self.init_config, obs_avoidance=self.obs_avoidance)
+            X, total_elements = self.generateTrajectory(self.points, self.starting_configuration, self.prediction_horizon, N=self.N, t_bound=np.inf, init_config=self.init_config, obs_avoidance=self.obs_avoidance, base_scaling_factor=self.base_scaling_factor, ee_scaling_factor=self.ee_scaling_factor)
             if self.slowdown_enabled:
-                self.slowDownTrajectory(X[-3*self.motion_class.DoF:], self.motion_class.end_effector_pose(self.starting_configuration).full().flatten(), self.motion_model, self.forward_kinematic, obstacle_avoidance=obstacles_avoidance)
+                self.slowDownTrajectory(X[-3*self.motion_class.DoF:], self.motion_class.end_effector_pose(self.starting_configuration).full().flatten(), self.motion_model, self.forward_kinematic, obstacle_avoidance=obstacles_avoidance, self_avoidance=self_avoidance)
             self.processResults()
             self.initiliazePartialPlanners()
         elif self.load_save_generate == "save":
-            X, total_elements = self.generateTrajectory(self.points, self.starting_configuration, self.prediction_horizon, N=self.N, t_bound=np.inf, init_config=self.init_config, obs_avoidance=self.obs_avoidance)
+            X, total_elements = self.generateTrajectory(self.points, self.starting_configuration, self.prediction_horizon, N=self.N, t_bound=np.inf, init_config=self.init_config, obs_avoidance=self.obs_avoidance, base_scaling_factor=self.base_scaling_factor, ee_scaling_factor=self.ee_scaling_factor)
             if self.slowdown_enabled:
-                self.slowDownTrajectory(X[-3*self.motion_class.DoF:], self.motion_class.end_effector_pose(self.starting_configuration).full().flatten(), self.motion_model, self.forward_kinematic, obstacle_avoidance=obstacles_avoidance)
+                self.slowDownTrajectory(X[-3*self.motion_class.DoF:], self.motion_class.end_effector_pose(self.starting_configuration).full().flatten(), self.motion_model, self.forward_kinematic, obstacle_avoidance=obstacles_avoidance, self_avoidance=self_avoidance)
             self.saveSolution(name=self.file_name)
 
     def saveSolution(self, name=None):

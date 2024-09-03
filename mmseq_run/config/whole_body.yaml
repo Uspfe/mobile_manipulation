@@ -5,21 +5,24 @@ planner:
   tasks:
     - name: "whole_body"
       planner_type: "SequentialPlanner"
-      N: 100
+      N: 50
       dt: 0.01
       home: "default"
-      target_points: [[ 0.75, 0.75,  0.5 ], [-0.5,  -1.5,   0.25], [-1.5,  -1.25,  0.75], [-1.25,  1.,    1], [ 1.25,  0.5,   1.75]]
+      target_points: [[-0.75, 0.0, 0.25], [0.25, 0.75, 0.5]]
       prediction_horizon: 2
       initialization: "Pontryagin" #Pontryagin or InverseKinematics
       obstacle_avoidance: True
       motion_class_type: "MobileManipulatorPointMass"
-      tracking_err_tol: 0.02
-      file_path: "/home/ubuntu/sequential/2wpts_arm0.8_ee"
+      tracking_err_tol: 0.01
+      file_path: "/home/ubuntu/Sep1/sequential/2wpts_arm0.5_ee"
       load_save_generate: "generate"
-      file_name: "test3"
+      file_name: "scenario_1_Pontryagin_sf_0.1"
+      base_acc_sf: 0.1
+      arm_acc_sf: 0.5
       slowdown_enabled: True
       collision_safety_margin:
-        self: 0.15
+        self: 0.25
+        ground: 0.2
       motion_class_config_file: 
           package: "mmseq_run"
           path: "config/robot/default_thing_whole_body.yaml"
@@ -48,6 +51,18 @@ controller:
   home: "default"
   self_collision_avoidance_enabled: True
   sdf_collision_avoidance_enabled: False
+  static_obstacles_collision_avoidance_enabled: True
+  acados:
+    ocp_solver_options:
+      nlp_solver_max_iter: 30
+    slack_enabled:
+      x: True
+      x_e: True
+      u: False
+      h_0: True
+      h: True
+      h_e: True  
+
   type: "STMPC"
 
 
@@ -67,5 +82,5 @@ include:
     path: "config/map/SDF3D.yaml"
 
 logging:
-  log_dir: "/home/ubuntu/Aug29"
+  log_dir: "/home/ubuntu/Sep1_updated"
   log_level: 4 # 0 - not set, 10 - debug, 20 - info
