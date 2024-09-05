@@ -15,7 +15,7 @@ from mmseq_utils.math import wrap_pi_array
 from mmseq_utils.casadi_struct import casadi_sym_struct
 from mmseq_utils.parsing import parse_ros_path, parse_path
 import mmseq_control_new.MPCConstraints as MPCConstraints
-from mmseq_control_new.MPCCostFunctions import EEPos3CostFunction, BasePos2CostFunction, ControlEffortCostFunction, EEPos3BaseFrameCostFunction, SoftConstraintsRBFCostFunction, RegularizationCostFunction, CostFunctions
+from mmseq_control_new.MPCCostFunctions import *
 from mmseq_control_new.MPCConstraints import SignedDistanceConstraint, StateBoxConstraints, ControlBoxConstraints
 import mobile_manipulation_central as mm
 INF = 1e5
@@ -40,6 +40,12 @@ class MPC():
         self.EEPos3Cost = EEPos3CostFunction(self.robot, config["cost_params"]["EEPos3"])
         self.EEPos3BaseFrameCost = EEPos3BaseFrameCostFunction(self.robot, config["cost_params"]["EEPos3"])
         self.BasePos2Cost = BasePos2CostFunction(self.robot, config["cost_params"]["BasePos2"])
+        self.BasePos3Cost = BasePos3CostFunction(self.robot, config["cost_params"]["BasePos3"])
+
+        self.EEVel3Cost = EEVel3CostFunction(self.robot, config["cost_params"]["EEVel3"])
+        self.BaseVel2Cost = BaseVel2CostFunction(self.robot, config["cost_params"]["BaseVel2"])
+        self.BaseVel3Cost = BaseVel3CostFunction(self.robot, config["cost_params"]["BaseVel3"])
+
         self.CtrlEffCost = ControlEffortCostFunction(self.robot, config["cost_params"]["Effort"])
         self.RegularizationCost = RegularizationCostFunction(self.nx, self.nu)
         
@@ -421,7 +427,7 @@ class STMPC(MPC):
     def __init__(self, config):
         super().__init__(config)
         num_terminal_cost = 2
-        costs = [self.BasePos2Cost, self.EEPos3Cost, self.CtrlEffCost]
+        costs = [self.BasePos2Cost, self.BaseVel2Cost, self.EEPos3Cost, self.EEVel3Cost, self.CtrlEffCost]
         # costs += [cost for cost in self.collisionSoftCsts.values()]
         constraints = []
         for name in self.collision_link_names:
@@ -467,17 +473,33 @@ class STMPC(MPC):
         self.ree_bar = []
         self.rbase_bar = []
         for planner in planners:
-            r_bar = [planner.getTrackingPoint(t + k * self.dt, (self.x_bar[k, :self.DoF], self.x_bar[k, self.DoF:]))[0]
+            # get tracking points from planner, tracking points are tuples of desired position and velocity (p, v) 
+            # for planners without velocity reference, none should be given (p, None) 
+            r_bar = [planner.getTrackingPoint(t + k * self.dt, (self.x_bar[k, :self.DoF], self.x_bar[k, self.DoF:]))
                         for k in range(self.N + 1)]
+            p_bar = [r[0] for r in r_bar]
+            v_bar = [r[1] for r in r_bar]
+            contains_none = any(item is None for item in v_bar)
+            velocity_ref_available = not contains_none
+            
             acceptable_ref = True
             if planner.type == "EE":
                 if planner.ref_data_type == "Vec3":
-                    r_bar_map["EEPos3"] = r_bar
+                    r_bar_map["EEPos3"] = p_bar
+                    if velocity_ref_available:
+                        # if planner generates velocity reference as well
+                        r_bar_map["EEVel3"] = v_bar
                 else:
                     acceptable_ref = False
             elif planner.type == "base":
                 if planner.ref_data_type == "Vec2":
-                    r_bar_map["BasePos2"] = r_bar
+                    r_bar_map["BasePos2"] = p_bar
+                    if velocity_ref_available:
+                        r_bar_map["BaseVel2"] = v_bar
+                elif planner.ref_data_typ == "Vec3":
+                    r_bar_map["BasePos3"] = p_bar
+                    if velocity_ref_available:
+                        r_bar_map["BaseVel3"] = v_bar
                 else:
                     acceptable_ref = False
 
@@ -485,9 +507,9 @@ class STMPC(MPC):
                 self.py_logger.warning(f"unknown cost type {planner.ref_data_type}, planner {planner.name}")
             
             if planner.type == "EE":
-                self.ree_bar = r_bar 
+                self.ree_bar = p_bar 
             elif planner.type == "base":
-                self.rbase_bar = r_bar
+                self.rbase_bar = p_bar
 
         t1 = time.perf_counter()
         if map is not None and self.params["sdf_collision_avoidance_enabled"]:
@@ -726,5 +748,3 @@ if __name__ == "__main__":
     config = parsing.load_config(path_to_config)
 
     controller = STMPC(config["controller"])
-
-    print(controller.collisionCsts["sdf"].g_eqn)

@@ -73,7 +73,7 @@ class CostFunctions(ABC):
 class NonlinearLeastSquare(CostFunctions):
     def __init__(self, nx:int, nu:int, nr:int, f_fcn:cs.Function, name):
         """ Nonlinear least square cost function
-            J = ||f_fcn(x) - r||^2_W
+            J = 1/2 ||f_fcn(x) - r||^2_W
 
         :param dt: discretization time step
         :param nx: state dim
@@ -124,6 +124,16 @@ class EEPos3CostFunction(TrajectoryTrackingCostFunction):
         f_fcn = cs.Function("fee", [robot_mdl.x_sym], [fk_ee(robot_mdl.q_sym)[0]])
         super().__init__(nx, nu, nr, f_fcn, "EEPos3")
 
+class EEVel3CostFunction(TrajectoryTrackingCostFunction):
+    def __init__(self, robot_mdl, params):
+        ss_mdl = robot_mdl.ssSymMdl
+        nx = ss_mdl["nx"]
+        nu = ss_mdl["nu"]
+        nr = 3
+        jac_ee = robot_mdl.jacSymMdls[robot_mdl.tool_link_name]
+        f_fcn = cs.Function("vee", [robot_mdl.x_sym], [jac_ee(robot_mdl.q_sym) @ robot_mdl.v_sym])
+        super().__init__(nx, nu, nr, f_fcn, "EEVel3")
+
 class EEPos3BaseFrameCostFunction(TrajectoryTrackingCostFunction):
     def __init__(self, robot_mdl, params):
         ss_mdl = robot_mdl.ssSymMdl
@@ -156,6 +166,41 @@ class BasePos2CostFunction(TrajectoryTrackingCostFunction):
         f_fcn = cs.Function("fb", [robot_mdl.x_sym], [fk_b(robot_mdl.q_sym)[0]])
 
         super().__init__(nx, nu, nr, f_fcn, "BasePos2")
+
+class BaseVel2CostFunction(TrajectoryTrackingCostFunction):
+    def __init__(self, robot_mdl, params):
+        ss_mdl = robot_mdl.ssSymMdl
+        nx = ss_mdl["nx"]
+        nu = ss_mdl["nu"]
+        nr = 2
+        jac_b = robot_mdl.jacSymMdls["base"]
+        
+        f_fcn = cs.Function("fb", [robot_mdl.x_sym], [jac_b(robot_mdl.q_sym) @ robot_mdl.v_sym])
+
+        super().__init__(nx, nu, nr, f_fcn, "BaseVel2")
+
+class BasePos3CostFunction(TrajectoryTrackingCostFunction):
+    def __init__(self, robot_mdl, params):
+        ss_mdl = robot_mdl.ssSymMdl
+        nx = ss_mdl["nx"]
+        nu = ss_mdl["nu"]
+        nr = 3
+        fk_b = robot_mdl.kinSymMdls["base"]
+        xy, h = fk_b(robot_mdl.q_sym)
+        f_fcn = cs.Function("fb", [robot_mdl.x_sym], [cs.vertcat(xy, h)])
+
+        super().__init__(nx, nu, nr, f_fcn, "BasePos3")
+
+class BaseVel3CostFunction(TrajectoryTrackingCostFunction):
+    def __init__(self, robot_mdl, params):
+        ss_mdl = robot_mdl.ssSymMdl
+        nx = ss_mdl["nx"]
+        nu = ss_mdl["nu"]
+        nr = 3
+        
+        f_fcn = cs.Function("fb", [robot_mdl.x_sym], [robot_mdl.vb_sym])
+
+        super().__init__(nx, nu, nr, f_fcn, "BaseVel3")
 
 class ControlEffortCostFunction(CostFunctions):
     def __init__(self, robot_mdl, params):
