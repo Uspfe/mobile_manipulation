@@ -63,6 +63,18 @@ controller:
     BasePos2:
       Qk: 1.
       P: 1
+    BasePos3:
+      Qk: 1.
+      P: 1
+    EEVel3:
+      Qk: 1.0
+      P: 1
+    BaseVel2:
+      Qk: 1.
+      P: 1
+    BaseVel3:
+      Qk: 1.
+      P: 1
     Effort:
       Qqa: 0.
       Qqb: 0.

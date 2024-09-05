@@ -7,7 +7,8 @@ import numpy as np
 import yaml
 import os
 import xacro
-
+import subprocess
+import re
 
 # This is from <https://github.com/Maples7/dict-recursive-update/blob/07204cdab891ac4123b19fe3fa148c3dd1c93992/dict_recursive_update/__init__.py>
 def recursive_dict_update(default, custom):
@@ -107,7 +108,30 @@ def parse_diag_matrix_dict(d):
     return scale * base
 
 def parse_path(path):
-    return os.path.expandvars(path)
+    # Regular expression to match the $(rospack find <package>) command
+    rospack_pattern = r'\$\((rospack find \w+)\)'
+    
+    # Search for the $(rospack find <package>) command
+    match = re.search(rospack_pattern, path)
+    if match:
+        rospack_command = match.group(1)  # Extract the rospack command (e.g., "rospack find mmseq_control")
+        
+        try:
+            # Use subprocess to run the rospack command (e.g., rospack find mmseq_control)
+            package_path = subprocess.check_output(rospack_command.split(), text=True).strip()
+            
+            # Replace the $(rospack find <package>) part with the actual path
+            resolved_path = re.sub(rospack_pattern, package_path, path)
+            
+            # Expand any environment variables in the resolved path
+            expanded_path = os.path.expandvars(resolved_path)
+            
+            return expanded_path
+        except subprocess.CalledProcessError as e:
+            print(f"Error running command {rospack_command}: {e}")
+            return None
+    else:
+        return os.path.expandvars(path)
 
 def millis_to_secs(ms):
     """Convert milliseconds to seconds."""

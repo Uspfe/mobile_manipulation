@@ -1048,6 +1048,16 @@ class DataPlotter:
 
         return axes
 
+    def plot_cost_separate(self, axes=None, index=0, block=True, legend=None):
+                    
+        if legend is None:
+            legend = self.data["name"]
+        cost_num = len(self.controller.cost)
+        if axes is None:
+            axes = []
+            for k in range(cost_num):
+                f, ax = plt.subplots()
+                axes.append(ax)
 
     def plot_cost_htmpc(self, axes=None, index=0, block=True, legend=None):
         '''
@@ -1640,7 +1650,12 @@ class DataPlotter:
         # self.plot_mpc_prediction("mpc_sdf_constraints", t, axes=[axes[0]], block=False)
         # self.plot_mpc_prediction("mpc_control_constraints", t,block=False)
         # self.plot_mpc_prediction("mpc_state_constraints", t, block=False)
-
+            
+    def print_mpc_param(self, param_name):
+        param_map_bar = [reconstruct_sym_struct_map_from_array(self.controller.p_struct, param_map_array[0]) for param_map_array in self.data["mpc_ocp_params"]]
+        print("Param {}".format(param_name))
+        for k, param in enumerate(param_map_bar):
+            print("time step {} param:{}".format(k, param[param_name]))
 
 class ROSBagPlotter:
     def __init__(self, bag_file, config_file="/home/tracy/Projects/mm_slam/mm_ws/src/mm_sequential_tasks/mmseq_run/config/3d_collision.yaml"):
@@ -1653,8 +1668,8 @@ class ROSBagPlotter:
         self.parse_cmd_vels(self.bag)
         self.parse_mpc_tracking_pt(self.bag)
         self.parse_vicon_msgs(self.bag)
+        self.parse_odom(self.bag)
         self.compute_values_from_robot_model()
-
         # self._set_zero_time()
 
     def parse_joint_states(self, bag):
@@ -1676,6 +1691,14 @@ class ROSBagPlotter:
         qas_interp = fqa_interp(tbs)
         vas_interp = fva_interp(tbs)
         self.data["ur10"]["joint_states_interpolated"] = {"ts": tbs, "qs": qas_interp, "vs": vas_interp}
+
+    def parse_odom(self, bag):
+        odom_msgs = [msg for _, msg, _ in bag.read_messages("/odometry/filtered")]
+        ts, vs, omegas = ros_utils.parse_ridgeback_odom_msgs(odom_msgs)
+        self.data["ridgeback"]["odom"] = {}
+        self.data["ridgeback"]["odom"]["vs"] = vs
+        self.data["ridgeback"]["odom"]["omegas"] = omegas
+        self.data["ridgeback"]["odom"]["ts"] = ts
 
     def parse_cmd_vels(self, bag):
         # cmd_vel messages do not have header.
@@ -1766,6 +1789,44 @@ class ROSBagPlotter:
                     self.data[k1][k2]["ts"] -= t0
             else:
                 self.data[k1]["ts"] -= t0
+    
+    def plot_base_odom_velocity(self):
+        axes = []
+        for i in range(2):
+            f = plt.figure()
+            axes.append(f.gca())
+
+        axes[0].plot(self.data["ridgeback"]["odom"]["ts"], self.data["ridgeback"]["odom"]["vs"][:, 0], label="vx")
+        axes[0].plot(self.data["ridgeback"]["odom"]["ts"], self.data["ridgeback"]["odom"]["vs"][:, 1], label="vy")
+        axes[0].plot(self.data["ridgeback"]["odom"]["ts"], self.data["ridgeback"]["odom"]["vs"][:, 2], label="vz")
+        axes[0].set_title("Ridgeback Odom Linear Velocity")
+
+        axes[1].plot(self.data["ridgeback"]["odom"]["ts"], self.data["ridgeback"]["odom"]["omegas"][:, 0], label="wx")
+        axes[1].plot(self.data["ridgeback"]["odom"]["ts"], self.data["ridgeback"]["odom"]["omegas"][:, 1], label="wy")
+        axes[1].plot(self.data["ridgeback"]["odom"]["ts"], self.data["ridgeback"]["odom"]["omegas"][:, 2], label="wz")
+        axes[1].set_title("Ridgeback Odom Angular Velocity")
+
+        for ax in axes:
+            ax.grid()
+            ax.legend()
+
+    def plot_base_odom_filter_vs_joint_state(self):
+        f, axes = plt.subplots(3,1,sharex=True)
+
+        axes[0].plot(self.data["ridgeback"]["odom"]["ts"], self.data["ridgeback"]["odom"]["vs"][:, 0], 'r',label="odom-filtered-vx")
+        axes[1].plot(self.data["ridgeback"]["odom"]["ts"], self.data["ridgeback"]["odom"]["vs"][:, 1], 'r', label="odom-filtered-vy")
+        axes[2].plot(self.data["ridgeback"]["odom"]["ts"], self.data["ridgeback"]["odom"]["omegas"][:, 2], 'r', label="odom-filtered-omega")
+
+        axes[0].plot(self.data["ridgeback"]["joint_states"]["ts"], self.data["ridgeback"]["joint_states"]["vbs"][:, 0], 'b', label="vicon-filtered-vx")
+        axes[1].plot(self.data["ridgeback"]["joint_states"]["ts"], self.data["ridgeback"]["joint_states"]["vbs"][:, 1], 'b', label="vicon-filtered-vy")
+        axes[2].plot(self.data["ridgeback"]["joint_states"]["ts"], self.data["ridgeback"]["joint_states"]["vbs"][:, 2], 'b', label="vicon-filtered-omega")
+
+        axes[0].set_title("Ridgeback Velocity Odom vs Vicon")
+
+
+        for ax in axes:
+            ax.grid()
+            ax.legend()
 
     def plot_base_velocity_estimation(self, axes=None, legend=""):
         f = plt.figure()
@@ -1774,6 +1835,7 @@ class ROSBagPlotter:
         axes.plot(self.data["vicon"]["ThingBase"]["ts"][:-1], self.data["vicon"]["ThingBase"]["vel"][:, 1], '--', label="v_y_vicon")
         axes.plot(self.data["ridgeback"]["joint_states"]["ts"], self.data["ridgeback"]["joint_states"]["vs"][:, 0], '-', label="v_x_filtered")
         axes.plot(self.data["ridgeback"]["joint_states"]["ts"], self.data["ridgeback"]["joint_states"]["vs"][:, 1], '--', label="v_y_filtered")
+        
         axes.legend()
         axes.grid()
 
