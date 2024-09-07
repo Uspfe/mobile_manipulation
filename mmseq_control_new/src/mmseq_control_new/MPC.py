@@ -428,7 +428,8 @@ class STMPC(MPC):
         super().__init__(config)
         num_terminal_cost = 2
         costs = [self.BasePos3Cost, self.BaseVel3Cost, self.EEPos3Cost, self.EEVel3Cost, self.CtrlEffCost]
-        # costs += [cost for cost in self.collisionSoftCsts.values()]
+        # costs = [self.BasePos3Cost, self.BaseVel3Cost, self.EEPos3Cost, self.EEVel3Cost, self.CtrlEffCost]
+        
         constraints = []
         for name in self.collision_link_names:
             if name in self.model_interface.scene.collision_link_names["static_obstacles"]:
