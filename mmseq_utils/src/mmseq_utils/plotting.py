@@ -450,6 +450,7 @@ class DataPlotter:
 
         print("x bar diff {}".format(x_bar_diff))
         print("u bar diff {}".format(u_bar_diff))
+        print("u0 {}".format(u_bar[0]))
         print("run time {}".format(t1-t0))
         print("u0 {}".format(u_bar[0]))
         
