@@ -450,6 +450,7 @@ class DataPlotter:
 
         print("x bar diff {}".format(x_bar_diff))
         print("u bar diff {}".format(u_bar_diff))
+        print("u0 {}".format(u_bar[0]))
         print("run time {}".format(t1-t0))
         
 
@@ -1426,7 +1427,7 @@ class DataPlotter:
     def plot_mpc(self):
         self.plot_cost_htmpc(block=False)
         self.plot_solver_status_htmpc(block=False)
-        # self.plot_solver_iters_htmpc(block=False)
+        self.plot_solver_iters_htmpc(block=False)
         self.plot_time_htmpc(block=False)
         # self.plot_solver_iters()
         self.plot_time_series_data_htmpc("time_get_map", block=False)

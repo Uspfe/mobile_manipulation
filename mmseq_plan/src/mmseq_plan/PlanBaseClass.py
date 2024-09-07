@@ -8,8 +8,8 @@ import numpy as np
 
 from mmseq_utils.plot_casadi_time_optimal import decompose_X
 from mmseq_utils.trajectory_generation import interpolate
-from mmseq_utils.point_mass_computation_scripts.casadi_initial_guess import initial_guess_simple, initial_guess
-from mmseq_utils.plot_casadi_time_optimal import plot_obstacle_avoidance, compare_trajectories_casadi_plot
+from mmseq_utils.point_mass_computation_scripts.casadi_initial_guess import initial_guess_simple, initial_guess, slow_down_guess, slow_down_guess_only_ee
+from mmseq_utils.plot_casadi_time_optimal import plot_obstacle_avoidance, compare_trajectories_casadi_plot, plot_motion_model
 
 class Planner(ABC):
     def __init__(self, name, type, ref_type, ref_data_type, frame_id):
@@ -104,7 +104,10 @@ class WholeBodyPlanner(Planner):
     def getEEPlanner(self):
         return self.ee_planner
 
-    def slowDownTrajectory(self, start_state, end_ee, motion_model, forward_kinematic, N=100, obstacle_avoidance=None):
+    def getPlanners(self):
+        return self.planners
+
+    def slowDownTrajectory(self, start_state, end_ee, motion_model, forward_kinematic, N=50, obstacle_avoidance=None, self_avoidance=None):
         state_dim = self.motion_class.DoF
 
         X = ca.MX.sym(f'X', state_dim*3, N)
@@ -120,8 +123,8 @@ class WholeBodyPlanner(Planner):
         ubg = []
         lbx = []
         ubx = []
-        obj = 0
-        
+        obj = t
+        print(start_state)
         for i in range(N-1):
             cur_lbx = ca.DM.ones(total_elements)*-np.inf
             cur_ubx = ca.DM.ones(total_elements)*np.inf
@@ -134,8 +137,17 @@ class WholeBodyPlanner(Planner):
             # constraints on acceleration
             cur_lbx[u_start_index:] = ca.horzcat(*self.u_min)
             cur_ubx[u_start_index:] = ca.horzcat(*self.u_max)
+            # Jerk constraints
+            # g.append((X[u_start_index:, i+1] - X[u_start_index:, i])/dt)
+            # lbg.append(ca.vertcat(*self.jerk_min))
+            # ubg.append(ca.vertcat(*self.jerk_max))
             if i==0:
-                g.append(X[:u_start_index, i] - start_state[:u_start_index])
+                # g.append(X[:u_start_index, i] - start_state[:u_start_index])
+                # lbg.append(ca.DM.zeros(2*state_dim))
+                # ubg.append(ca.DM.zeros(2*state_dim))
+                # cur_lbx[:u_start_index] = start_state[:u_start_index]
+                # cur_ubx[:u_start_index] = start_state[:u_start_index]
+                g.append(X[:u_start_index, i] -  start_state[:u_start_index] - dt*motion_model(start_state[:u_start_index], start_state[u_start_index:]))
                 lbg.append(ca.DM.zeros(2*state_dim))
                 ubg.append(ca.DM.zeros(2*state_dim))
 
@@ -146,24 +158,55 @@ class WholeBodyPlanner(Planner):
             lbx.append(cur_lbx)
             ubx.append(cur_ubx)
             # Obstacle constraints
-            if obstacle_avoidance is not None:
-                obs = obstacle_avoidance(X[:vel_start_index, i]) - self.self_collision_safety_margin
-                g.append(obs)
-                lbg.append(ca.DM.zeros(obs.shape[0]))
-                # lbg.append(ca.DM.ones(obs.shape[0])*-np.inf)
-                ubg.append(ca.DM.ones(obs.shape[0])*np.inf)
+            # if obstacle_avoidance is not None:
+            #     obs = obstacle_avoidance(X[:vel_start_index, i]) - self.ground_collision_safety_margin
+            #     g.append(obs)
+            #     lbg.append(ca.DM.zeros(obs.shape[0]))
+            #     ubg.append(ca.DM.ones(obs.shape[0])*np.inf)
+            # if self_avoidance is not None:
+            #     obs = self_avoidance(X[:vel_start_index, i]) - self.self_collision_safety_margin
+            #     g.append(obs)
+            #     lbg.append(ca.DM.zeros(obs.shape[0]))
+            #     # lbg.append(ca.DM.ones(obs.shape[0])*-np.inf)
+            #     ubg.append(ca.DM.ones(obs.shape[0])*np.inf)
 
-            # As objective, minimize velocity difference
-            obj += ca.sumsqr(X[u_start_index:, i+1] - X[u_start_index:, i]) #+ ca.sumsqr(X[:vel_start_index, i] - self.starting_configuration)
+            # As objective, minimize 
+            # obj += ca.sumsqr(X[vel_start_index:u_start_index, i]) #+ ca.sumsqr(X[:vel_start_index, i] - self.starting_configuration)
 
         # Final point constraints
-        cur_lbx = ca.DM.zeros(total_elements)
-        cur_ubx = ca.DM.zeros(total_elements)
+        cur_lbx = ca.DM.ones(total_elements)*-np.inf
+        cur_ubx = ca.DM.ones(total_elements)*np.inf
+        # constraints on position
+        cur_lbx[:vel_start_index] = ca.horzcat(*self.q_min)
+        cur_ubx[:vel_start_index] = ca.horzcat(*self.q_max)
+        # constraints on velocity
+        cur_lbx[vel_start_index:u_start_index] = ca.horzcat(*self.q_dot_min)
+        cur_ubx[vel_start_index:u_start_index] = ca.horzcat(*self.q_dot_max)
+        # constraints on acceleration
+        cur_lbx[u_start_index:] = ca.horzcat(*self.u_min)
+        cur_ubx[u_start_index:] = ca.horzcat(*self.u_max)
+
+        cur_lbx[vel_start_index:u_start_index] = ca.DM.zeros(state_dim)
+        cur_ubx[vel_start_index:u_start_index] = ca.DM.zeros(state_dim)
+        # g.append(X[:vel_start_index, N-1] - self.starting_configuration)
+        # lbg.append(ca.DM.zeros(state_dim))
+        # ubg.append(ca.DM.ones(state_dim)*0)
         g.append(forward_kinematic(X[:vel_start_index, N-1]) - end_ee)
         lbg.append(ca.DM.zeros(len(end_ee)))
         ubg.append(ca.DM.zeros(len(end_ee)))
-        cur_lbx[:vel_start_index] = ca.horzcat(*self.q_min)
-        cur_ubx[:vel_start_index] = ca.horzcat(*self.q_max)
+        # Obstacle constraints
+        if self_avoidance is not None:
+            self_avoid = self_avoidance(X[:vel_start_index, N-1]) - self.self_collision_safety_margin
+            g.append(self_avoid)
+            lbg.append(ca.DM.zeros(self_avoid.shape[0]))
+            ubg.append(ca.DM.ones(self_avoid.shape[0])*np.inf)
+        if obstacle_avoidance is not None:
+            obs = obstacle_avoidance(X[:vel_start_index, N-1]) - self.ground_collision_safety_margin
+            g.append(obs)
+            lbg.append(ca.DM.zeros(obs.shape[0]))
+            ubg.append(ca.DM.ones(obs.shape[0])*np.inf)
+        # cur_lbx[:vel_start_index] = ca.horzcat(*self.starting_configuration)
+        # cur_ubx[:vel_start_index] = ca.horzcat(*self.starting_configuration)
         lbx.append(cur_lbx)
         ubx.append(cur_ubx)
         X = X.reshape((-1, 1))
@@ -175,11 +218,14 @@ class WholeBodyPlanner(Planner):
         points_full = [self.motion_class.end_effector_pose(start_config).full().flatten()]
         points_full.append(end_ee)
         # X0_array, ts, N = initial_guess_simple(self.motion_class, points_full, start_config, 1, N, is_sequential_guess=True)
-        X0_array, ts, N = initial_guess(self.motion_class, points_full, start_config, 1, N, is_sequential_guess=True)
-        X0 = ca.vertcat(sum(ts), *X0_array)
+        # X0_array, ts, _ = initial_guess(self.motion_class, points_full, start_config, 1, N, is_sequential_guess=True)
+        end_state = ca.vertcat(*self.starting_configuration, ca.DM.zeros(state_dim))
+        # X0_array, tf = slow_down_guess(start_state, end_state, N, self.motion_class, a_bounds=(self.u_min, self.u_max))
+        X0_array, tf = slow_down_guess_only_ee(start_state, end_ee, N, self.motion_class, a_bounds=(self.u_min, self.u_max))
+        X0 = ca.vertcat(tf, *X0_array)
 
-        opts = {'print_time': False, 'ipopt.print_level': 0}
-        opts = {'print_time': False, 'ipopt.sb': 'yes', 'ipopt.acceptable_tol': 1e-8, 'ipopt.acceptable_obj_change_tol': 1e-6, 'ipopt.print_level': 0, 'ipopt.max_iter': 10000}
+        opts = {'print_time': True, 'ipopt.print_level': 4}
+        # opts = {'print_time': False, 'ipopt.sb': 'yes', 'ipopt.acceptable_tol': 1e-8, 'ipopt.acceptable_obj_change_tol': 1e-6, 'ipopt.print_level': 0, 'ipopt.max_iter': 10000}
 
         nlp = {'x': OPT_variables, 'f': obj, 'g': ca.vertcat(*g)}
         solver = ca.nlpsol('solver', 'ipopt', nlp, opts)
@@ -192,8 +238,10 @@ class WholeBodyPlanner(Planner):
         if solver.stats()['return_status'] != 'Solve_Succeeded':
             print("slow down failed",solver.stats()['return_status'])
 
-            # compare_trajectories_casadi_plot([X_final], points_full, None, None, forward_kinematic, [total_elements], [X_final[0]], [N], q_size=state_dim, show=True, a_bounds=[(self.u_min, self.u_max)], v_bounds=(self.q_dot_min, self.q_dot_max))
-            # plot_obstacle_avoidance([X_final], obstacle_avoidance, [total_elements], q_size=state_dim, show=True, labels=["Slow Down"], limit=self.self_collision_safety_margin)
+        compare_trajectories_casadi_plot([X_final, X0], points_full, None, None, forward_kinematic, [total_elements, total_elements], [X_final[0], X0[0]], [N, N], q_size=state_dim, show=True, a_bounds=[(self.u_min, self.u_max), (self.u_min, self.u_max)], v_bounds=(self.q_dot_min, self.q_dot_max))
+        plot_obstacle_avoidance([X_final, X0], self_avoidance, [total_elements, total_elements], q_size=state_dim, show=True, labels=["Slow Down", "Initial guess"], limit=self.self_collision_safety_margin)
+        
+        plot_motion_model([X_final, X0], motion_model, [total_elements, total_elements], q_size=state_dim, show=True, labels=["Slow Down", "Initial guess"], limit=0)
 
 
     def processResults(self):
