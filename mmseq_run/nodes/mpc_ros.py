@@ -26,7 +26,7 @@ import mmseq_plan.TaskManager as TaskManager
 from mmseq_utils import parsing
 from mmseq_utils.logging import DataLogger
 from mmseq_utils.math import wrap_pi_scalar, wrap_to_2_pi_scalar
-from mobile_manipulation_central.ros_interface import MobileManipulatorROSInterface, ViconObjectInterface, ViconMarkerSwarmInterface, JoystickButtonInterface, MapInterface, MapInterfaceNew, MapGridInterface
+from mobile_manipulation_central.ros_interface import MobileManipulatorROSInterface, ViconObjectInterface, ViconMarkerSwarmInterface, JoystickButtonInterface, MapInterface, MapInterfaceNew, MapInterfaceNew
 from mobile_manipulation_central import PointToPointTrajectory, bound_array
 
 class ControllerROSNode:
@@ -116,7 +116,7 @@ class ControllerROSNode:
         else:
             self.use_joy = False
         
-        self.map_interface = MapGridInterface(config=self.ctrl_config)
+        self.map_interface = MapInterfaceNew(config=self.ctrl_config)
 
         self.controller_visualization_pub = rospy.Publisher("controller_visualization", Marker, queue_size=10)
         self.controller_visualization_array_pub = rospy.Publisher("controller_visualization_array", MarkerArray, queue_size=10)

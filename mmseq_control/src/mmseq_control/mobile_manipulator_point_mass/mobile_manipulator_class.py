@@ -49,8 +49,6 @@ class MobileManipulatorPointMass(MobileManipulator3D):
         from . import trajectory_computation
         setattr(MobileManipulatorPointMass, 'calculate_trajectory', trajectory_computation.calculate_trajectory)
         setattr(MobileManipulatorPointMass, 'calculate_trajectory_simple', trajectory_computation.calculate_trajectory_simple)
-        from . import obstacle_detection_function 
-        setattr(MobileManipulatorPointMass, 'object_detection_func', obstacle_detection_function.object_detection_func)
 
         # init of the parent class
         super().__init__(config)
@@ -95,6 +93,23 @@ class MobileManipulatorPointMass(MobileManipulator3D):
     def base_jacobian(self, q):
         ''' Compute the base jacobian given the parameters. '''
         J = self.jacSymMdls['base'](q)
+        return J
+
+    def base_xytheta(self, q):
+        ''' Compute the base pose given the parameters. '''
+        forward_kinematic = self.kinSymMdls['base']
+        x_y, theta = forward_kinematic(q)
+        # remap the theta to [-pi, pi]
+        theta = ca.atan2(ca.sin(float(theta)), ca.cos(float(theta)))
+
+        return ca.vertcat(x_y, theta)
+
+    def base_jacobian_xytheta(self, q):
+        ''' Compute the base jacobian given the parameters. '''
+        J = self.jacSymMdls['base'](q)
+        bottom_row = ca.horzcat(*[0,0], 1, *[0]*(self.DoF-3))
+        J = ca.vertcat(J, bottom_row)
+        print("jacobian", J)
         return J
 
 
