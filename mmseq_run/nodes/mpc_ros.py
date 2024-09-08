@@ -21,12 +21,12 @@ import mmseq_control_new.MPC as MPC
 import mmseq_control_new.HTMPC as HTMPCNew
 
 
-from mmseq_control.robot import MobileManipulator3D
+from mmseq_control.robot import MobileManipulator3D, CasadiModelInterface
 import mmseq_plan.TaskManager as TaskManager
 from mmseq_utils import parsing
 from mmseq_utils.logging import DataLogger
 from mmseq_utils.math import wrap_pi_scalar, wrap_to_2_pi_scalar
-from mobile_manipulation_central.ros_interface import MobileManipulatorROSInterface, ViconObjectInterface, ViconMarkerSwarmInterface, JoystickButtonInterface, MapInterface, MapInterfaceNew, MapInterfaceNew
+from mobile_manipulation_central.ros_interface import MobileManipulatorROSInterface, ViconObjectInterface, ViconMarkerSwarmInterface, JoystickButtonInterface, MapInterface, MapInterfaceNew
 from mobile_manipulation_central import PointToPointTrajectory, bound_array
 
 class ControllerROSNode:
@@ -117,6 +117,10 @@ class ControllerROSNode:
             self.use_joy = False
         
         self.map_interface = MapInterfaceNew(config=self.ctrl_config)
+
+        casadi_kin_dyn = CasadiModelInterface(self.ctrl_config)
+        if self.ctrl_config["self_collision_emergency_stop"]:
+            self.self_collision_func = casadi_kin_dyn.signedDistanceSymMdlsPerGroup["self"]
 
         self.controller_visualization_pub = rospy.Publisher("controller_visualization", Marker, queue_size=10)
         self.controller_visualization_array_pub = rospy.Publisher("controller_visualization_array", MarkerArray, queue_size=10)
@@ -540,6 +544,13 @@ class ControllerROSNode:
 
             if self.use_joy and self.start_end_button_interface.button == 1:
                 break
+            # check collision
+            q = robot_states[0]
+            if self.ctrl_config["self_collision_emergency_stop"]:
+                signed_dist = self.self_collision_func(q).full().flatten()
+                if min(signed_dist) < 0.05:
+                    print("Self Collision Detected")
+                    break
 
             rate.sleep()
 
