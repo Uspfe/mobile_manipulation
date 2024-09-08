@@ -380,25 +380,28 @@ class MPC():
             
         # TODO: slack variables?
         ns = nsx + nsu + nsh
+        z = self.params["cost_params"]["slack"]["z"]
+        Z = self.params["cost_params"]["slack"]["Z"]
+
         if ns > 0:
-            ocp.cost.Zl = np.ones(ns) * 10
-            ocp.cost.Zu = np.ones(ns) * 10
-            ocp.cost.zl = np.ones(ns) * 10
-            ocp.cost.zu = np.ones(ns) * 10
+            ocp.cost.Zl = np.ones(ns) * Z
+            ocp.cost.Zu = np.ones(ns) * Z
+            ocp.cost.zl = np.ones(ns) * z
+            ocp.cost.zu = np.ones(ns) * z
 
         ns_e = nsx_e + nsh_e
         if ns_e > 0:
-            ocp.cost.Zl_e = np.ones(ns_e) * 10
-            ocp.cost.Zu_e = np.ones(ns_e) * 10
-            ocp.cost.zl_e = np.ones(ns_e) * 0.5
-            ocp.cost.zu_e = np.ones(ns_e) * 0.5
+            ocp.cost.Zl_e = np.ones(ns_e) * Z
+            ocp.cost.Zu_e = np.ones(ns_e) * Z
+            ocp.cost.zl_e = np.ones(ns_e) * z
+            ocp.cost.zu_e = np.ones(ns_e) * z
             
         ns_0 = nsh_0 + nsu
         if ns_0 > 0:
-            ocp.cost.Zl_0 = np.ones(ns_0) * 10
-            ocp.cost.Zu_0 = np.ones(ns_0) * 10
-            ocp.cost.zl_0 = np.ones(ns_0) * 0.5
-            ocp.cost.zu_0 = np.ones(ns_0) * 0.5
+            ocp.cost.Zl_0 = np.ones(ns_0) * Z
+            ocp.cost.Zu_0 = np.ones(ns_0) * Z
+            ocp.cost.zl_0 = np.ones(ns_0) * z
+            ocp.cost.zu_0 = np.ones(ns_0) * z
         # initial condition
         ocp.constraints.x0 = self.x_bar[0]
 
@@ -692,9 +695,9 @@ class STMPC(MPC):
         self.sdf_bar["base"] = self.model_interface.sdf_map.query_val(self.base_bar[:, 0], self.base_bar[:, 1], np.ones(self.N+1)*0.2)
         self.sdf_grad_bar["base"] = self.model_interface.sdf_map.query_grad(self.base_bar[:, 0], self.base_bar[:, 1], np.ones(self.N+1)*0.2).reshape((3,-1))
 
-        # for name in self.collision_link_names: 
-        #     self.log["_".join([name, "constraint"])] = self.evaluate_constraints(self.collisionCsts[name], 
-        #                                                            self.x_bar, self.u_bar, curr_p_map_bar)
+        for name in self.collision_link_names: 
+            self.log["_".join([name, "constraint"])] = self.evaluate_constraints(self.collisionCsts[name], 
+                                                                   self.x_bar, self.u_bar, curr_p_map_bar)
         #     # self.log["_".join([name, "constraint", "gradient"])] = self.evaluate_constraints_gradient(self.collisionCsts[name], 
         #     #                                                        self.x_bar, self.u_bar, curr_p_map_bar)
         # For data plotting
