@@ -66,28 +66,31 @@ controller:
       Qk: 10.
       P: 1
     BasePos3:
-      Qk: 1.
+      Qk: 10.
       P: 1
     EEVel3:
-      Qk: 1.0
+      Qk: 5.
       P: 1
     BaseVel2:
-      Qk: 1.
+      Qk: 5.
       P: 1
     BaseVel3:
-      Qk: 1.
+      Qk: 5.
       P: 1
     Effort:
       Qqa: 0.
       Qqb: 0.
       Qva: 0.01
-      Qvb: 0.1
+      Qvb: 0.01
       Qua: 0.005
-      Qub: 0.025
+      Qub: 0.005
       Qdua: 0.
       Qdub: 0.1
     Regularization:
       eps: 1.0e-06
+    slack:
+      z: 100  # linear term
+      Z: 1    # quadratic term
 
   # line search parameters
   beta: 0.5
