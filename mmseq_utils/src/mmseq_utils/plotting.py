@@ -180,14 +180,19 @@ class DataPlotter:
                         ros_data["ur10"]["joint_states_interpolated"]["vs"],
                         ))
         r_ew_ws = ros_data["model"]["EE"]["pos"]
+        q_ew_ws = ros_data["model"]['EE']["orn"]
+        v_ew_ws = ros_data["model"]["EE"]["vel_lin"]
+        ω_ew_ws = ros_data["model"]["EE"]["vel_ang"]
+
+
         r_bw_ws = ros_data["model"]['base']["pos"]
+        yaw_bw_ws = ros_data["model"]['base']["orn"]
+        v_bw_ws = ros_data["model"]["base"]["vel_lin"]
+        ω_bw_ws = ros_data["model"]["base"]["vel_ang"]
 
-
-        values = [xs, r_ew_ws, r_bw_ws]
-        ts = [ros_data["ridgeback"]["joint_states"]["ts"],
-              ros_data["model"]["EE"]["ts"],
-              ros_data["model"]["base"]["ts"]]
-        keys = ["xs", "r_ew_ws", "r_bw_ws"]
+        values = [xs, r_ew_ws, q_ew_ws,v_ew_ws,ω_ew_ws, r_bw_ws, yaw_bw_ws,v_bw_ws,ω_bw_ws]
+        ts = [ros_data["ridgeback"]["joint_states"]["ts"]] + [ros_data["model"]["EE"]["ts"]] *4 + [ros_data["model"]["base"]["ts"]] * 4
+        keys = ["xs", "r_ew_ws", "q_ew_ws", "v_ew_ws", "ω_ew_ws", "r_bw_ws", "yaw_bw_ws", "v_bw_ws", "ω_bw_ws"]
 
         for t, value, key in zip(ts, values, keys):
             value = np.array(value)
@@ -484,18 +489,18 @@ class DataPlotter:
             legend = self.data["name"]
 
         if len(r_ew_w_ds) > 0:
-            axes.plot(ts, r_ew_w_ds[:, 0], '-x', label=legend + "$x_d$", color="r")
-            axes.plot(ts, r_ew_w_ds[:, 1], '-x', label=legend + "$y_d$", color="g")
-            axes.plot(ts, r_ew_w_ds[:, 2], '-x', label=legend + "$z_d$", color="b")
+            axes.plot(ts, r_ew_w_ds[:, 0], label=legend + "$x_d$", color="r", linestyle="--")
+            axes.plot(ts, r_ew_w_ds[:, 1], label=legend + "$y_d$", color="g", linestyle="--")
+            axes.plot(ts, r_ew_w_ds[:, 2], label=legend + "$z_d$", color="b", linestyle="--")
         if len(r_ew_ws) > 0:
-            axes.plot(ts, r_ew_ws[:, 0], label=legend + "$x$", color="r")
-            axes.plot(ts, r_ew_ws[:, 1], label=legend + "$y$", color="g")
-            axes.plot(ts, r_ew_ws[:, 2], label=legend + "$z$", color="b")
+            axes.plot(ts, r_ew_ws[:, 0], "-x", label=legend + "$x$", color="r")
+            axes.plot(ts, r_ew_ws[:, 1], "-x", label=legend + "$y$", color="g")
+            axes.plot(ts, r_ew_ws[:, 2], "-x", label=legend + "$z$", color="b")
         axes.grid()
         axes.legend()
         axes.set_xlabel("Time (s)")
         axes.set_ylabel("Position (m)")
-        axes.set_title("End effector position")
+        axes.set_title("End effector position tracking")
 
         return axes
 
@@ -729,10 +734,10 @@ class DataPlotter:
         axes.set_ylabel("Orientation")
         axes.set_title("End effector orientation")
 
-    def plot_ee_velocity_tracking(self, axes=None, index=0, legend=None):
+    def plot_ee_linear_velocity_tracking(self, axes=None, index=0, legend=None):
         ts = self.data["ts"]
         v_ew_ws = self.data["v_ew_ws"]
-        ω_ew_ws = self.data["ω_ew_ws"]
+        # ω_ew_ws = self.data["ω_ew_ws"]
 
         v_ref = self.data.get("v_ew_w_ds", [])
 
@@ -742,21 +747,21 @@ class DataPlotter:
         if legend is None:
             legend = self.data["name"]
 
-        axes.plot(ts, v_ew_ws[:, 0], label=legend + "$v_x$")
-        axes.plot(ts, v_ew_ws[:, 1], label=legend + "$v_y$")
-        axes.plot(ts, v_ew_ws[:, 2], label=legend + "$v_z$")
+        axes.plot(ts, v_ew_ws[:, 0], label=legend + "$v_x$", color="r",)
+        axes.plot(ts, v_ew_ws[:, 1], label=legend + "$v_y$", color="g",)
+        axes.plot(ts, v_ew_ws[:, 2], label=legend + "$v_z$", color="b",)
         if len(v_ref) > 0:
-            axes.plot(ts, v_ref[:, 0], label=legend + "$v_{x,plan}$", linestyle="--")
-            axes.plot(ts, v_ref[:, 1], label=legend + "$v_{y,plan}$", linestyle="--")
-            axes.plot(ts, v_ref[:, 2], label=legend + "$v_{z,plan}$", linestyle="--")
-        axes.plot(ts, ω_ew_ws[:, 0], label=legend + "$ω_x$")
-        axes.plot(ts, ω_ew_ws[:, 1], label=legend + "$ω_y$")
-        axes.plot(ts, ω_ew_ws[:, 2], label=legend + "$ω_z$")
+            axes.plot(ts, v_ref[:, 0], label=legend + "${v_x}_d}$", color="r", linestyle="--")
+            axes.plot(ts, v_ref[:, 1], label=legend + "${v_y}_d}$", color="g", linestyle="--")
+            axes.plot(ts, v_ref[:, 2], label=legend + "${v_z}_d}$", color="b", linestyle="--")
+        # axes.plot(ts, ω_ew_ws[:, 0], label=legend + "$ω_x$")
+        # axes.plot(ts, ω_ew_ws[:, 1], label=legend + "$ω_y$")
+        # axes.plot(ts, ω_ew_ws[:, 2], label=legend + "$ω_z$")
         axes.grid()
         axes.legend()
         axes.set_xlabel("Time (s)")
         axes.set_ylabel("Velocity")
-        axes.set_title("End effector velocity tracking")
+        axes.set_title("End effector linear velocity tracking")
 
         return axes
 
@@ -1411,7 +1416,8 @@ class DataPlotter:
         print(data_name)
         print(data.shape)
         
-        data = data.squeeze(axis=-1)
+        if len(data.shape) ==4:
+            data = data.squeeze(axis=-1)
 
         print(data.shape)
         if len(data.shape) == 3:
@@ -1453,7 +1459,7 @@ class DataPlotter:
                 axes[i].grid()
             axes[0].set_title(" ".join(data_name.split("_")[1:] + ["figure", str(fi+1)+"/"+str(figs_num)]))
             
-            plt.show(block=block)
+        plt.show(block=block)
     
         return axes
 
@@ -1463,7 +1469,7 @@ class DataPlotter:
     def plot_all(self):
         self.data["name"] = ""
         self.plot_ee_tracking()
-        self.plot_ee_velocity_tracking()
+        self.plot_ee_linear_velocity_tracking()
         self.plot_base_tracking()
         self.plot_base_velocity_tracking()
         self.plot_tracking_err()
@@ -1516,7 +1522,7 @@ class DataPlotter:
 
     def plot_tracking(self):
         self.plot_ee_tracking()
-        self.plot_ee_velocity_tracking()
+        self.plot_ee_linear_velocity_tracking()
         self.plot_base_tracking()
         self.plot_base_velocity_tracking()
         axes = self.plot_base_path()
@@ -1854,34 +1860,55 @@ class ROSBagPlotter:
     def compute_values_from_robot_model(self):
         f_base = self.robot.kinSymMdls[self.robot.base_link_name]
         f_ee = self.robot.kinSymMdls[self.robot.tool_link_name]
+        J_ee = self.robot.jacSymMdls[self.robot.tool_link_name]
 
         r_base_s = []
         yaw_base_s = []
+        v_base_s = []
+        ω_base_s = []
+
         r_ee_s = []
         quat_ee_s = []
+        v_ee_s = []
+        ω_ee_s = []
 
 
         for i in range(len(self.data["ur10"]["joint_states_interpolated"]["ts"])):
             qa = self.data["ur10"]["joint_states_interpolated"]["qs"][i]
             qb = self.data["ridgeback"]["joint_states"]["qs"][i]
             q = np.hstack((qb, qa))
+
+            q_dota = self.data["ur10"]["joint_states_interpolated"]["vs"][i]
+            q_dotb = self.data["ridgeback"]["joint_states"]["vs"][i]
+            q_dot = np.hstack((q_dotb, q_dota))
             r_b, theta_b = f_base(q)
             r_ee, rot_ee = f_ee(q)
             quat_ee = r2q(np.array(rot_ee), order="xyzs")
+            v_ee = J_ee(q) @ q_dot
 
             r_base_s.append(r_b)
             yaw_base_s.append(theta_b)
+            v_base_s.append(q_dotb[:2])
+            ω_base_s.append(q_dotb[2])
 
             r_ee_s.append(r_ee)
             quat_ee_s.append(quat_ee)
+            v_ee_s.append(v_ee)
+            # TODO: compute angular velocity from model. Perhaps use a package that gives full jacobian casadi functino
+            # Possible choice: https://pypi.org/project/cmeel-casadi-kin-dyn/
+            ω_ee_s.append(np.zeros(3))
 
         self.data["model"]["EE"] = {"ts": self.data["ur10"]["joint_states_interpolated"]["ts"].copy(),
                                     "pos": np.array(r_ee_s).squeeze(),
-                                    "orn": np.array(quat_ee_s).squeeze()}
+                                    "vel_lin": np.array(v_ee_s).squeeze(),
+                                    "orn": np.array(quat_ee_s).squeeze(),
+                                    "vel_ang":np.array(ω_ee_s).squeeze()}
 
         self.data["model"]["base"] = {"ts": self.data["ur10"]["joint_states_interpolated"]["ts"].copy(),
                                       "pos": np.array(r_base_s).squeeze(),
-                                      "orn": np.array(yaw_base_s).flatten()}
+                                      "vel_lin": np.array(v_base_s).squeeze(),
+                                      "orn": np.array(yaw_base_s).flatten(),
+                                      "vel_ang": np.array(ω_base_s).flatten()}
 
     def _set_zero_time(self):
         if len(self.data["ridgeback"]["cmd_vels"]["ts"]) > 0:
