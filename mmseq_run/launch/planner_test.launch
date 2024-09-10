@@ -17,7 +17,7 @@
   </include>
   
   <!-- Controller -->
-  <include file="$(find mmseq_run)/launch/controller.launch" pass_all_args="true"/>
+  <include file="$(find mmseq_run)/launch/planner.launch" pass_all_args="true"/>
 
   <!-- Robot Model -->
   <include file="$(find mmseq_run)/launch/thing_description.launch">

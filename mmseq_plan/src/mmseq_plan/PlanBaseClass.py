@@ -15,6 +15,7 @@ class Planner(ABC):
         self.ref_type = ref_type                # waypoint vs trajectory
         self.ref_data_type = ref_data_type      # Vec2 vs Vec3
         self.frame_id = frame_id                # base or EE
+        self.robot_states = None
 
 
     @abstractmethod
@@ -46,6 +47,15 @@ class Planner(ABC):
         """
         finished = True
         return finished
+    
+    @abstractmethod
+    def updateRobotStates(self, robot_states):
+        """update robot states
+
+        :param robot_states: (joint angle, joint velocity)
+        :type robot_states: tuple
+        """
+        self.robot_states = robot_states
 
 class TrajectoryPlanner(Planner):
 

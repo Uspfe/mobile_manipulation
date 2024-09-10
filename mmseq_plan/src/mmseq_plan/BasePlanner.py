@@ -2,9 +2,12 @@
 # -*- coding: utf-8 -*-
 
 import numpy as np
+import threading
+import rospy
+from nav_msgs.msg import Path
 from mmseq_plan.PlanBaseClass import Planner, TrajectoryPlanner
 from mmseq_utils.parsing import parse_number
-from mmseq_utils.math import wrap_pi_scalar
+from mmseq_utils.math import wrap_pi_scalar, wrap_pi_array
 from mmseq_utils.trajectory_generation import sqaure_wave
 
 class BaseSingleWaypoint(Planner):
@@ -38,6 +41,9 @@ class BaseSingleWaypoint(Planner):
     def reset(self):
         self.finished = False
         self.py_logger.info(self.name + " planner reset.")
+
+    def updateRobotStates(self, robot_states):
+        self.robot_states = robot_states
 
     @staticmethod
     def getDefaultParams():
@@ -112,6 +118,9 @@ class BasePosTrajectoryCircle(TrajectoryPlanner):
                 self.finished = True
                 self.py_logger.info(self.name + " Planner Finished")
         return self.finished
+    
+    def updateRobotStates(self, robot_states):
+        self.robot_states = robot_states
 
     def reset(self):
         self.finished = False
@@ -181,6 +190,9 @@ class BasePosTrajectoryLine(TrajectoryPlanner):
         self.finished = False
         self.start_time = 0
         self.py_logger.info(self.name + " planner reset.")
+
+    def updateRobotStates(self, robot_states):
+        self.robot_states = robot_states
 
     @staticmethod
     def getDefaultParams():
@@ -299,6 +311,9 @@ class BasePoseTrajectoryLine(TrajectoryPlanner):
         self.start_time = 0
         self.py_logger.info(self.name + " planner reset.")
 
+    def updateRobotStates(self, robot_states):
+        self.robot_states = robot_states
+
     @staticmethod
     def getDefaultParams():
         config = {}
@@ -366,3 +381,119 @@ class BasePosTrajectorySqaureWave(TrajectoryPlanner):
         config["tracking_err_tol"] = 0.02
 
         return config
+    
+    def updateRobotStates(self, robot_states):
+        self.robot_states = robot_states 
+    
+class ROSTrajectoryPlanner(TrajectoryPlanner):
+    def __init__(self, config):
+        super().__init__(name=config["name"],
+                        type="base",
+                        ref_type="trajectory",
+                        ref_data_type="Vec3",
+                        frame_id=config["frame_id"])
+        
+        print("ROSTrajectoryPlanner")
+        print(config)
+        self.tracking_err_tol = config["tracking_err_tol"]
+        self.end_stop = config.get("end_stop", False)
+
+        self.finished = False
+        self.started = False
+        self.start_time = -1
+
+        self.cruise_speed = config["cruise_speed"]
+        self.yaw_speed = config["yaw_speed"]
+
+        self.ref_traj_duration = config["ref_traj_duration"]
+        self.dt = 0.01
+        self.traj_length = int(self.ref_traj_duration / self.dt)
+        self.plan = None
+
+        self.path_sub = rospy.Subscriber("/planned_global_path", Path, self._path_callback)
+
+    def _generatePlan(self, start_time, points, headings):
+        # given a set of path points and heading, generate a plan based on cruise speed
+        # Compute cumulative distances along the path
+        self.start_time = start_time
+
+        distances = np.linalg.norm(np.diff(points, axis=0), axis=1)
+        cumulative_distances = np.insert(np.cumsum(distances), 0, 0)
+
+        # Total distance of the path
+        total_distance = cumulative_distances[-1]
+
+        # Resample the path based on constant velocity and dt
+        time = np.arange(0, total_distance / self.cruise_speed, self.dt)
+        new_x = np.interp(time * self.cruise_speed, cumulative_distances, points[:, 0]).reshape(-1, 1)
+        new_y = np.interp(time * self.cruise_speed, cumulative_distances, points[:, 1]).reshape(-1, 1)
+
+        # Interpolate the headings based on the new time samples
+        new_desired_headings = np.interp(time * self.cruise_speed, cumulative_distances, headings).reshape(-1, 1)
+
+        if self.robot_states is not None: # smooth the heading transition
+            # Calculate actual headings by capping yaw change per time step
+            current_yaw = self.robot_states[0][2]
+            for i in range(new_desired_headings.shape[0]):
+                yaw_diff = wrap_pi_scalar(new_desired_headings[i] - current_yaw)
+                max_yaw_change = self.yaw_speed * self.dt
+
+                if abs(yaw_diff) > max_yaw_change:
+                    yaw_change = np.sign(yaw_diff) * max_yaw_change
+                else:
+                    yaw_change = yaw_diff
+
+                current_yaw += yaw_change
+                current_yaw = wrap_pi_scalar(current_yaw)  # Keep heading in [-pi, pi]
+                new_desired_headings[i] = current_yaw
+
+        #return new_positions, new_headings
+        time = time[:self.traj_length] #+ self.start_time
+        poses = np.hstack((new_x, new_y, new_desired_headings))[:self.traj_length, :]
+        velocities = np.zeros((poses.shape[0], 2))
+        for i in range(poses.shape[0] - 1):
+            velocities[i,0] = (poses[i+1, 0] - poses[i, 0]) / self.dt
+            velocities[i,1] = (poses[i+1, 1] - poses[i, 1]) / self.dt
+
+        return {'t': time, 'p': poses, 'v': velocities}
+
+    def _path_callback(self, msg):
+        time = msg.header.stamp.to_sec() # this is ros time in seconds
+        path = np.array([[pose.pose.position.x, pose.pose.position.y] for pose in msg.poses]).reshape(-1, 2)
+        heading = np.array([np.arctan2(2.0 * (pose.pose.orientation.w * pose.pose.orientation.z), 1.0 - 2.0 * (pose.pose.orientation.z * pose.pose.orientation.z)) for pose in msg.poses]) 
+
+        self.plan = self._generatePlan(time, path, heading)
+
+
+    def getTrackingPoint(self, t, robot_states):
+        #return self.getTrackingPointByStates(self, robot_states)
+        return self.getTrackingPointByTime(self, t)
+
+    def getTrackingPointByTime(self, t):
+        te = t - self.start_time
+        p, v = self._interpolate(te, self.plan)
+
+        return p, v
+    
+    def getTrackingPointByStates(self, states):
+        base_curr_pos = states[0][:2]
+        # search for the closest point on the path
+        min_dist = np.inf
+        min_idx = 0
+        for i in range(len(self.plan['p'])):
+            dist = np.linalg.norm(base_curr_pos - self.plan['p'][i])
+            if dist < min_dist:
+                min_dist = dist
+                min_idx = i
+
+        return self.plan['p'][min_idx], self.plan['v'][min_idx]
+
+    def checkFinished(self, t, states):
+        base_curr_pos = states[0][:2]
+
+        if np.linalg.norm(base_curr_pos - self.plan['p'][-1]) < self.tracking_err_tol:
+            self.finished = True
+        return self.finished
+    
+    def updateRobotStates(self, robot_states):
+        self.robot_states = robot_states
