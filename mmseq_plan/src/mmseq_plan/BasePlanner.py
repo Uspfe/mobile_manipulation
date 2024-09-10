@@ -389,7 +389,7 @@ class ROSTrajectoryPlanner(TrajectoryPlanner):
     def __init__(self, config):
         super().__init__(name=config["name"],
                         type="base",
-                        ref_type="trajectory",
+                        ref_type="path",
                         ref_data_type="Vec3",
                         frame_id=config["frame_id"])
         
@@ -463,7 +463,7 @@ class ROSTrajectoryPlanner(TrajectoryPlanner):
 
         poses = np.hstack((new_x, new_y, new_desired_headings))
 
-        return {'t': time, 'p': poses, 'v': velocities}
+        return {'t': time,'s': time * self.cruise_speed, 'p': poses, 'v': velocities}
 
     def _path_callback(self, msg):
         time = msg.header.stamp.to_sec() # this is ros time in seconds
@@ -478,6 +478,26 @@ class ROSTrajectoryPlanner(TrajectoryPlanner):
     def getTrackingPoint(self, t, robot_states):
         # return self.getTrackingPointByStates(robot_states)
         return self.getTrackingPointByTime(t)
+    
+    def getTrackingPointArray(self, robot_states, num_pts, dt):
+        base_curr_pos = robot_states[0][:2]
+        # search for the closest point on the path
+        min_dist = np.inf
+        min_idx = 0
+        for i in range(len(self.plan['p'])):
+            dist = np.linalg.norm(base_curr_pos - self.plan['p'][i][:2])
+            if dist < min_dist:
+                min_dist = dist
+                min_idx = i
+
+        s0 = self.plan['s'][min_idx]
+        s = s0 + np.arange(num_pts) * dt * self.cruise_speed
+        pos = [np.interp(s, self.plan['s'], self.plan['p'][:,i]) for i in range(3)]
+        vel = [np.interp(s, self.plan['s'], self.plan['v'][:,i]) for i in range(3)]
+
+        pos = np.array(pos).T
+        vel = np.array(vel).T
+        return pos, vel
 
     def getTrackingPointByTime(self, t):
         te = t - self.start_time

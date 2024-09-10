@@ -476,10 +476,13 @@ class STMPC(MPC):
         for planner in planners:
             # get tracking points from planner, tracking points are tuples of desired position and velocity (p, v) 
             # for planners without velocity reference, none should be given (p, None) 
-            r_bar = [planner.getTrackingPoint(t + k * self.dt, (self.x_bar[k, :self.DoF], self.x_bar[k, self.DoF:]))
-                        for k in range(self.N + 1)]
-            p_bar = [r[0] for r in r_bar]
-            v_bar = [r[1] for r in r_bar]
+            if planner.ref_type == "path":
+                p_bar, v_bar = planner.getTrackingPointArray((xo[:self.DoF], xo[self.DoF:]), self.N+1, self.dt)
+            else:
+                r_bar = [planner.getTrackingPoint(t + k * self.dt, (self.x_bar[k, :self.DoF], self.x_bar[k, self.DoF:]))
+                            for k in range(self.N + 1)]
+                p_bar = [r[0] for r in r_bar]
+                v_bar = [r[1] for r in r_bar]
             contains_none = any(item is None for item in v_bar)
             velocity_ref_available = not contains_none
             

@@ -250,7 +250,7 @@ class ControllerROSNode:
                 elif planner.ref_data_type == "Vec2":
                     marker_plan = self._make_marker(Marker.CYLINDER, pid, rgba=color + [1], scale=[0.1, 0.1, 0.5])
                     marker_plan.pose.position = Point(*planner.target_pos, 0.25)
-            elif planner.ref_type == "trajectory":
+            elif planner.ref_type == "trajectory" or planner.ref_type == "path":
                 marker_plan = self._make_marker(Marker.LINE_STRIP, pid, rgba=color + [1], scale=[0.1, 0.1, 0.1])
 
                 if planner.ref_data_type == "Vec3":
@@ -271,7 +271,7 @@ class ControllerROSNode:
                 elif planner.ref_data_type == "Vec2":
                     marker_plan = self._make_marker(Marker.CYLINDER, pid, rgba=colors[pid]+ [1], scale=[0.1, 0.1, 0.5])
                     marker_plan.pose.position = Point(*planner.target_pos, 0.25)
-            elif planner.ref_type == "trajectory":
+            elif planner.ref_type == "trajectory" or planner.ref_type == "path":
                 marker_plan = self._make_marker(Marker.LINE_STRIP, pid, rgba=colors[pid]+ [1], scale=[0.1, 0.1, 0.1])
 
                 if planner.ref_data_type == "Vec3":
@@ -453,6 +453,9 @@ class ControllerROSNode:
             planners = self.sot.getPlanners(num_planners=sot_num_plans)
             self.sot_lock.release()
 
+            for planner in planners:
+                planner.updateRobotStates(robot_states)
+                
             tc1 = time.perf_counter()
             u, acc, u_bar, v_bar = self.controller.control(t-t0, robot_states, planners, map_latest)
             tc2 = time.perf_counter()

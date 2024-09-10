@@ -12,7 +12,7 @@ class Planner(ABC):
         # (1) publishing rviz visualization data
         # (2) assigning the correct mpc cost function
         self.type = type                        # base or EE
-        self.ref_type = ref_type                # waypoint vs trajectory
+        self.ref_type = ref_type                # waypoint vs trajectory vs path
         self.ref_data_type = ref_data_type      # Vec2 vs Vec3
         self.frame_id = frame_id                # base or EE
         self.robot_states = None
