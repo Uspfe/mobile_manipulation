@@ -37,17 +37,18 @@ planner:
   #   cruise_speed: 1.0
   #   tracking_err_tol: 0.4
 simulation:
+  duration: 100
   robot:
     #home: [0., -0.2, 0, 0.5pi, -0.75pi, 0.75pi, -0.25pi, 0.5pi, 0.417pi]  # standard
-    home: [1.5, 2, -0.3, 0.2pi, -0.25pi, 0.5pi, -0.25pi, 0.6pi, 0.417pi]
+    home: [0, 0, -0., 0.5pi, -0.25pi, 0.5pi, -0.25pi, 0.6pi, 0.417pi]
 
 controller:
   home: "default"
   sdf_collision_avoidance_enabled: True
-  self_collision_avoidance_enabled: False
-  static_obstacles_collision_avoidance_enabled: False
+  self_collision_avoidance_enabled: True
+  static_obstacles_collision_avoidance_enabled: True
 
-  collision_constraint_type: "SignedDistanceConstraintCBF" # SignedDistanceConstraint or SignedDistanceConstraintCBF 
+  collision_constraint_type: "SignedDistanceConstraint" # SignedDistanceConstraint or SignedDistanceConstraintCBF 
   type: "STMPC"
   collision_constraints_softend:
     self: False
@@ -79,5 +80,5 @@ include:
     path: "config/map/SDF3D.yaml"
 
 logging:
-  log_dir: "/home/jqian/Downloads/3d_collision"
+  log_dir: "$MOBILE_MANIPULATION_CENTRAL_BAG_DIR/3d_collision/Sep9"
   log_level: 10 # 0 - not set, 10 - debug, 20 - info

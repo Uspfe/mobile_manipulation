@@ -55,7 +55,6 @@ class Planner(ABC):
         finished = True
         return finished
     
-    @abstractmethod
     def updateRobotStates(self, robot_states):
         """update robot states
 

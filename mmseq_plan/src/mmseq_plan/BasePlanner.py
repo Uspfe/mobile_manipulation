@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-
+import copy
 import numpy as np
 import threading
 import rospy
@@ -42,8 +42,6 @@ class BaseSingleWaypoint(Planner):
         self.finished = False
         self.py_logger.info(self.name + " planner reset.")
 
-    def updateRobotStates(self, robot_states):
-        self.robot_states = robot_states
 
     @staticmethod
     def getDefaultParams():
@@ -118,9 +116,6 @@ class BasePosTrajectoryCircle(TrajectoryPlanner):
                 self.finished = True
                 self.py_logger.info(self.name + " Planner Finished")
         return self.finished
-    
-    def updateRobotStates(self, robot_states):
-        self.robot_states = robot_states
 
     def reset(self):
         self.finished = False
@@ -190,9 +185,6 @@ class BasePosTrajectoryLine(TrajectoryPlanner):
         self.finished = False
         self.start_time = 0
         self.py_logger.info(self.name + " planner reset.")
-
-    def updateRobotStates(self, robot_states):
-        self.robot_states = robot_states
 
     @staticmethod
     def getDefaultParams():
@@ -310,9 +302,6 @@ class BasePoseTrajectoryLine(TrajectoryPlanner):
         self.start_time = 0
         self.py_logger.info(self.name + " planner reset.")
 
-    def updateRobotStates(self, robot_states):
-        self.robot_states = robot_states
-
     @staticmethod
     def getDefaultParams():
         config = {}
@@ -381,9 +370,6 @@ class BasePosTrajectorySqaureWave(TrajectoryPlanner):
 
         return config
     
-    def updateRobotStates(self, robot_states):
-        self.robot_states = robot_states 
-    
 class ROSTrajectoryPlanner(TrajectoryPlanner):
     def __init__(self, config):
         super().__init__(name=config["name"],
@@ -409,6 +395,7 @@ class ROSTrajectoryPlanner(TrajectoryPlanner):
         self.dt = 0.01
         self.traj_length = int(self.ref_traj_duration / self.dt)
         self.plan = None
+        self.lock = threading.Lock()
 
         self.path_sub = rospy.Subscriber("/planned_global_path", Path, self._path_callback)
 
@@ -469,8 +456,11 @@ class ROSTrajectoryPlanner(TrajectoryPlanner):
         path = np.array([[pose.pose.position.x, pose.pose.position.y] for pose in msg.poses]).reshape(-1, 2)
         heading = np.array([np.arctan2(2.0 * (pose.pose.orientation.w * pose.pose.orientation.z), 1.0 - 2.0 * (pose.pose.orientation.z * pose.pose.orientation.z)) for pose in msg.poses]) 
 
-        self.plan = self._generatePlan(time, path, heading)
+        plan = self._generatePlan(time, path, heading)
 
+        self.lock.acquire()
+        self.plan = copy.deepcopy(plan)
+        self.lock.release()
         self.plan_available = True
 
 
@@ -485,16 +475,20 @@ class ROSTrajectoryPlanner(TrajectoryPlanner):
         # search for the closest point on the path
         min_dist = np.inf
         min_idx = 0
-        for i in range(len(self.plan['p'])):
-            dist = np.linalg.norm(base_curr_pos - self.plan['p'][i][:2])
+        self.lock.acquire()
+        plan = copy.deepcopy(self.plan)
+        self.lock.release()
+
+        for i in range(len(plan['p'])):
+            dist = np.linalg.norm(base_curr_pos - plan['p'][i][:2])
             if dist < min_dist:
                 min_dist = dist
                 min_idx = i
 
-        s0 = self.plan['s'][min_idx]
+        s0 = plan['s'][min_idx]
         s = s0 + np.arange(num_pts) * dt * self.cruise_speed
-        pos = [np.interp(s, self.plan['s'], self.plan['p'][:,i]) for i in range(3)]
-        vel = [np.interp(s, self.plan['s'], self.plan['v'][:,i]) for i in range(3)]
+        pos = [np.interp(s, plan['s'], plan['p'][:,i]) for i in range(3)]
+        vel = [np.interp(s, plan['s'], plan['v'][:,i]) for i in range(3)]
 
         pos = np.array(pos).T
         vel = np.array(vel).T
@@ -525,9 +519,6 @@ class ROSTrajectoryPlanner(TrajectoryPlanner):
         if np.linalg.norm(base_curr_pos - self.plan['p'][-1]) < self.tracking_err_tol:
             self.finished = True
         return self.finished
-    
-    def updateRobotStates(self, robot_states):
-        self.robot_states = robot_states
 
     def ready(self):
         return self.plan_available
