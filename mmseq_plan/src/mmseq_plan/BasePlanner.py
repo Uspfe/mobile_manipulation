@@ -441,22 +441,41 @@ class ROSTrajectoryPlanner(TrajectoryPlanner):
         if self.robot_states is not None: # smooth the heading transition
             # Calculate actual headings by capping yaw change per time step
             current_yaw = self.robot_states[0][2]
+            current_yaw_speed = self.robot_states[1][2]
             for i in range(self.traj_length-1):
                 yaw_diff = wrap_pi_scalar(new_desired_headings[i] - current_yaw)
                 max_yaw_change = self.yaw_speed * self.dt
 
-                if abs(yaw_diff) > max_yaw_change:
-                    yaw_change = np.sign(yaw_diff) * max_yaw_change
-                else:
-                    yaw_change = yaw_diff
 
-                current_yaw += yaw_change
+                # Compute the desired yaw speed
+                desired_yaw_speed = yaw_diff / self.dt
+                
+                # Limit the yaw speed to the maximum allowed yaw speed
+                if abs(desired_yaw_speed) > self.yaw_speed:
+                    desired_yaw_speed = np.sign(desired_yaw_speed) * self.yaw_speed
+        
+
+                # Compute the required yaw acceleration to reach the desired yaw speed
+                yaw_acc = (desired_yaw_speed - current_yaw_speed) / self.dt
+        
+
+                # Limit the yaw acceleration to the maximum allowed angular acceleration
+                if abs(yaw_acc) > self.yaw_accel:
+                    yaw_acc = np.sign(yaw_acc) * self.yaw_accel
+
+                current_yaw_speed += yaw_acc * self.dt
+
+                # Limit the yaw speed again (in case acceleration limit was applied)
+                if abs(current_yaw_speed) > self.yaw_speed:
+                    current_yaw_speed = np.sign(current_yaw_speed) * self.yaw_speed
+
+                current_yaw += current_yaw_speed * self.dt
                 current_yaw = wrap_pi_scalar(current_yaw)  # Keep heading in [-pi, pi]
                 new_desired_headings[i] = current_yaw
 
                 velocities[i,0] = (new_x[i+1] - new_x[i]) / self.dt
                 velocities[i,1] = (new_y[i+1] - new_y[i]) / self.dt
-                velocities[i,2] = yaw_change / self.dt
+                velocities[i,2] = current_yaw_speed
 
         poses = np.hstack((new_x, new_y, new_desired_headings))
 
