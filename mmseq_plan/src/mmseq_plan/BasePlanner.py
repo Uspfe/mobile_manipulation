@@ -454,7 +454,7 @@ class ROSTrajectoryPlanner(TrajectoryPlanner):
         poses = np.hstack((new_x, new_y, new_desired_headings))[:self.traj_length, :]
   
         for i in range(poses.shape[0] - 1):
-            velocities[i,0] = np.linalg.norm(poses[i+1,:] - poses[i, :]) / self.dt
+            velocities[i,0] = np.linalg.norm(poses[i+1,:2] - poses[i, :2]) / self.dt
 
         velocities = velocities[:self.traj_length, :]
 
