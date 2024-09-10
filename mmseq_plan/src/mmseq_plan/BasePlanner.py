@@ -401,6 +401,7 @@ class ROSTrajectoryPlanner(TrajectoryPlanner):
         self.finished = False
         self.started = False
         self.start_time = -1
+        self.plan_available = False
 
         self.cruise_speed = config["cruise_speed"]
         self.yaw_speed = config["yaw_speed"]
@@ -464,10 +465,12 @@ class ROSTrajectoryPlanner(TrajectoryPlanner):
 
         self.plan = self._generatePlan(time, path, heading)
 
+        self.plan_available = True
+
 
     def getTrackingPoint(self, t, robot_states):
-        #return self.getTrackingPointByStates(self, robot_states)
-        return self.getTrackingPointByTime(self, t)
+        # return self.getTrackingPointByStates(robot_states)
+        return self.getTrackingPointByTime(t)
 
     def getTrackingPointByTime(self, t):
         te = t - self.start_time
@@ -481,15 +484,15 @@ class ROSTrajectoryPlanner(TrajectoryPlanner):
         min_dist = np.inf
         min_idx = 0
         for i in range(len(self.plan['p'])):
-            dist = np.linalg.norm(base_curr_pos - self.plan['p'][i])
+            dist = np.linalg.norm(base_curr_pos - self.plan['p'][i][:2])
             if dist < min_dist:
                 min_dist = dist
                 min_idx = i
 
-        return self.plan['p'][min_idx], self.plan['v'][min_idx]
+        return self.plan['p'][min_idx], None
 
     def checkFinished(self, t, states):
-        base_curr_pos = states[0][:2]
+        base_curr_pos = states[0]
 
         if np.linalg.norm(base_curr_pos - self.plan['p'][-1]) < self.tracking_err_tol:
             self.finished = True
@@ -497,3 +500,6 @@ class ROSTrajectoryPlanner(TrajectoryPlanner):
     
     def updateRobotStates(self, robot_states):
         self.robot_states = robot_states
+
+    def ready(self):
+        return self.plan_available

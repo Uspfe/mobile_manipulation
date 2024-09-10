@@ -57,9 +57,28 @@ class Planner(ABC):
         """
         self.robot_states = robot_states
 
+    def ready(self):
+        """_summary_
+
+        :return: true if the planner is ready to be called getTrackingPoint
+        :rtype: boolean
+        """
+        return True
+
 class TrajectoryPlanner(Planner):
+    def __init__(self, name, type, ref_type, ref_data_type, frame_id):
+
+        super().__init__(name, type, ref_type, ref_data_type, frame_id)
 
     def _interpolate(self, t, plan):
         p,v = interpolate(t, plan)
 
         return p, v
+
+    def ready(self):
+        """_summary_
+
+        :return: true if the planner is ready to be called getTrackingPoint
+        :rtype: boolean
+        """
+        return True

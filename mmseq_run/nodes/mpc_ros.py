@@ -346,6 +346,20 @@ class ControllerROSNode:
         print("Controller received joint states. Proceed ... ")
         self.home = self.robot_interface.q
 
+        states = (self.robot_interface.q ,self.robot_interface.v)
+        print("robot coord: {}".format(self.robot_interface.q))
+        task_manager_class = getattr(TaskManager, self.planner_config["sot_type"])
+        self.sot = task_manager_class(self.planner_config.copy())
+        print("-----Checking Planners----- ")
+        for planner in self.sot.planners:
+            while not planner.ready():
+                self.robot_interface.brake()
+                rate.sleep()
+
+                if rospy.is_shutdown():
+                    return
+            print("planner {} target:{}".format(planner.name, planner.getTrackingPoint(0, states)))
+
         if self.ctrl_config["sdf_collision_avoidance_enabled"]:
             print("-----Checking Map Interface----- ")
             while not self.map_interface.ready():
@@ -370,8 +384,6 @@ class ControllerROSNode:
         else:
             print("Controller received vicon tool " + self.ctrl_config["robot"]["tool_vicon_name"])
 
-        task_manager_class = getattr(TaskManager, self.planner_config["sot_type"])
-        self.sot = task_manager_class(self.planner_config.copy())
 
         print("-----Checking Vicon Marker Swarm Estimation messages----- ")
         use_vicon_marker_swarm_data = True
@@ -401,10 +413,6 @@ class ControllerROSNode:
             self.planner_coord_transform(self.robot_interface.q, ee_pos, self.sot.planners)
 
         rospy.Timer(rospy.Duration(0, int(1e8)), self._publish_planner_data)
-        states = (self.robot_interface.q ,self.robot_interface.v)
-        print("robot coord: {}".format(self.robot_interface.q))
-        for planner in self.sot.planners:
-            print("planner target:{}".format(planner.getTrackingPoint(0, states)))
 
         if self.use_joy:
             print("----- Press Square(Ps4) to start -----")
