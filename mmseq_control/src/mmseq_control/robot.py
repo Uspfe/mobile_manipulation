@@ -168,7 +168,10 @@ class PinocchioInterface:
         data = self.model.createData()
         geom_data = pin.GeometryData(self.collision_model)
         pin.computeDistances(self.model, data, self.collision_model, geom_data, q)
-        return np.array([result.min_distance for result in geom_data.distanceResults])
+        ds = np.array([result.min_distance for result in geom_data.distanceResults])
+        ps = [[cp.first, cp.second] for cp in self.collision_model.collisionPairs]
+        names = [[self.collision_model.geometryObjects[p[0]].name,self.collision_model.geometryObjects[p[1]].name] for p in ps]
+        return ds,names
 
 class CasadiModelInterface:
     def __init__(self, config):
@@ -189,15 +192,16 @@ class CasadiModelInterface:
         self.sdf_map = sdf_class(config)  
         print(f"Using {sdf_type} Map Model")
         
-        if config["sdf_type"][-3:] == "New":
-            self.sdf_map_SymMdl = self.sdf_map.sdf_fcn
-        else:
-            self.sdf_map_SymMdl = CBF('sdf', self.sdf_map, self.sdf_map.dim)
+        self.sdf_map_SymMdl = self.sdf_map.sdf_fcn
 
         self.collision_pairs = {"self": [],
                                 "static_obstacles": {},
                                 "dynamic_obstacles": {}}
+        self.collision_pairs_detailed = {"self": [],
+                                        "static_obstacles": {},
+                                        "dynamic_obstacles": {}}
         self._setupCollisionPair()
+        self._setupCollisionPairDetailed()
 
         self.signedDistanceSymMdls = {}             # keyed by collision pair (tuple)
         self.signedDistanceSymMdlsPerGroup = {"static_obstacles": {}, "dynamic_obstacles": {}}
@@ -206,6 +210,7 @@ class CasadiModelInterface:
         self._setupSelfCollisionSymMdl()
         self._setupStaticObstaclesCollisionSymMdl()
         self._setupSDFCollisionSymMdl()
+        self._setupPinocchioCollisionMdl()
 
 
     def _addCollisionPairFromTwoGroups(self, group1, group2):
@@ -227,38 +232,43 @@ class CasadiModelInterface:
         # base
         self.collision_pairs["self"] = [["ur10_arm_forearm_collision_link", "base_collision_link"]]
         self.collision_pairs["self"] += self._addCollisionPairFromTwoGroups(self.robot.collision_link_names["base"],
+    def _setupCollisionPairDetailed(self):
+        # base
+        self.collision_pairs_detailed["self"] = [["ur10_arm_forearm_collision_link", "base_collision_link"]]
+        self.collision_pairs_detailed["self"] += self._addCollisionPairFromTwoGroups(self.robot.collision_link_names["base"],
                                                                             self.robot.collision_link_names["wrist"] +
                                                                             self.robot.collision_link_names["tool"])
         # upper arm
-        self.collision_pairs["self"] += self._addCollisionPairFromTwoGroups(self.robot.collision_link_names["upper_arm"][:2],
+        self.collision_pairs_detailed["self"] += self._addCollisionPairFromTwoGroups(self.robot.collision_link_names["upper_arm"],
                                                                             self.robot.collision_link_names["wrist"] +
                                                                             self.robot.collision_link_names["tool"])
         # forearm
-        self.collision_pairs["self"] += self._addCollisionPairFromTwoGroups(self.robot.collision_link_names["forearm"][:2],
+        self.collision_pairs_detailed["self"] += self._addCollisionPairFromTwoGroups(self.robot.collision_link_names["forearm"],
                                                                             self.robot.collision_link_names["tool"] +
-                                                                            self.robot.collision_link_names["rack"])
+                                                                            ["rack_collision_link"])
+
+        self.collision_pairs_detailed["self"] += self._addCollisionPairFromTwoGroups(self.robot.collision_link_names["tool"]+
+                                                                                     self.robot.collision_link_names["wrist"],
+                                                                            ["rack_collision_link"])
 
         for obstacle in self.scene.collision_link_names.get("static_obstacles", []):
             if obstacle == "ground":
-                self.collision_pairs["static_obstacles"][obstacle] = self._addCollisionPairFromTwoGroups([obstacle],
-                                                                                                         self.robot.collision_link_names[
-                                                                                                             "wrist"] +
-                                                                                                         self.robot.collision_link_names[
-                                                                                                             "forearm"] +
-                                                                                                         self.robot.collision_link_names[
-                                                                                                             "upper_arm"])
+                self.collision_pairs_detailed["static_obstacles"][obstacle] = self._addCollisionPairFromTwoGroups([obstacle],
+                                                                                                         self.robot.collision_link_names["wrist"] +
+                                                                                                         self.robot.collision_link_names["tool"] +
+                                                                                                         self.robot.collision_link_names["forearm"])
             else:
-                self.collision_pairs["static_obstacles"][obstacle] = self._addCollisionPairFromTwoGroups([obstacle],
+                self.collision_pairs_detailed["static_obstacles"][obstacle] = self._addCollisionPairFromTwoGroups([obstacle],
                                                                             self.robot.collision_link_names["base"] +
                                                                             self.robot.collision_link_names["wrist"] +
                                                                             self.robot.collision_link_names["forearm"] +
                                                                             self.robot.collision_link_names["upper_arm"])
         
         if self.sdf_map.dim == 2:
-            self.collision_pairs["sdf"] = self._addCollisionPairFromTwoGroups(["map"],
+            self.collision_pairs_detailed["sdf"] = self._addCollisionPairFromTwoGroups(["map"],
                                                                               self.robot.collision_link_names["base"])
         elif self.sdf_map.dim == 3:
-            self.collision_pairs["sdf"] = self._addCollisionPairFromTwoGroups(["map"],
+            self.collision_pairs_detailed["sdf"] = self._addCollisionPairFromTwoGroups(["map"],
                                                                               self.robot.collision_link_names["base"]+
                                                                               self.robot.collision_link_names["wrist"] +
                                                                               self.robot.collision_link_names["forearm"] +
@@ -326,6 +336,12 @@ class CasadiModelInterface:
         
         self.signedDistanceSymMdlsPerGroup["sdf"] = cs.Function("sd_sdf", [self.robot.q_sym] + sdf_map_params_sym, [cs.vertcat(*sd_syms)],
                                                                           ["q"]+sdf_map_params_sym_name, ["sd(q)"])
+
+    def _setupPinocchioCollisionMdl(self):
+        self.pinocchio_interface.removeAllCollisionPairs()
+        self.pinocchio_interface.addCollisionPairs(self.collision_pairs_detailed["self"])
+        for obstacle, pairs in self.collision_pairs_detailed["static_obstacles"].items():
+            self.pinocchio_interface.addCollisionPairs(pairs)
 
     def getSignedDistanceSymMdls(self, name):
         """ get signed distance function by collision link name
@@ -907,6 +923,20 @@ def test_casadi_interface(args):
         self_distance_mdl = sd_fcn(np.hstack((np.zeros(3), q)))
         self_distance_pin = sym_model.pinocchio_interface.computeDistances(q)
         print("Obstacle {}, Distance Diff: ".format(obstacle, self_distance_mdl - self_distance_pin))
+
+def test_casadi_interface_pinocchio_collision_model(args):
+    # load configuration
+    config = parsing.load_config(args.config)
+    sim_config = config["simulation"]
+    ctrl_config = config["controller"]
+    sym_model = CasadiModelInterface(ctrl_config)
+    pin_model = sym_model.pinocchio_interface
+    q = pin.randomConfiguration(pin_model.model)
+    self_distance, pairs = sym_model.pinocchio_interface.computeDistances(q)
+    for k in range(len(self_distance)):
+        print("d {}, p{}".format(self_distance[k], pairs[k]))
+    pin_model.visualize(q)
+    input()
 
 
 def plot_signed_distance_gradient(c_cylinder, r_sphere, r_cylinder, x_range, y_range, grid_size):
