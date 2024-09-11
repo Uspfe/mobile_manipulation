@@ -26,12 +26,24 @@ from mobile_manipulation_central import ros_utils
 
 VICON_TOOL_NAME = "ThingWoodLumber"
 THING_BASE_NAME = "ThingBase_3"
+
+SCREEN_WIDTH_PX = 2560  # Replace with your screen width in pixels
+SCREEN_HEIGHT_PX = 1600  # Replace with your screen height in pixels
+DPI = 96  # Typical screen DPI (dots per inch). Adjust if needed.
+
+# Calculate the figure size in inches
+FULL_SCREEN_WIDTH_INCH = SCREEN_WIDTH_PX / DPI
+FULL_SCREEN_HEIGHT_INCH = SCREEN_HEIGHT_PX / DPI
+
 def multipage(filename, figs=None, dpi=200):
     pp = PdfPages(filename)
     if figs is None:
         figs = [plt.figure(n) for n in plt.get_fignums()]
     for fig in figs:
-        fig.savefig(pp, format='pdf')
+        fig.set_figheight(FULL_SCREEN_HEIGHT_INCH)
+        fig.set_figwidth(FULL_SCREEN_WIDTH_INCH)
+
+        fig.savefig(pp, format='pdf', dpi=96)
     pp.close()
 
 def construct_logger(path_to_folder):
@@ -837,6 +849,40 @@ class DataPlotter:
             ax.set_ylabel("Sd(q) (m)")
             ax.legend()
 
+    def plot_collision_detailed(self):
+        nq = int(self.data["nq"])
+        ts = self.data["ts"]
+        qs = self.data["xs"][:, 3:nq]
+        names = []
+        params = {}
+        sds = []
+        for q in qs:
+            sd, ns = self.model_interface.pinocchio_interface.computeDistances(q)
+            sds.append(sd)
+        
+        sds = np.array(sds)
+
+        data_per_fig = 8  # Number of datasets per figure
+        n_total = len(ns)  # Total number of datasets
+        n_figs = (n_total + data_per_fig - 1) // data_per_fig  # Number of figures needed
+
+        # Plot multiple figures
+        for fig_idx in range(n_figs):
+            fig, ax = plt.subplots()
+            
+            # Determine the range of data to plot in this figure
+            start_idx = fig_idx * data_per_fig
+            end_idx = min((fig_idx + 1) * data_per_fig, n_total)
+            
+            for i in range(start_idx, end_idx):
+                ax.plot(ts, sds[:, i], label=ns[i])
+            ax.plot(ts, np.zeros_like(sds[:, 0]), 'r--')
+            ax.set_title(f"Collision Distance (Pinocchio) - Figure {fig_idx + 1}")
+            ax.set_xlabel("Time (s)")
+            ax.set_ylabel("Sd(q) (m)")
+            ax.grid('on')
+            ax.legend()
+
 
     def plot_cmds(self, axes=None, index=0, legend=None):
         ts = self.data["ts"]
@@ -1521,6 +1567,7 @@ class DataPlotter:
         # self.plot_cmds_normalized()
         self.plot_du()
         self.plot_collision()
+        self.plot_collision_detailed()
 
     def plot_tracking(self):
         self.plot_tracking_err()
@@ -1726,22 +1773,12 @@ class DataPlotter:
         y_lim = [np.min(param_map["y_grid_sdf"]), np.max(param_map["y_grid_sdf"])]
         z_lim = [np.min(param_map["z_grid_sdf"]), np.max(param_map["z_grid_sdf"])]
 
-        sdf_map.vis(x_lim=x_lim,
-                    y_lim=y_lim,
-                    z_lim=[0.1, 0.1],
-                    block=False)
-        sdf_map.vis(x_lim=x_lim,
-            y_lim=y_lim,
-            z_lim=[0.2, 0.2],
-            block=False)
-        sdf_map.vis(x_lim=x_lim,
-            y_lim=y_lim,
-            z_lim=[0.3, 0.3],
-            block=False)
-        sdf_map.vis(x_lim=x_lim,
-            y_lim=y_lim,
-            z_lim=[0.4, 0.4],
-            block=False)
+        z_lims = np.linspace(z_lim[0], z_lim[1], int((z_lim[1] - z_lim[0])/0.1))
+        for z in z_lims:
+            sdf_map.vis(x_lim=x_lim,
+                        y_lim=y_lim,
+                        z_lim=[z, z],
+                        block=False)
 
 
     def check_sdf(self):
