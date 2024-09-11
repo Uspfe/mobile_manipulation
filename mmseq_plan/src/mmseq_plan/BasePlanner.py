@@ -390,6 +390,7 @@ class ROSTrajectoryPlanner(TrajectoryPlanner):
 
         self.cruise_speed = config["cruise_speed"]
         self.yaw_speed = config["yaw_speed"]
+        self.yaw_accel = config["yaw_accel"]
 
         self.ref_traj_duration = config["ref_traj_duration"]
         self.dt = 0.01
@@ -397,7 +398,7 @@ class ROSTrajectoryPlanner(TrajectoryPlanner):
         self.plan = None
         self.lock = threading.Lock()
 
-        self.path_sub = rospy.Subscriber("/planned_global_path", Path, self._path_callback)
+        self.path_sub = rospy.Subscriber("/planned_global_path", Path, self._path_callback, queue_size=1)
 
     def _generatePlan(self, start_time, raw_points, raw_headings):
         # given a set of path points and heading, generate a plan based on cruise speed
@@ -413,39 +414,68 @@ class ROSTrajectoryPlanner(TrajectoryPlanner):
         # Resample the path based on constant velocity and dt
         time = np.arange(0, total_distance / self.cruise_speed, self.dt)
 
-        traj_length = min(self.traj_length, len(time))
-        time = time[:traj_length]
-        points = raw_points[:traj_length, :]
-        headings = raw_headings[:traj_length]
+        if len(time) < self.traj_length:
+            # pad time by extrapolating with self.dt from last time
+            time = np.append(time, np.arange(time[-1] + self.dt, self.ref_traj_duration, self.dt))
+            # also pad raw_points and raw_headings with the last value
+            raw_points = np.vstack((raw_points, np.tile(raw_points[-1], (self.traj_length - len(raw_points), 1))))
+            raw_headings = np.append(raw_headings, np.tile(raw_headings[-1], (self.traj_length - len(raw_headings), 1)))
+            # pad distances with 0
+            distances = np.append(distances, np.zeros(self.traj_length - len(distances)))
+            # pad cumulative_distances with the last value
+            cumulative_distances = np.append(cumulative_distances, np.tile(cumulative_distances[-1], (self.traj_length - len(cumulative_distances))))
 
-        new_x = np.interp(time * self.cruise_speed, cumulative_distances, points[:traj_length, 0]).reshape(-1, 1)
-        new_y = np.interp(time * self.cruise_speed, cumulative_distances, points[:traj_length, 1]).reshape(-1, 1)
+        time = time[:self.traj_length]
+        points = raw_points[:self.traj_length, :]
+        headings = raw_headings[:self.traj_length]
 
-        print('trajectory length: ', traj_length)
+        new_x = np.interp(time * self.cruise_speed, cumulative_distances, points[:self.traj_length, 0]).reshape(-1, 1)
+        new_y = np.interp(time * self.cruise_speed, cumulative_distances, points[:self.traj_length, 1]).reshape(-1, 1)
+
+        print('trajectory length: ', len(time))
 
         # Interpolate the headings based on the new time samples
         new_desired_headings = np.interp(time * self.cruise_speed, cumulative_distances, headings).reshape(-1, 1)
-        velocities = np.zeros((traj_length, 3))
+        velocities = np.zeros((self.traj_length, 3))
 
         if self.robot_states is not None: # smooth the heading transition
             # Calculate actual headings by capping yaw change per time step
             current_yaw = self.robot_states[0][2]
-            for i in range(traj_length-1):
+            current_yaw_speed = self.robot_states[1][2]
+            for i in range(self.traj_length-1):
                 yaw_diff = wrap_pi_scalar(new_desired_headings[i] - current_yaw)
                 max_yaw_change = self.yaw_speed * self.dt
 
-                if abs(yaw_diff) > max_yaw_change:
-                    yaw_change = np.sign(yaw_diff) * max_yaw_change
-                else:
-                    yaw_change = yaw_diff
 
-                current_yaw += yaw_change
+                # Compute the desired yaw speed
+                desired_yaw_speed = yaw_diff / self.dt
+                
+                # Limit the yaw speed to the maximum allowed yaw speed
+                if abs(desired_yaw_speed) > self.yaw_speed:
+                    desired_yaw_speed = np.sign(desired_yaw_speed) * self.yaw_speed
+        
+
+                # Compute the required yaw acceleration to reach the desired yaw speed
+                yaw_acc = (desired_yaw_speed - current_yaw_speed) / self.dt
+        
+
+                # Limit the yaw acceleration to the maximum allowed angular acceleration
+                if abs(yaw_acc) > self.yaw_accel:
+                    yaw_acc = np.sign(yaw_acc) * self.yaw_accel
+
+                current_yaw_speed += yaw_acc * self.dt
+
+                # Limit the yaw speed again (in case acceleration limit was applied)
+                if abs(current_yaw_speed) > self.yaw_speed:
+                    current_yaw_speed = np.sign(current_yaw_speed) * self.yaw_speed
+
+                current_yaw += current_yaw_speed * self.dt
                 current_yaw = wrap_pi_scalar(current_yaw)  # Keep heading in [-pi, pi]
                 new_desired_headings[i] = current_yaw
 
                 velocities[i,0] = (new_x[i+1] - new_x[i]) / self.dt
                 velocities[i,1] = (new_y[i+1] - new_y[i]) / self.dt
-                velocities[i,2] = yaw_change / self.dt
+                velocities[i,2] = current_yaw_speed
 
         poses = np.hstack((new_x, new_y, new_desired_headings))
 
