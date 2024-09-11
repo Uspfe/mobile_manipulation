@@ -460,7 +460,8 @@ class STMPC(MPC):
             else:
                 constraints.append(self.collisionCsts[name])
         # constraints = [cst for cst in self.collisionCsts.values()]
-        self.ocp, self.ocp_solver, self.p_struct = self._construct(costs, constraints, num_terminal_cost)
+        name = self.params["acados"].get("name", name)
+        self.ocp, self.ocp_solver, self.p_struct = self._construct(costs, constraints, num_terminal_cost, name)
 
         self.cost = costs
         self.constraints = constraints + [self.controlCst, self.stateCst]
