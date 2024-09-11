@@ -232,6 +232,38 @@ class CasadiModelInterface:
         # base
         self.collision_pairs["self"] = [["ur10_arm_forearm_collision_link", "base_collision_link"]]
         self.collision_pairs["self"] += self._addCollisionPairFromTwoGroups(self.robot.collision_link_names["base"],
+                                                                            self.robot.collision_link_names["wrist"] +
+                                                                            self.robot.collision_link_names["tool"])
+        # upper arm
+        self.collision_pairs["self"] += self._addCollisionPairFromTwoGroups(self.robot.collision_link_names["upper_arm"][:2],
+                                                                            self.robot.collision_link_names["wrist"] +
+                                                                            self.robot.collision_link_names["tool"])
+        # forearm
+        self.collision_pairs["self"] += self._addCollisionPairFromTwoGroups(self.robot.collision_link_names["forearm"][:2],
+                                                                            self.robot.collision_link_names["tool"] +
+                                                                            self.robot.collision_link_names["rack"])
+
+        for obstacle in self.scene.collision_link_names.get("static_obstacles", []):
+            if obstacle == "ground":
+                self.collision_pairs["static_obstacles"][obstacle] = self._addCollisionPairFromTwoGroups([obstacle],
+                                                                                                         self.robot.collision_link_names["tool"])
+            else:
+                self.collision_pairs["static_obstacles"][obstacle] = self._addCollisionPairFromTwoGroups([obstacle],
+                                                                            self.robot.collision_link_names["base"] +
+                                                                            self.robot.collision_link_names["wrist"] +
+                                                                            self.robot.collision_link_names["forearm"] +
+                                                                            self.robot.collision_link_names["upper_arm"])
+        
+        if self.sdf_map.dim == 2:
+            self.collision_pairs["sdf"] = self._addCollisionPairFromTwoGroups(["map"],
+                                                                              self.robot.collision_link_names["base"])
+        elif self.sdf_map.dim == 3:
+            self.collision_pairs["sdf"] = self._addCollisionPairFromTwoGroups(["map"],
+                                                                              self.robot.collision_link_names["base"]+
+                                                                              self.robot.collision_link_names["wrist"] +
+                                                                              self.robot.collision_link_names["forearm"] +
+                                                                              self.robot.collision_link_names["upper_arm"] + 
+                                                                              self.robot.collision_link_names["tool"])
     def _setupCollisionPairDetailed(self):
         # base
         self.collision_pairs_detailed["self"] = [["ur10_arm_forearm_collision_link", "base_collision_link"]]
@@ -1013,12 +1045,14 @@ if __name__ == "__main__":
         help="Record video. Optionally specify prefix for video directory.",
     )
     args = parser.parse_args()
+    args.config = "/home/tracy/Projects/mm_slam/mm_ws/src/mm_sequential_tasks/mmseq_run/config/simple_experiment.yaml"
+
     # test_robot_mdl(args)
     # test_obstacle_mdl(args)
     # test_pinocchio_interface(args)
-    args.config = "/home/tracy/Projects/mm_slam/mm_ws/src/mm_sequential_tasks/mmseq_run/config/simple_experiment.yaml"
+    test_casadi_interface_pinocchio_collision_model(args)
     # test_casadi_interface(args)
-    test_signed_distance_sphere_cylinder()
+    # test_signed_distance_sphere_cylinder()
     # check_maximum_reach(args)
 
             
