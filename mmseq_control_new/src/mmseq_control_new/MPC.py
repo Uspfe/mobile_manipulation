@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 from abc import ABC, abstractmethod
 import time
 import logging
@@ -416,9 +418,20 @@ class MPC():
                 self.py_logger.warning(f"{key} not found in Acados solver options. Parameter is ignored.")
                 
         # Construct AcadosOCPSolver
-        ocp_solver = AcadosOcpSolver(ocp, 
-                                     json_file = str(self.output_dir/f"acados_ocp_{name}.json"),
-                                     build=True)
+        json_file_name = str(self.output_dir/f"acados_ocp_{name}.json")
+        if self.params["acados"]["cython"]["enabled"]:
+            if self.params["acados"]["cython"]["action"] == "generate":
+                AcadosOcpSolver.generate(ocp, json_file=json_file_name)
+                AcadosOcpSolver.build(ocp.code_export_directory, with_cython=True)
+                ocp_solver = AcadosOcpSolver.create_cython_solver(json_file_name)
+            elif self.params["acados"]["cython"]["action"] == "load":
+                # ctypes
+                ## Note: skip generate and build assuming this is done before (in cython run)
+                ocp_solver = AcadosOcpSolver(ocp, json_file=json_file_name, build=False, generate=False)
+        else: 
+            ocp_solver = AcadosOcpSolver(ocp, 
+                                        json_file = json_file_name,
+                                        build=True)
 
         return ocp, ocp_solver, p_struct
 

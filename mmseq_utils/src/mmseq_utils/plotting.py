@@ -73,6 +73,9 @@ class DataPlotter:
             if control_class is None:
                 control_class = getattr(HTMPC, config["controller"]["type"], None)
 
+
+            config["controller"]["acados"]["cython"]["enabled"] = True
+            config["controller"]["acados"]["cython"]["action"] = "load"
             self.controller = control_class(config["controller"])
             self.model_interface = self.controller.model_interface
 

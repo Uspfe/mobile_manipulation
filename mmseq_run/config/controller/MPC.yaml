@@ -100,6 +100,9 @@ controller:
 
   # ACADOS solver option
   acados:
+    cython:
+      enabled: False
+      action: "load"      # load or generate
     raise_exception_on_failure: False
     use_custom_hess: True
     use_terminal_cost: False
