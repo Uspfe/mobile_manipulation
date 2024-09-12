@@ -2,7 +2,7 @@ controller:
   # local map params
   map:
     default_val: 1.8
-    map_coverage: [4, 4, 0.5]     # need to be the same as isaac.launch or mm.launch in slam_ws
+    map_coverage: [4, 4, 1.4]     # need to be the same as isaac.launch or mm.launch in slam_ws
     voxel_size: 0.2
     
     filter_enabled: True

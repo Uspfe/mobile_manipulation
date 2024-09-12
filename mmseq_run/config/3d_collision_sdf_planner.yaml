@@ -61,5 +61,5 @@ include:
     path: "config/map/SDF3D.yaml"
 
 logging:
-  log_dir: "$MOBILE_MANIPULATION_CENTRAL_BAG_DIR/3d_collision/Sep9"
+  log_dir: "$MOBILE_MANIPULATION_CENTRAL_BAG_DIR/3d_collision/"
   log_level: 10 # 0 - not set, 10 - debug, 20 - info

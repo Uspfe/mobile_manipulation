@@ -5,7 +5,7 @@
   <arg name="config"/>
   <arg name="ctrl_config" default="default" doc="alternative controller config overwriting the one in config"/>
   <arg name="planner_config" default="default" doc="alternative controller config overwriting the one in config"/>
-  <arg name="use_mpc" default="false" doc="use mpc as controller"/>
+  <arg name="use_mpc" default="true" doc="use mpc as controller"/>
   <arg name="logging_sub_folder"  default="default" doc="save data to a sub folder if set"/>
 
   <param name="/use_sim_time" value="False" type="bool"/>
