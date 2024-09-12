@@ -134,7 +134,7 @@
     <child link="ur10_arm_wrist1_collision_link"/>
   </joint>
 
-  <xacro:collision_link_sphere name="ur10_arm_wrist3_collision_link" radius="0.15"/>
+  <xacro:collision_link_sphere name="ur10_arm_wrist3_collision_link" radius="0.25"/>
   <joint name="ur10_arm_wrist3_collision_joint" type="fixed">
     <origin rpy="0 0 0" xyz="0 0 0"/>
     <parent link="ur10_arm_wrist_3_link"/>
@@ -142,7 +142,7 @@
   </joint>
 
   <!-- Gripped Object -->
-  <xacro:collision_link_sphere name="gripped_object_collision_link" radius="0.26"/>
+  <xacro:collision_link_sphere name="gripped_object_collision_link" radius="0.3"/>
   <joint name="gripped_object_collision_joint" type="fixed">
     <origin rpy="0 0 0" xyz="0 0 0.0"/>
     <parent link="gripped_object"/>
