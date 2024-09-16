@@ -60,11 +60,13 @@ class MPC():
         self.collisionCsts = {}
         for name in self.collision_link_names:
             sd_fcn = self.model_interface.getSignedDistanceSymMdls(name)
-            collision_cst_type = getattr(MPCConstraints, self.params["collision_constraint_type"])
             if name in self.model_interface.scene.collision_link_names["static_obstacles"]:
+                collision_cst_type = getattr(MPCConstraints, self.params["collision_constraint_type"]["static_obstacles"])
                 sd_cst = collision_cst_type(self.robot, sd_fcn,
                                             self.params["collision_safety_margin"]["static_obstacles"], name)
             else:
+                collision_cst_type = getattr(MPCConstraints, self.params["collision_constraint_type"][name])
+
                 sd_cst = collision_cst_type(self.robot, sd_fcn,
                                             self.params["collision_safety_margin"][name], name)
             self.collisionCsts[name] = sd_cst
@@ -571,11 +573,19 @@ class STMPC(MPC):
                     curr_p_map["value_sdf"] = map_params[2]
             t2 = time.perf_counter()
             self.log["time_ocp_set_params_map"] += t2 - t1
+            for name in self.collision_link_names:
+                cbf_cst_type = False
 
-            if self.params["collision_constraint_type"] == "SignedDistanceConstraintCBF":
-                for name in self.collision_link_names:
+                if name in self.model_interface.scene.collision_link_names["static_obstacles"]:
+                    if self.params["collision_constraint_type"]["static_obstacles"] == "SignedDistanceConstraintCBF":
+                        cbf_cst_type = True
+                else:
+                    if self.params["collision_constraint_type"][name] == "SignedDistanceConstraintCBF":
+                        cbf_cst_type = True
+
+                if cbf_cst_type:
                     p_name = "_".join(["gamma", name])
-                    curr_p_map[p_name] = self.params["collision_cbf_gamma"]
+                    curr_p_map[p_name] = self.params["collision_cbf_gamma"][name]
 
             # set initial guess
             t1 = time.perf_counter()
