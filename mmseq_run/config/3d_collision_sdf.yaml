@@ -6,7 +6,7 @@ planner:
     planner_type: ROSTrajectoryPlanner
     cruise_speed: 0.35
     yaw_speed: 0.5
-    yaw_accel: 0.9
+    yaw_accel: 100
     tracking_err_tol: 0.4
     ref_traj_duration: 1.5
   - frame_id: base
@@ -15,6 +15,7 @@ planner:
     target_pos: [1.458, 0.17, 0.7] # in base frame
     hold_period: 4
     tracking_err_tol: 0.4
+    
 simulation:
   duration: 100
   robot:
@@ -28,16 +29,14 @@ controller:
   static_obstacles_collision_avoidance_enabled: True
   base_pose_tracking_enabled: True
 
-  collision_constraint_type: "SignedDistanceConstraint" # SignedDistanceConstraint or SignedDistanceConstraintCBF 
+  collision_constraint_type: 
+    sdf: "SignedDistanceConstraintCBF" # SignedDistanceConstraint or SignedDistanceConstraintCBF 
   type: "STMPC"
-  collision_constraints_softend:
-    self: False
-    sdf: False
-    static_obstacles: False
-  collision_cbf_gamma: 0.9
+  collision_cbf_gamma:
+    sdf: 0.9
   
   acados:
-    name: MMCtrlSLAM
+    name: MMCtrlSLAM_FOREARM
     ocp_solver_options:
       nlp_solver_max_iter: 100
       qp_solver_warm_start: 2
