@@ -113,6 +113,7 @@ controller:
 
   # ACADOS solver option
   acados:
+    name: "MM"
     cython:
       enabled: True
       action: "load"      # load or generate
