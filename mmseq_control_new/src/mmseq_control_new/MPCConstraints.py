@@ -200,7 +200,7 @@ class SignedDistanceConstraintCBF(NonlinearConstraint):
         
         # self.g_eqn = -(h_grad_eqn @ robot_mdl.ssSymMdl["fmdl"](self.x_sym, self.u_sym) + self.p_dict["gamma"]*h_eqn)
         h_grad_eqn = cs.jacobian(h_eqn, self.x_sym)
-        self.g_eqn = -(h_grad_eqn[:, :nq] @ self.x_sym[nq:] + self.p_dict["gamma"]*h_eqn)
+        self.g_eqn = -(h_grad_eqn[:, :nq] @ self.x_sym[nq:] + self.p_dict["gamma"]*h_eqn)/5
 
         self.g_fcn = cs.Function("g_"+self.name+"_CBF", [self.x_sym, self.u_sym, self.p_sym], [self.g_eqn])
 

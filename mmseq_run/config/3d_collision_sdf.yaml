@@ -43,7 +43,7 @@ controller:
       nlp_solver_tol_stat: 5.0e-02
       nlp_solver_tol_eq: 1.0e-02
       nlp_solver_tol_ineq: 1.0e-02
-      nlp_solver_tol_comp: 1.0e-06
+      nlp_solver_tol_comp: 1.0e-04
 
 include:
   - package: "mmseq_run"
