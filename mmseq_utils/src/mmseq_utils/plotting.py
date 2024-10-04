@@ -721,18 +721,20 @@ class DataPlotter:
         return axes
 
 
-    def plot_ee_orientation(self, axes=None, index=0, legend=None):
+    def plot_ee_orientation_tracking(self, axes=None, index=0, legend=None):
         ts = self.data["ts"]
-        Q_we_ds = self.data["Q_we_ds"]
-        Q_wes = self.data["Q_wes"]
+        Q_we_ds = self.data.get("Q_we_ds", None)
+        Q_wes = self.data.get("Q_wes", None)
 
+        if Q_wes is None or Q_we_ds is None:
+            return
         if axes is None:
             axes = []
             f, axes = plt.subplots(1, 1, sharex=True)
 
         if legend is None:
             legend = self.data["name"]
-
+        
         axes.plot(ts, Q_we_ds[:, 0], label=legend + "$Q_{d,x}$", color="r", linestyle="--")
         axes.plot(ts, Q_we_ds[:, 1], label=legend + "$Q_{d,y}$", color="g", linestyle="--")
         axes.plot(ts, Q_we_ds[:, 2], label=legend + "$Q_{d,z}$", color="b", linestyle="--")
@@ -1584,6 +1586,7 @@ class DataPlotter:
         self.plot_task_violation()
 
         self.plot_ee_tracking()
+        self.plot_ee_orientation_tracking()
         self.plot_ee_linear_velocity_tracking()
         self.plot_base_tracking()
         self.plot_base_velocity_tracking()

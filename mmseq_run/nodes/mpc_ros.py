@@ -10,7 +10,7 @@ import sys
 import numpy as np
 import rospy
 import tf.transformations as tf
-from spatialmath.base import rotz
+from spatialmath.base import rotz, rpy2r, r2q
 from scipy.interpolate import interp1d
 from visualization_msgs.msg import Marker, MarkerArray
 from geometry_msgs.msg import Point, Transform, Twist, PoseStamped, Quaternion, PoseArray
@@ -596,9 +596,19 @@ class ControllerROSNode:
             r_bw_wd = None
             v_ew_wd = None
             v_bw_wd = None
+            Q_we_d = None
+            ω_ew_wd = None
             for planner in planners:
                 if planner.type == "EE":
-                    r_ew_wd, v_ew_wd  = planner.getTrackingPoint(t-t0, robot_states)
+                    if planner.ref_data_type == "Vec3":
+                        r_ew_wd, v_ew_wd  = planner.getTrackingPoint(t-t0, robot_states)
+                    elif planner.ref_data_type == "SE3":
+                        r, v  = planner.getTrackingPoint(t-t0, robot_states)
+                        r_ew_wd = r[:3]
+                        Q_we_d = r2q(rpy2r(r[3:]), order = "xyzs")
+                        if v is not None:
+                            v_ew_wd = v[:3]
+                            ω_ew_wd = v[3:]
                 elif planner.type == "base":
                     r_bw_wd, v_bw_wd = planner.getTrackingPoint(t-t0, robot_states)
 
@@ -610,6 +620,11 @@ class ControllerROSNode:
                 self.logger.append("r_ew_w_ds", r_ew_wd)
             if v_ew_wd is not None:
                 self.logger.append("v_ew_w_ds", v_ew_wd)
+            if Q_we_d is not None:
+                self.logger.append("Q_we_ds", Q_we_d)
+            if ω_ew_wd is not None:
+                self.logger.append("ω_ew_wds", ω_ew_wd)
+
             if r_bw_wd is not None:
                 if r_bw_wd.shape[0] == 2:
                     self.logger.append("r_bw_w_ds", r_bw_wd)
