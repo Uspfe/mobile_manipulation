@@ -368,7 +368,7 @@ class ControllerROSNode:
         # ee tracking points
         if controller.ree_bar[0].shape[0] == 3:
             marker_ree = self._make_marker(Marker.POINTS, 2, rgba=[0.0, 1.0, 1.0, 1], scale=[0.1, 0.1, 0.1])
-            marker_ree.points = [Point(*pt) for pt[:3] in controller.ree_bar]
+            marker_ree.points = [Point(*pt[:3]) for pt in controller.ree_bar]
             self.controller_visualization_pub.publish(marker_ree)
 
         # base tracking points
