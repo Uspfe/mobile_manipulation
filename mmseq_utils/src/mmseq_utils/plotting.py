@@ -491,10 +491,19 @@ class DataPlotter:
         print("u0 {}".format(u_bar[0]))
         
 
-    def plot_ee_tracking(self, axes=None, index=0, legend=None):
+    def plot_ee_tracking(self, axes=None, index=0, legend=None, base_frame=False):
         ts = self.data["ts"]
         r_ew_w_ds = self.data.get("r_ew_w_ds", [])
-        r_ew_ws = self.data.get("r_ew_ws", [])
+        N = len(ts)
+        if base_frame:
+            qb = self.data["xs"][0, :3]
+
+            r_ew_ws = [self._transform_w2b_SE3(self.data["xs"][k, :3], 
+                                                            self.data["r_ew_ws"][k]) for k in range(N)]
+            r_ew_ws = np.array(r_ew_ws).reshape((N, 3))
+            print(r_ew_ws)
+        else:
+            r_ew_ws = self.data.get("r_ew_ws", [])
 
         if len(r_ew_w_ds) == 0 and len(r_ew_ws) == 0:
             return
@@ -1592,7 +1601,7 @@ class DataPlotter:
         self.plot_task_performance()
         self.plot_task_violation()
 
-        self.plot_ee_tracking()
+        self.plot_ee_tracking(base_frame=True)
         self.plot_ee_orientation_tracking()
         self.plot_ee_linear_velocity_tracking()
         self.plot_base_tracking()
