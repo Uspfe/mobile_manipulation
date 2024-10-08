@@ -5,6 +5,9 @@ import numpy as np
 import threading
 import rospy
 from nav_msgs.msg import Path
+from geometry_msgs.msg import PoseArray, Pose
+from tf.transformations import quaternion_from_euler
+
 from mmseq_plan.PlanBaseClass import Planner, TrajectoryPlanner
 from mmseq_utils.parsing import parse_number
 from mmseq_utils.math import wrap_pi_scalar, wrap_pi_array
@@ -439,7 +442,10 @@ class ROSTrajectoryPlanner(TrajectoryPlanner):
         self.ref_traj_duration = config["ref_traj_duration"]
         self.dt = 0.01
         self.traj_length = int(self.ref_traj_duration / self.dt)
-        self.plan = None
+        self.plan = {'t': np.zeros(1),
+                     's': np.zeros(1),
+                     'p': np.zeros((1, 3)),
+                     'v': np.zeros((1, 3))}
         self.lock = threading.Lock()
 
         self.path_sub = rospy.Subscriber("/planned_global_path", Path, self._path_callback, queue_size=1)
@@ -610,3 +616,46 @@ class ROSTrajectoryPlanner(TrajectoryPlanner):
 
     def ready(self):
         return self.plan_available
+    
+class ROSTrajectoryPlannerOnDemand(ROSTrajectoryPlanner):
+    def __init__(self, config):
+        super().__init__(config)
+        self.intermediate_waypoints = config["intermediate_waypoints"]
+        self.wpts_pub = rospy.Publisher("/target_waypoints_global_path", PoseArray, queue_size=1)
+        self.plan_on_start = config["plan_on_start"]
+        self.rate = rospy.Rate(10)
+        if self.plan_on_start:
+            self.regneratePlan()
+    
+    def publish_intermediate_waypoints(self):
+        msg = PoseArray()
+        for (i, wpts) in enumerate(self.intermediate_waypoints):
+            wpt = self.intermediate_waypoints[i]
+            pose_msg = Pose()
+            pose_msg.position.x = wpt[0]
+            pose_msg.position.y = wpt[1]
+            quat = quaternion_from_euler(0, 0, wpt[2])
+            pose_msg.orientation.x = quat[0]
+            pose_msg.orientation.y = quat[1]
+            pose_msg.orientation.z = quat[2]
+            pose_msg.orientation.w = quat[3]
+
+            msg.poses.append(pose_msg)
+        
+        msg.header.frame_id = "my_world"
+        msg.header.stamp = rospy.Time()
+        print("Publishing")
+        self.wpts_pub.publish(msg)
+    
+    def regneratePlan(self):
+        if self.plan_on_start:
+            for i in range(10):
+                self.rate.sleep()
+        self.publish_intermediate_waypoints()
+
+        # while not self.ready():
+        #     self.rate.sleep()
+
+    def ready(self):
+        # return (self.plan_on_start and self.plan_available) or (not self.plan_on_start)
+        return True

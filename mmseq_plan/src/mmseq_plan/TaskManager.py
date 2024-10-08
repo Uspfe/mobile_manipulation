@@ -58,6 +58,9 @@ class SoTBase(ABC):
     def update(self, t, states):
         pass
 
+    def print(self):
+        print("There are {} numbers of planners.".format(self.planner_num))
+
 class SoTStatic(SoTBase):
     def __init__(self, config):
         self.curr_task_id = 0
@@ -461,6 +464,48 @@ class SoTBottomTaskFixed(SoTBase):
             self.logger.info("SoT on base task %d.", self.curr_task_id)
 
         return finished, 1
+
+class SoTRal25(SoTBase):
+
+    def __init__(self, config):
+        super().__init__(config)
+        self.curr_task_id = 0
+        self.curr_task_num = 1
+
+    def getPlanners(self, num_planners=2):
+        # get the top #num_planners in the stack
+        end_id = min(self.curr_task_id + self.curr_task_num, self.planner_num)
+        start_id = max(0, end_id - self.curr_task_num)
+        return self.planners[start_id:end_id]
+    
+    def update(self, t, states):
+        # check if current task is finished
+        planner = self.planners[self.curr_task_id]
+        finished = False
+        if planner.type == "EE":
+            finished = planner.checkFinished(t, states["EE"])
+        elif planner.type == "base":
+            finished = planner.checkFinished(t, states["base"])
+
+        if finished:
+            # if current task finished increment self.curr_task_id by 1
+            self.curr_task_id += 1
+            if self.curr_task_id%2 == 1:
+                # two tasks for odd number task id (EE task)
+                self.curr_task_num = 2
+                if self.curr_task_id != self.planner_num -1:
+                    self.planners[self.curr_task_id].regneratePlan(states["base"])
+                # if it comes to the last task
+                else:
+                    self.curr_task_num = 1
+            else:
+                # one task for even number task id (base task)
+                self.curr_task_num = 1
+        
+        return finished, 0
+    
+    def print(self):
+        self.logger.log("Currently at Task {} with Task num {}".format(self.curr_task_id, self.curr_task_num))
 
 if __name__ == "__main__":
     config_path = "$PROJECTMM3D_HOME/experiments/config/sim/simulation.yaml"
