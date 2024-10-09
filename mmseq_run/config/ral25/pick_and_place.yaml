@@ -2,7 +2,7 @@ planner:
   sot_type: "SoTRal25"
   tasks:
   - frame_id: base
-    name: base_planner_1
+    name: base_local_planner
     planner_type: ROSTrajectoryPlannerOnDemand
     cruise_speed: 0.35
     yaw_speed: 0.35
@@ -17,24 +17,6 @@ planner:
     name: EE Position BaseFrame
     planner_type: EESimplePlanner
     target_pos: [3, 1, 0.7] # in base frame
-    hold_period: 4
-    tracking_err_tol: 0.4
-  - frame_id: base
-    name: base_planner_2
-    planner_type: ROSTrajectoryPlannerOnDemand
-    cruise_speed: 0.35
-    yaw_speed: 0.35
-    yaw_accel: 100
-    tracking_err_tol: 0.4
-    ref_traj_duration: 1.5
-    intermediate_waypoints: [[2, 2, 1.57],
-                             [1, 3, 3.14]
-                             ]
-    plan_on_start: True
-  - frame_id: base
-    name: EE Position BaseFrame
-    planner_type: EESimplePlanner
-    target_pos: [1, 4, 0.7] # in base frame
     hold_period: 4
     tracking_err_tol: 0.4
 

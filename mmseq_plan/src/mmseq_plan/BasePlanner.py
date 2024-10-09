@@ -618,10 +618,9 @@ class ROSTrajectoryPlanner(TrajectoryPlanner):
     
 class ROSTrajectoryPlannerOnDemand(ROSTrajectoryPlanner):
     def __init__(self, config):
-        super().__init__(config, config["name"])
+        super().__init__(config)
         self.intermediate_waypoints = config["intermediate_waypoints"]
-        topic_name = "/".join([config["name"], "target_waypoints_global_path"])
-        self.wpts_pub = rospy.Publisher(topic_name, PoseArray, queue_size=1)
+        self.wpts_pub = rospy.Publisher("/target_waypoints_global_path", PoseArray, queue_size=1)
         self.plan_on_start = config["plan_on_start"]
         self.rate = rospy.Rate(10)
         if self.plan_on_start:
