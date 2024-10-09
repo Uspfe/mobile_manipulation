@@ -34,12 +34,13 @@ class SoTBase(ABC):
                 self.planners.extend(planner.getPlanners())
 
             else:
-                if task_entry["name"][:2] == "EE":
-                    planner_class = getattr(eep, task_entry["planner_type"])
+                planner_class = getattr(eep, task_entry["planner_type"], None)
+                if planner_class is None:
+                    planner_class = getattr(basep, task_entry["planner_type"], None)
+                if planner_class is not None:
+                    planner = planner_class(task_entry)
                 else:
-                    planner_class = getattr(basep, task_entry["planner_type"])
-
-                planner = planner_class(task_entry)
+                    self.logger.warning("planner type {} not recognized".format(task_entry["planner_type"]))
                 self.planners.append(planner)
 
         self.planner_num = len(self.planners)
