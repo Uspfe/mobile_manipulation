@@ -288,10 +288,15 @@ class BasePoseSE2CostFunction(CostFunctions):
         self.J_eqn = 0.5 * self.e_eqn.T @ self.W @ self.e_eqn
 
         self.J_fcn = cs.Function("J_"+self.name, [self.x_sym, self.u_sym, self.p_sym], [self.J_eqn], ["x", "u", "r"], ["J"]).expand()
+        self.e_fcn = cs.Function("e_"+self.name, [self.x_sym, self.u_sym, self.r], [self.e_eqn], ["x", "u", "r"], ["J"]).expand()
+        
         dedx = cs.jacobian(self.e_eqn, self.x_sym)
         self.H_approx_eqn = cs.diagcat(cs.MX.zeros(self.nu, self.nu), dedx.T @ self.W @ dedx)
         self.H_approx_fcn = cs.Function("H_approx_"+self.name, [self.x_sym, self.u_sym, self.p_sym], [self.H_approx_eqn], ["x", "u", "r"], ["H_approx"]).expand()
 
+    def get_e(self, x, u, r):
+        return self.e_fcn(x, u ,r).toarray().flatten()
+    
 class BaseVel3CostFunction(TrajectoryTrackingCostFunction):
     def __init__(self, robot_mdl, params):
         ss_mdl = robot_mdl.ssSymMdl
