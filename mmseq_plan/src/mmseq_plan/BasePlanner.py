@@ -418,15 +418,13 @@ class BasePosTrajectorySqaureWave(TrajectoryPlanner):
         return config
     
 class ROSTrajectoryPlanner(TrajectoryPlanner):
-    def __init__(self, config):
+    def __init__(self, config, name_space=""):
         super().__init__(name=config["name"],
                         type="base",
                         ref_type="path",
                         ref_data_type="SE2",
-                        frame_id=config["frame_id"])
+                        frame_id=config["frame_id"],)
         
-        print("ROSTrajectoryPlanner")
-        print(config)
         self.tracking_err_tol = config["tracking_err_tol"]
         self.end_stop = config.get("end_stop", False)
 
@@ -447,8 +445,9 @@ class ROSTrajectoryPlanner(TrajectoryPlanner):
                      'p': np.zeros((1, 3)),
                      'v': np.zeros((1, 3))}
         self.lock = threading.Lock()
-
-        self.path_sub = rospy.Subscriber("/planned_global_path", Path, self._path_callback, queue_size=1)
+        self.name_space = name_space
+        topic_name = "/".join([name_space, "planned_global_path"])
+        self.path_sub = rospy.Subscriber(topic_name, Path, self._path_callback, queue_size=1)
 
     def _generatePlan(self, start_time, raw_points, raw_headings):
         # given a set of path points and heading, generate a plan based on cruise speed
@@ -619,9 +618,10 @@ class ROSTrajectoryPlanner(TrajectoryPlanner):
     
 class ROSTrajectoryPlannerOnDemand(ROSTrajectoryPlanner):
     def __init__(self, config):
-        super().__init__(config)
+        super().__init__(config, config["name"])
         self.intermediate_waypoints = config["intermediate_waypoints"]
-        self.wpts_pub = rospy.Publisher("/target_waypoints_global_path", PoseArray, queue_size=1)
+        topic_name = "/".join([config["name"], "target_waypoints_global_path"])
+        self.wpts_pub = rospy.Publisher(topic_name, PoseArray, queue_size=1)
         self.plan_on_start = config["plan_on_start"]
         self.rate = rospy.Rate(10)
         if self.plan_on_start:

@@ -2,7 +2,7 @@ planner:
   sot_type: "SoTRal25"
   tasks:
   - frame_id: base
-    name: Base Position
+    name: base_planner_1
     planner_type: ROSTrajectoryPlannerOnDemand
     cruise_speed: 0.35
     yaw_speed: 0.35
@@ -20,7 +20,7 @@ planner:
     hold_period: 4
     tracking_err_tol: 0.4
   - frame_id: base
-    name: Base Position
+    name: base_planner_2
     planner_type: ROSTrajectoryPlannerOnDemand
     cruise_speed: 0.35
     yaw_speed: 0.35
