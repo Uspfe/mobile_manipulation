@@ -8,8 +8,9 @@ if __name__ == "__main__":
 
     import mmseq_control_new.MPC as STMPC
     import mmseq_control_new.HTMPC as HTMPC
+    import mmseq_control_new.HybridMPC as HybridMPC
 
-    rospy.init_node("constraints_tester")
+    rospy.init_node("mpc_c_code_generator")
 
     argv = rospy.myargv(argv=sys.argv)
     parser = argparse.ArgumentParser()
@@ -29,7 +30,8 @@ if __name__ == "__main__":
     control_class = getattr(HTMPC, ctrl_config["type"], None)
     if control_class is None:
         control_class = getattr(STMPC, ctrl_config["type"], None)
-
+    if control_class is None:
+        control_class = getattr(HybridMPC, ctrl_config["type"], None)
     controller = control_class(ctrl_config)
     
     
