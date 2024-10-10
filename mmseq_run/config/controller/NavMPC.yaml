@@ -6,7 +6,7 @@ controller:
   base_pose_tracking_enabled: True
 
   collision_constraint_type: 
-    sdf: "SignedDistanceConstraintCBF" # SignedDistanceConstraint or SignedDistanceConstraintCBF 
+    sdf: "SignedDistanceConstraint" # SignedDistanceConstraint or SignedDistanceConstraintCBF 
   type: "STMPC"
   collision_cbf_gamma:
     sdf: 1.2

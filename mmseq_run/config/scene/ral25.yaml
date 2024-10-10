@@ -27,18 +27,18 @@ simulation:
       rpy: [0.0, 0.0, -0.52763]
       xyz: [-0.13169360160827637, 3.473076820373535, 0.3]
       color: [0, 0, 1.0]
-    - name: object_25
-      type: DynamicCuboid
-      scale: [0.6, 0.6, 0.6]
-      rpy: [0.0, 0.0, -0.85]
-      xyz: [0.3, 3.98, 0.3]
-      color: [0, 0, 1.0]
     # - name: object_25
     #   type: DynamicCuboid
     #   scale: [0.6, 0.6, 0.6]
-    #   rpy: [0.0, 0.0, -0.91968]
-    #   xyz: [0.8950042724609375, 4.42724084854126, 0.9]
+    #   rpy: [0.0, 0.0, -0.85]
+    #   xyz: [0.3, 3.98, 0.3]
     #   color: [0, 0, 1.0]
+    - name: object_25
+      type: DynamicCuboid
+      scale: [0.6, 0.6, 0.6]
+      rpy: [0.0, 0.0, -0.91968]
+      xyz: [0.8950042724609375, 4.42724084854126, 0.9]
+      color: [0, 0, 1.0]
     - name: object_3
       type: DynamicCuboid
       scale: [0.6, 0.6, 0.6]
@@ -91,17 +91,17 @@ simulation:
       type: DynamicCuboid
       scale: [0.6, 0.6, 0.6]
       rpy: [0.0, 0.0, 0.021549786]
-      xyz: [2.31, 2.4, 0.3]
+      xyz: [2.47, 2.4, 0.3]
       color: [0, 0, 1.0]
     - name: object_12
       type: DynamicCuboid
       scale: [0.6, 0.6, 0.6]
       rpy: [0.0, 0.0, -0.045605409]
-      xyz: [2.31, 1.8, 0.3]
+      xyz: [2.47, 1.8, 0.3]
       color: [0, 0, 1.0]
     - name: object_13
       type: DynamicCuboid
       scale: [0.6, 0.6, 0.6]
       rpy: [0.0, 0.0, -0.010600451]
-      xyz: [2.31, 1.2540823221206665, 0.3]
+      xyz: [2.47, 1.2540823221206665, 0.3]
       color: [0, 0, 1.0]

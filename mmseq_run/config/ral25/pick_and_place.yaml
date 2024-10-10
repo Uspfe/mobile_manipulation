@@ -7,12 +7,17 @@ planner:
     cruise_speed: 0.35
     yaw_speed: 0.35
     yaw_accel: 100
-    tracking_err_tol: 0.4
+    tracking_err_tol: 0.2
     ref_traj_duration: 1.5
-    intermediate_waypoints: [[[1, 0, 0],
-                              [2, 1, 1.57]],
-                             [[2, 2, 1.57],
-                              [1, 3, 3.14]]
+    intermediate_waypoints: [[[1.23, -0.45, -0.53],
+                              [2.35, -1.05, 0],
+                              [3.1, -0.65, 1.06],
+                              [3.9, 0.26, 1.65]],
+                             [[3.9, 2.35, 1.78],
+                              [3.2, 3.0, 2.8],
+                              [2.44, 3.45, -3.11],
+                              [1.21, 3.18, -2.2],
+                              [1.2, 1.61, -1.51]]
                              ]
     plan_on_start: True
   - frame_id: base_link
@@ -24,9 +29,9 @@ planner:
   - frame_id: base
     name: ee_global_planner
     planner_type: EEPos3WaypointOnDemand
-    target_waypoints: [[3, 1, 0.7],
-                       [1, 4, 0.7]] # in base frame
-    hold_period: 4
+    target_waypoints: [[5., 0.4, 1.2],
+                       [0.2, 1.6, 1.2]] # in base frame
+    hold_period: 2
     tracking_err_tol: 0.4
 
 simulation:
@@ -46,8 +51,8 @@ include:
     path: "config/scene/empty.yaml"
   - package: "mmseq_run"
     path: "config/map/SDF3D.yaml"
-  # - package: "mmseq_run"
-  #   path: "config/scene/ral25.yaml"
+  - package: "mmseq_run"
+    path: "config/scene/ral25.yaml"
 logging:
   log_dir: "$MOBILE_MANIPULATION_CENTRAL_BAG_DIR/ral25/"
   log_level: 10 # 0 - not set, 10 - debug, 20 - info

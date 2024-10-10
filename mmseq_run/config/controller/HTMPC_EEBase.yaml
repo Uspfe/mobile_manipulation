@@ -10,7 +10,18 @@ controller:
   type: "HTMPC"
   collision_cbf_gamma:
     sdf: 1.2
-  
+    
+  cost_params:
+    EEPos3:
+      Qk: [10, 10, 10]
+      P: [1, 1, 1]
+    EEPose:
+      Qk: [3, 3, 3, 3, 3, 3]
+      P: [1, 1, 1, 1, 1, 1]
+    BasePoseSE2:
+      Qk: [3, 3, 3]
+      P: [1, 1, 1]
+
   acados:
     name: MMSLAMCtrl_HTMPC
     ocp_solver_options:
