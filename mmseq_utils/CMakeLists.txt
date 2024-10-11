@@ -23,5 +23,6 @@ catkin_install_python(PROGRAMS
    scripts/plot_plan.py
    scripts/demo_rosbag_post_processing.py
    scripts/pub_msg_from_bag.py
+   scripts/parse_logger_hybrid_controller.py
    DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
  )

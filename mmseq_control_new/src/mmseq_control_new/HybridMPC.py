@@ -47,7 +47,7 @@ class HybridMPC():
             self.controllers[name] = control_class(ctrl_config)
             self.logs[name] = self.controllers[name].log
 
-            config[name] = ctrl_config
+            # config[name] = ctrl_config
             print("Add controller {}".format(name))
     
         self.params = config

@@ -3,7 +3,7 @@
 import argparse
 import os
 from mmseq_utils.logging import DataLogger
-from mmseq_utils.plotting import DataPlotter
+from mmseq_utils.plotting import DataPlotter, construct_logger
 import matplotlib.pyplot as plt
 
 def plot_tracking(plotters):
@@ -12,10 +12,6 @@ def plot_tracking(plotters):
     plotters["sim"].plot_ee_position(ee_axes)
     plotters["sim"].plot_base_position(base_axes)
 
-def construct_logger(path_to_folder):
-    plotter = DataPlotter.from_PYSIM_results(path_to_folder)
-
-    return plotter
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
