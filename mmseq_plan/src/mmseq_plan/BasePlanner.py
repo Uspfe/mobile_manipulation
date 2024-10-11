@@ -540,7 +540,7 @@ class ROSTrajectoryPlanner(TrajectoryPlanner):
 
         poses = np.hstack((new_x, new_y, new_desired_headings))
 
-        self.close_to_finish = (poses[-1,:] == poses[-2,:]).all() and np.linalg.norm(self.robot_states[0][:2] - poses[-1,:2]) < 0.1 and np.abs(wrap_pi_scalar(self.robot_states[0][2] - poses[-1,2])) < 0.1
+        self.close_to_finish = self.robot_states and (poses[-1,:] == poses[-2,:]).all() and np.linalg.norm(self.robot_states[0][:2] - poses[-1,:2]) < 0.1 and np.abs(wrap_pi_scalar(self.robot_states[0][2] - poses[-1,2])) < 0.1
 
         return {'t': time,'s': time * self.cruise_speed, 'p': poses, 'v': velocities}
 
@@ -661,7 +661,7 @@ class ROSTrajectoryPlannerOnDemand(ROSTrajectoryPlanner):
     
     def regeneratePlan(self, states=None):
         # if initializing, wait until publish
-        if not self.ready:
+        if not self.ready():
             for i in range(50):
                 self.rate.sleep()
         
@@ -675,7 +675,11 @@ class ROSTrajectoryPlannerOnDemand(ROSTrajectoryPlanner):
 
     def checkFinished(self, t, states):
         base_curr_pos = states[0]
-
-        if np.linalg.norm(base_curr_pos[:2] - self.intermediate_waypoints[self.curr_waypoint_idx][-1][:2]) < self.tracking_err_tol:
+        position_error = np.linalg.norm(base_curr_pos[:2] - self.intermediate_waypoints[self.curr_waypoint_idx][-1][:2])
+        print("Position error: ", position_error)
+        if position_error < self.tracking_err_tol:
+            print("Finished waypoint {} with error {} at base pose {}".format(self.intermediate_waypoints[self.curr_waypoint_idx][-1], 
+                                                                              position_error,
+                                                                              base_curr_pos))
             self.finished = True
         return self.finished
