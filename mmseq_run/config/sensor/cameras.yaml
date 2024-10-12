@@ -7,8 +7,8 @@ simulation:
       params:
         package: "mmseq_run"
         path: "config/sensor/femto_bolt_rgb.yaml"
-      translation: [0.40171912, 0.02815671, 0.47058649]
-      orientation: [0.99903973, -0.00720634,  0.04317019,  0.00200356]
+      translation: [0.40360093, 0.02389736, 0.50 ]
+      orientation: [ 0.99998895 ,  -0.00173282, -0.00248752,  0.00359189]
       ros_topic_name_space: "camera_base"
     - name: "camera_base_tof"
       type: "ToFCamera"
@@ -16,8 +16,8 @@ simulation:
       params:
         package: "mmseq_run"
         path: "config/sensor/femto_bolt_depth.yaml"
-      translation: [0.40171912, 0.02815671, 0.47058649]
-      orientation: [0.99903973, -0.00720634,  0.04317019,  0.00200356]
+      translation: [0.40360093, 0.02389736, 0.50 ]
+      orientation: [ 0.99998895 ,  -0.00173282, -0.00248752,  0.00359189]
       ros_topic_name_space: "camera_base"
     - name: "camera_arm_rgb"
       type: "RGBCamera"
@@ -25,8 +25,8 @@ simulation:
       params:
         package: "mmseq_run"
         path: "config/sensor/femto_bolt_rgb.yaml"
-      translation: [0.02375071, -0.16890217,  0.10801089]
-      orientation: [ -0.51227125, 0.48877176,  0.47892914,  0.51894817  ]
+      translation: [0.0218279,  -0.16487507,  0.11044692]
+      orientation: [ -0.48820154, 0.5146015,   0.50084812,  0.49597955   ]
       ros_topic_name_space: "camera_hand"
     - name: "camera_arm_tof"
       type: "ToFCamera"
@@ -34,7 +34,7 @@ simulation:
       params:
         package: "mmseq_run"
         path: "config/sensor/femto_bolt_depth.yaml"
-      translation: [0.02375071, -0.16890217,  0.10801089]
-      orientation: [ -0.51227125, 0.48877176,  0.47892914,  0.51894817  ]
+      translation: [0.0218279,  -0.16487507,  0.11044692]
+      orientation: [ -0.48820154, 0.5146015,   0.50084812,  0.49597955   ]
       ros_topic_name_space: "camera_hand"
       
