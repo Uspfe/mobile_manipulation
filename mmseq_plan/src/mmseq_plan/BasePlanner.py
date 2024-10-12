@@ -563,7 +563,7 @@ class ROSTrajectoryPlanner(TrajectoryPlanner):
         ps, vs = self.getTrackingPointArray(robot_states, 2, 0.1)
         return ps[0], vs[0]
     
-    def getTrackingPointArray(self, robot_states, num_pts, dt):
+    def getTrackingPointArray(self, robot_states, num_pts, dt, time_offset=0):
         base_curr_pos = robot_states[0][:2]
         # search for the closest point on the path
         min_dist = np.inf
@@ -579,7 +579,7 @@ class ROSTrajectoryPlanner(TrajectoryPlanner):
                 min_idx = i
 
         s0 = plan['s'][min_idx]
-        s = s0 + np.arange(num_pts) * dt * self.cruise_speed
+        s = s0 + (time_offset + np.arange(num_pts) * dt) * self.cruise_speed
         pos = [np.interp(s, plan['s'], plan['p'][:,i]) for i in range(3)]
         vel = [np.interp(s, plan['s'], plan['v'][:,i]) for i in range(3)]
 
@@ -662,7 +662,9 @@ class ROSTrajectoryPlannerOnDemand(ROSTrajectoryPlanner):
     def regeneratePlan(self, states=None):
         # if initializing, wait until publish
         if not self.ready():
-            for i in range(50):
+            self.py_logger.info("Force Planner to wait before publishing.")
+
+            for i in range(5):
                 self.rate.sleep()
         
         self.curr_waypoint_idx += 1
@@ -683,3 +685,28 @@ class ROSTrajectoryPlannerOnDemand(ROSTrajectoryPlanner):
                                                                               base_curr_pos))
             self.finished = True
         return self.finished
+
+    def getTrackingPointArray(self, robot_states, num_pts, dt, time_offset=0):
+        pos, vel = super().getTrackingPointArray(robot_states, num_pts, dt, time_offset)
+        # if called by controller
+        if time_offset == 0:
+            return pos, vel
+        
+        # if called by EELookahead
+        end_point = self.plan['p'][-1]
+        diff = np.linalg.norm(pos - end_point, axis=-1)
+        end_point_idx = np.where(diff < 1e-3)[0]
+        if end_point_idx.size > 0:
+            waypoints = np.array(self.intermediate_waypoints[self.curr_waypoint_idx])
+            dist = np.linalg.norm(waypoints[:, :2] - end_point[:2], axis=-1)
+            curr_waypoint_idx = np.where(dist< 1e-1)[0]
+            if curr_waypoint_idx.size == 1:
+                next_waypoint_idx = min(curr_waypoint_idx+1, len(waypoints)-1)
+                pos[end_point_idx] = waypoints[next_waypoint_idx]
+                vel[end_point_idx] = np.zeros(3)
+            else:
+                self.py_logger.warning("Did not find end point {} in list #{} with dist {}".format(self.plan['p'][-1],
+                                                                                                    self.curr_waypoint_idx,
+                                                                                                    dist))
+        
+        return pos, vel

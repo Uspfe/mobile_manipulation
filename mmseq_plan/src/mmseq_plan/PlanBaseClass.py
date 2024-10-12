@@ -80,6 +80,11 @@ class Planner(ABC):
         """
         return self.close_to_finish
 
+    def activate(self):
+        self.started = True
+
+        return
+
 class TrajectoryPlanner(Planner):
     def __init__(self, name, type, ref_type, ref_data_type, frame_id):
 

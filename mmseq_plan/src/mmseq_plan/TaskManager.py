@@ -49,7 +49,7 @@ class SoTBase(ABC):
 
     def activatePlanners(self):
         for planner in self.planners:
-            planner.started = True
+            planner.activate()
 
     @abstractmethod
     def getPlanners(self, num_planners=2):
@@ -473,6 +473,9 @@ class SoTRal25(SoTBase):
         self.curr_task_id = 0
         self.curr_task_num = 2
         self.total_task_num = len(config["tasks"])
+
+        # not really scalable
+        self.planners[1].set_base_planner(self.planners[0])
 
     def getPlanners(self, num_planners=2):
         # get the top #num_planners in the stack

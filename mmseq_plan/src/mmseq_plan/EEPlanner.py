@@ -3,11 +3,11 @@
 import numpy as np
 from numpy import linalg
 # from liegroups import SE3, SO3
-from spatialmath.base import rotz, rpy2r, q2r,trnorm
+from spatialmath.base import rotz, rpy2r, q2r,trnorm, tr2rpy
 from spatialmath import SE3
 
-from mmseq_plan.PlanBaseClass import Planner
-from mmseq_plan.BasePlanner import TrajectoryPlanner
+from mmseq_plan.PlanBaseClass import Planner, TrajectoryPlanner
+from mmseq_plan.BasePlanner import ROSTrajectoryPlanner,ROSTrajectoryPlannerOnDemand
 
 from mmseq_utils.transformation import *
 from mmseq_utils.parsing import parse_number
@@ -372,6 +372,60 @@ class EEPos3WaypointOnDemand(EESimplePlanner):
 
         self.target_pos = self.target_waypoints[self.curr_waypoint_idx]
         self.reset()
+
+class EELookAhead(Planner):
+    def __init__(self, config):
+        super().__init__(name=config["name"],
+                         type="EE", 
+                         ref_type="path", 
+                         ref_data_type="SE3",
+                         frame_id=config["frame_id"])
+        self.default_pose = np.array(config["default_pose"])
+        self.default_rot = rpy2r(self.default_pose[3:])
+        self.look_ahead_time = config["look_ahead_time"]
+        self.max_angle = config["max_angle"]
+        self.base_planner = None
+
+    def set_base_planner(self, base_planner: ROSTrajectoryPlannerOnDemand):
+        self.base_planner = base_planner
+
+    def getTrackingPointArray(self, robot_states, num_pts, dt):
+        # Get Base Ref Path Current
+        curr_base_poses, _ = self.base_planner.getTrackingPointArray(robot_states, num_pts, dt)
+        # Get Base Ref Path Future
+        future_base_poses, _ = self.base_planner.getTrackingPointArray(robot_states, num_pts, dt, self.look_ahead_time)
+        # Compute Angle Difference and new EE rpy
+        new_poses = []
+
+        for i in range(num_pts):
+            r_bf_bc_w = future_base_poses[i, :2] - curr_base_poses[i, :2]
+
+            Rw_bc = rotz(curr_base_poses[i, 2])
+            r_bf_bc_bc = Rw_bc.T @ np.hstack((r_bf_bc_w,1))
+            phi = np.arctan2(r_bf_bc_bc[1], r_bf_bc_bc[0])
+            phi = min(phi, self.max_angle)
+            phi = max(phi, -self.max_angle)
+            new_rot = rotz(phi) @ self.default_rot
+            new_rpy = tr2rpy(new_rot)
+
+            new_poses.append(np.hstack((self.default_pose[:3], new_rpy)))
+
+            # self.py_logger.debug("Future {}, Current, {}, phi {}, pose {}".format(future_base_poses[i, :2],
+            #                                                                       curr_base_poses[i, :2],
+            #                                                                       phi,
+            #                                                                       new_poses[-1]))
+        return np.array(new_poses), np.zeros(6)
+    
+    def getTrackingPoint(self, t, robot_states=None):
+        poses, _ = self.getTrackingPointArray(robot_states, 2, 0.1)
+        return poses[0], np.zeros(6)
+    
+    def checkFinished(self, t, ee_states):
+
+        return False
+    
+    def reset(self):
+        pass
 
 if __name__ == '__main__':
     planner_params = {"target_pose": [0., 1.,], 'hold_period':1}
