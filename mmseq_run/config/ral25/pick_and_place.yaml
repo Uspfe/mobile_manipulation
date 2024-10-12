@@ -20,12 +20,18 @@ planner:
                               [1.0, 1.3, -1.51]]
                              ]
     plan_on_start: True
+  # - frame_id: base_link
+  #   name: ee_pose_baseframe
+  #   planner_type: EEPoseSE3Waypoint
+  #   target_pose: [1.35, 0.17, 0.7, 1.57, 0, 1.57]
+  #   hold_period: 4
+  #   tracking_err_tol: 0.1
   - frame_id: base_link
     name: ee_pose_baseframe
-    planner_type: EEPoseSE3Waypoint
-    target_pose: [1.35, 0.17, 0.7, 1.57, 0, 1.57]
-    hold_period: 4
-    tracking_err_tol: 0.1
+    planner_type: EELookAhead
+    default_pose: [1.35, 0.17, 0.7, 1.57, 0, 1.57]
+    look_ahead_time: 10
+    max_angle: 1.06 # rad
   - frame_id: base
     name: ee_global_planner
     planner_type: EEPos3WaypointOnDemand
