@@ -36,8 +36,10 @@ class HTMPC(MPC):
         self.stmpc_cost_fcns.append([self.EEPos3Cost, self.RegularizationCost, self.CtrlEffCost] + common_cost_fcns)
         self.stmpc_cost_fcns.append([self.BasePoseSE2Cost, self.BaseVel3Cost, self.CtrlEffCost] + common_cost_fcns)
 
-        ocp1, ocp_solver1, p_struct1 = self._construct(self.stmpc_cost_fcns[0], [] + common_csts, 1, "EEPos3")
-        ocp2, ocp_solver2, p_struct2 = self._construct(self.stmpc_cost_fcns[1], [self.EEPos3LexConstraint] + common_csts, 1, "BasePoseSE2")
+        name = self.params["acados"].get("name", "MM")
+        self.stmpc_names = ["_".join([name, cost_fcns[0].name]) for cost_fcns in self.stmpc_cost_fcns]
+        ocp1, ocp_solver1, p_struct1 = self._construct(self.stmpc_cost_fcns[0], [] + common_csts, 1, self.stmpc_names[0])
+        ocp2, ocp_solver2, p_struct2 = self._construct(self.stmpc_cost_fcns[1], [self.EEPos3LexConstraint] + common_csts, 1, self.stmpc_names[1])
         
         self.stmpcs = [ocp1, ocp2]
         self.stmpc_solvers = [ocp_solver1, ocp_solver2]
@@ -149,8 +151,8 @@ class HTMPC(MPC):
         map_params = self.model_interface.sdf_map.get_params()
 
         for task_id, (stmpc, stmpc_solver, p_struct, stmpc_cost_fcns) in enumerate(zip(self.stmpcs, self.stmpc_solvers, self.stmpc_p_structs, self.stmpc_cost_fcns)):
-            tracking_cost_fcn_name = stmpc.name
             tracking_cost_fcn = stmpc_cost_fcns[0]
+            tracking_cost_fcn_name = tracking_cost_fcn.name
             tracking_cost_fcns.append(tracking_cost_fcn)
 
 
@@ -213,7 +215,7 @@ class HTMPC(MPC):
                 
                 for p in range(task_id):
                     # set parameters for lexicographic optimality constraints
-                    name = self.stmpcs[p].name
+                    name = self.stmpc_cost_fcns[p][0].name
                     p_name_e_p = "_".join(["e_p", name, "Lex"])
                     curr_p_map[p_name_e_p] = e_p_bar_map[name][k]
 
