@@ -284,6 +284,7 @@ class MPC():
         ocp.dims.N = self.N
         ocp.solver_options.tf = self.tf
         ocp.code_export_directory = str(self.output_dir / "c_generated_code")
+        ocp.solver_options.ext_fun_compile_flags = '-O3'
 
         ocp.cost.cost_type = 'EXTERNAL'
         cost_expr = []
@@ -508,6 +509,7 @@ class STMPC(MPC):
             self.x_bar = self._predictTrajectories(xo, self.u_bar)
         else:
             self.u_bar = np.zeros_like(self.u_bar)
+            self.x_bar[:, 9:] = np.zeros((self.N+1, self.DoF))
             self.x_bar = self._predictTrajectories(xo, self.u_bar)
 
         x_bar_initial = self.x_bar.copy()
