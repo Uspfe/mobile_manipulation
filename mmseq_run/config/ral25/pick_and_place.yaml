@@ -32,14 +32,20 @@ planner:
     default_pose: [1.35, 0.17, 0.7, 1.57, 0, 1.57]
     look_ahead_time: 8
     max_angle: 1.06 # rad
+  # - frame_id: base
+  #   name: ee_global_planner
+  #   planner_type: EEPos3WaypointOnDemand
+  #   target_waypoints: [[5., 0.4, 0.9],
+  #                      [0.2, 1.1, 0.9]] # in base frame
+  #   hold_period: 2
+  #   tracking_err_tol: 0.3
   - frame_id: base
     name: ee_global_planner
-    planner_type: EEPos3WaypointOnDemand
-    target_waypoints: [[5., 1.5, 0.9],
-                       [0.2, 0.6, 0.9]] # in base frame
+    planner_type: EEPoseSE3WaypointOnDemand
+    target_waypoints: [[5., 0.4, 0.9, 1.57, 0, 1.57],
+                       [0.2, 1.1, 0.9, 1.57, 0, -1.57]] # in base frame
     hold_period: 2
     tracking_err_tol: 0.3
-
 simulation:
   duration: 100
   robot:

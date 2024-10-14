@@ -4,7 +4,8 @@ controller:
   self_collision_avoidance_enabled: True
   static_obstacles_collision_avoidance_enabled: True
   base_pose_tracking_enabled: True
-
+  ee_pose_tracking_enabled: True
+  
   collision_constraint_type: 
     sdf: "SignedDistanceConstraint" # SignedDistanceConstraint or SignedDistanceConstraintCBF 
   type: "HTMPC"
