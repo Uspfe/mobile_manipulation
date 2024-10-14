@@ -312,6 +312,7 @@ class EEPoseSE3Waypoint(Planner):
         self.stamp = 0
         self.hold_period = config["hold_period"]
         self.target_pose = np.array(config["target_pose"])
+        self.tracking_err_tol = config["tracking_err_tol"]
 
         
     def getTrackingPoint(self, t, robot_states=None):
@@ -319,35 +320,23 @@ class EEPoseSE3Waypoint(Planner):
         return self.target_pose, np.zeros(6)
     
     def checkFinished(self, t, ee_states):
-        # state_ee a Homogeneous Transformation matrix
-        ee_pos = ee_states[0]
-        ee_rot = q2r(ee_states[1], order="xyzs")
-        T = np.eye(4)
-        T[:3, :3] = ee_rot
-        T[:3, 3] = ee_pos
+        ee_curr_pos = ee_states[0]
+        self.target_pos = self.target_pose[:3]
+        if np.linalg.norm(ee_curr_pos - self.target_pos) > self.tracking_err_tol:
+            if self.reached_target:
+                self.reset()
+            return self.finished
 
-        Td = np.eye(4)
-        Td[:3, :3] = rpy2r(self.target_pose[3:])
-        Td[:3, 3] = self.target_pose[:3]
-
-        Terr = np.matmul(linalg.inv(T), Td)
-        print(Terr)
-        # Terr = SE3(SO3(Terr[:3,:3]), Terr[:3, 3])
-        Terr = SE3(trnorm(Terr))
-        # twist = Terr.log()
-        twist = Terr.twist()
-
-        if not self.finished and np.linalg.norm(twist) > 0.2:
-            self.reset()
-        if not self.reached_target and np.linalg.norm(twist) < 0.1:
+        if not self.reached_target:
             self.reached_target = True
-            self.stamp=t
-            self.py_logger.info("Reached")
-        elif self.reached_target and not self.finished:
-            if t - self.stamp > self.hold_period:
-                self.finished = True
-                self.py_logger.info("Finished")
-        
+            self.t_reached_target=t
+            self.py_logger.info(self.name + " Planner Reached Target.")
+            return self.finished
+
+        if t - self.t_reached_target > self.hold_period:
+            self.finished = True
+            self.py_logger.info(self.name + " Planner Finished.")
+
         return self.finished
     
     def reset(self):
@@ -371,6 +360,23 @@ class EEPos3WaypointOnDemand(EESimplePlanner):
         self.curr_waypoint_idx %= self.num_waypoint
 
         self.target_pos = self.target_waypoints[self.curr_waypoint_idx]
+        self.reset()
+
+class EEPoseSE3WaypointOnDemand(EEPoseSE3Waypoint):
+
+    def __init__(self, config):
+        self.target_waypoints = np.array(config["target_waypoints"])
+        self.num_waypoint = len(self.target_waypoints)
+        self.curr_waypoint_idx = self.num_waypoint-1
+
+        config["target_pose"] = self.target_waypoints[0]
+        super().__init__(config)
+    
+    def regeneratePlan(self, states):
+        self.curr_waypoint_idx += 1
+        self.curr_waypoint_idx %= self.num_waypoint
+
+        self.target_pose = self.target_waypoints[self.curr_waypoint_idx]
         self.reset()
 
 class EELookAhead(Planner):
