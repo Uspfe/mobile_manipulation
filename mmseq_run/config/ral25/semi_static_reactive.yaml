@@ -35,7 +35,7 @@ include:
   - package: "mmseq_run"
     path: "config/sim/isaac_sim.yaml"
   - package: "mmseq_run"
-    path: "config/map/SDF3D.yaml"im
+    path: "config/map/SDF3D.yaml"
   - package: "mmseq_run"
     path: "config/scene/single_object.yaml"
 logging:
