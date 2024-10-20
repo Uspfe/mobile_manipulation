@@ -4,7 +4,7 @@ simulation:
     items:
     - name: object_1
       type: DynamicCuboid
-      scale: [0.6, 0.6, 0.6]
+      scale: [0.6, 0.6, 0.8]
       rpy: [0.0, 0.0, 0.00]
       xyz: [3.706, -0.3, 0.3]
       color: [0, 0, 1.0]
