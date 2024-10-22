@@ -14,44 +14,24 @@ import mobile_manipulation_central as mm
 
 from mmseq_control_new.MPC import MPC, INF
 
-class HTMPC(MPC):
+class HTMPCBase(MPC):
 
-    def __init__(self, config):
-        super().__init__(config)
-            
-        self.EEPos3LexConstraint = HierarchicalTrackingConstraint(self.EEPos3Cost, "_".join([self.EEPos3Cost.name, "Lex"]))
-        self.EEPoseSE3LexConstraint = HierarchicalTrackingConstraint(self.EEPoseSE3Cost, "_".join([self.EEPoseSE3Cost.name, "Lex"]))
-        self.BasePos2LexConstraint = HierarchicalTrackingConstraint(self.BasePos2Cost, "_".join([self.BasePos2Cost.name, "Lex"]))
-        common_csts = []
-        common_cost_fcns = []
-        for name in self.collision_link_names:
-            if name in self.model_interface.scene.collision_link_names["static_obstacles"]:
-                softened = self.params["collision_constraints_softend"]["static_obstacles"]
-            else:
-                softened = self.params["collision_constraints_softend"][name]
-
-            if softened:
-                common_cost_fcns.append(self.collisionSoftCsts[name])
-            else:
-                common_csts.append(self.collisionCsts[name])
-        self.stmpc_cost_fcns = []
-        if config["ee_pose_tracking_enabled"]:
-            self.stmpc_cost_fcns.append([self.EEPoseSE3Cost, self.RegularizationCost, self.CtrlEffCost] + common_cost_fcns)
-        else:
-            self.stmpc_cost_fcns.append([self.EEPos3Cost, self.RegularizationCost, self.CtrlEffCost] + common_cost_fcns)
-        self.stmpc_cost_fcns.append([self.BasePoseSE2Cost, self.BaseVel3Cost, self.CtrlEffCost] + common_cost_fcns)
+    def _construct(self, stmpc_cost_fcns, stmpc_constraints):
 
         name = self.params["acados"].get("name", "MM")
-        self.stmpc_names = ["_".join([name, cost_fcns[0].name]) for cost_fcns in self.stmpc_cost_fcns]
-        ocp1, ocp_solver1, p_struct1 = self._construct(self.stmpc_cost_fcns[0], [] + common_csts, 1, self.stmpc_names[0])
-        if config["ee_pose_tracking_enabled"]:
-            ocp2, ocp_solver2, p_struct2 = self._construct(self.stmpc_cost_fcns[1], [self.EEPoseSE3LexConstraint] + common_csts, 1, self.stmpc_names[1])
-        else:
-            ocp2, ocp_solver2, p_struct2 = self._construct(self.stmpc_cost_fcns[1], [self.EEPos3LexConstraint] + common_csts, 1, self.stmpc_names[1])
+        stmpc_names = ["_".join([name, cost_fcns[0].name]) for cost_fcns in stmpc_cost_fcns]
+        num_stmpcs = len(stmpc_names)
+
+        stmpcs = []
+        stmpc_solvers = []
+        stmpc_p_structs = []
+        for i in range(num_stmpcs):
+            ocp, ocp_solver, p_struct = super()._construct(stmpc_cost_fcns[i], stmpc_constraints[i], 1, stmpc_names[i])
+            stmpcs.append(ocp)
+            stmpc_solvers.append(ocp_solver)
+            stmpc_p_structs.append(p_struct)
         
-        self.stmpcs = [ocp1, ocp2]
-        self.stmpc_solvers = [ocp_solver1, ocp_solver2]
-        self.stmpc_p_structs = [p_struct1, p_struct2]
+        return stmpcs, stmpc_solvers, stmpc_p_structs
 
     def control(self, 
                 t: float, 
@@ -150,7 +130,7 @@ class HTMPC(MPC):
         if map is not None and self.params["sdf_collision_avoidance_enabled"]:
             self.model_interface.sdf_map.update_map(*map)
         t2 = time.perf_counter()
-        self.log["time_map_update"] = t2 - t1
+        self.log["time_map_update"] = [t2 - t1, t2-t1]
 
         # Optimal tracking error
         e_p_bar_map = {}
@@ -180,7 +160,7 @@ class HTMPC(MPC):
                         curr_p_map["value_sdf"] = map_params[2]
 
                 # Set regularization
-                if task_id == 0:
+                if "eps_Regularization" in curr_p_map.keys():
                     curr_p_map["eps_Regularization"] = self.params["cost_params"]["Regularization"]["eps"]
 
                 for name in self.collision_link_names:
@@ -355,7 +335,7 @@ class HTMPC(MPC):
             self.log["sqp_iter"][task_id] = stmpc_solver.get_stats('sqp_iter')
             self.log["qp_iter"][task_id] = sum(stmpc_solver.get_stats('qp_iter'))
             self.log["_".join(["ocp_param", str(task_id)])]=[p.cat.full().flatten() for p in curr_p_map_bar]
-            self.log["x_bar"][task_id] =x_bar_initial
+            self.log["x_bar"][task_id] = x_bar_initial
             self.log["u_bar"][task_id] = u_bar_initial
 
 
@@ -412,6 +392,76 @@ class HTMPC(MPC):
         super().reset()
         for solver in self.stmpc_solvers:
             solver.reset()
+
+class HTMPC(HTMPCBase):
+
+    def __init__(self, config):
+        super().__init__(config)
+            
+        self.EEPos3LexConstraint = HierarchicalTrackingConstraint(self.EEPos3Cost, "_".join([self.EEPos3Cost.name, "Lex"]))
+        self.EEPoseSE3LexConstraint = HierarchicalTrackingConstraint(self.EEPoseSE3Cost, "_".join([self.EEPoseSE3Cost.name, "Lex"]))
+        self.BasePos2LexConstraint = HierarchicalTrackingConstraint(self.BasePos2Cost, "_".join([self.BasePos2Cost.name, "Lex"]))
+        common_csts = []
+        common_cost_fcns = []
+        for name in self.collision_link_names:
+            if name in self.model_interface.scene.collision_link_names["static_obstacles"]:
+                softened = self.params["collision_constraints_softend"]["static_obstacles"]
+            else:
+                softened = self.params["collision_constraints_softend"][name]
+
+            if softened:
+                common_cost_fcns.append(self.collisionSoftCsts[name])
+            else:
+                common_csts.append(self.collisionCsts[name])
+        self.stmpc_cost_fcns = []
+        if config["ee_pose_tracking_enabled"]:
+            self.stmpc_cost_fcns.append([self.EEPoseSE3Cost, self.RegularizationCost, self.CtrlEffCost] + common_cost_fcns)
+        else:
+            self.stmpc_cost_fcns.append([self.EEPos3Cost, self.RegularizationCost, self.CtrlEffCost] + common_cost_fcns)
+        self.stmpc_cost_fcns.append([self.BasePoseSE2Cost, self.BaseVel3Cost, self.CtrlEffCost] + common_cost_fcns)
+
+        self.stmpc_constraints = [common_csts]
+        if config["ee_pose_tracking_enabled"]:
+            self.stmpc_constraints.append([self.EEPoseSE3LexConstraint] + common_csts)
+        else:
+            self.stmpc_constraints.append([self.EEPos3LexConstraint] + common_csts)
+
+        self.stmpcs, self.stmpc_solvers, self.stmpc_p_structs = self._construct(self.stmpc_cost_fcns, self.stmpc_constraints)
+        self.constraints = common_csts + [self.EEPoseSE3LexConstraint if config["ee_pose_tracking_enabled"] else self.EEPos3LexConstraint]
+
+
+class NavHTMPC(HTMPCBase):
+
+    def __init__(self, config):
+        super().__init__(config)
+            
+        self.BasePoseSE2LexConstraint = HierarchicalTrackingConstraint(self.BasePoseSE2Cost, "_".join([self.BasePoseSE2Cost.name, "Lex"]))
+        common_csts = []
+        common_cost_fcns = []
+        for name in self.collision_link_names:
+            if name in self.model_interface.scene.collision_link_names["static_obstacles"]:
+                softened = self.params["collision_constraints_softend"]["static_obstacles"]
+            else:
+                softened = self.params["collision_constraints_softend"][name]
+
+            if softened:
+                common_cost_fcns.append(self.collisionSoftCsts[name])
+            else:
+                common_csts.append(self.collisionCsts[name])
+
+        self.stmpc_cost_fcns = []
+        self.stmpc_cost_fcns.append([self.BasePoseSE2Cost, self.BaseVel3Cost, self.CtrlEffCost] + common_cost_fcns)
+
+        if config["ee_pose_tracking_enabled"]:
+            self.stmpc_cost_fcns.append([self.EEPoseBaseFrameSE3Cost, self.RegularizationCost, self.CtrlEffCost] + common_cost_fcns)
+        else:
+            self.stmpc_cost_fcns.append([self.EEPos3BaseFrameCost, self.RegularizationCost, self.CtrlEffCost] + common_cost_fcns)
+
+        self.stmpc_constraints = [common_csts]
+        self.stmpc_constraints.append([self.BasePoseSE2LexConstraint] + common_csts)
+
+        self.stmpcs, self.stmpc_solvers, self.stmpc_p_structs = self._construct(self.stmpc_cost_fcns, self.stmpc_constraints)
+        self.constraints = common_csts + [self.BasePoseSE2LexConstraint]
 
 if __name__ == "__main__":
     # robot mdl
