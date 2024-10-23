@@ -184,8 +184,11 @@ class HTMPCBase(MPC):
                 stmpc_solver.set(k, 'x', x_bar_initial[k])
                 if k < self.N:
                     stmpc_solver.set(k, 'u', u_bar_initial[k])
-                if task_id != 0 and self.lam_bar is not None and k!=0 and k<self.N:
-                    lam_prev = self.lam_bar[k]
+
+                if task_id ==0 and self.lam_bar[task_id] is not None:
+                    stmpc_solver.set(k, 'lam', self.lam_bar[task_id][k])
+                elif task_id != 0 and self.lam_bar[task_id-1] is not None and k!=0 and k<self.N:
+                    lam_prev = self.lam_bar[task_id-1][k]
                     lam_curr = np.zeros_like(stmpc_solver.get(i, "lam"))
                     lam_curr[:27] = lam_prev[:27].copy()
                     lam_curr[27:27+21] = lam_prev[27:27+21].copy()
@@ -193,6 +196,7 @@ class HTMPCBase(MPC):
                     lam_curr[27+27+27:27+27+27+21] = lam_prev[27+21+27:27+21+27+21].copy()
                     lam_curr[27+27+27+27:] = lam_prev[27+21+27+21:].copy()
                     stmpc_solver.set(k, 'lam', lam_curr)
+
 
                 # set parameters for tracking cost functions
                 p_keys = p_struct.keys()
@@ -324,14 +328,14 @@ class HTMPCBase(MPC):
                 self.log["iter_snapshot"][task_id] = None
 
             # get solution
-            self.lam_bar = []
+            self.lam_bar[task_id] = []
             for i in range(self.N):
                 x_bar_initial[i,:] = stmpc_solver.get(i, "x")
                 u_bar_initial[i,:] = stmpc_solver.get(i, "u")
-                self.lam_bar.append(stmpc_solver.get(i, "lam"))
+                self.lam_bar[task_id].append(stmpc_solver.get(i, "lam"))
 
             x_bar_initial[self.N,:] = stmpc_solver.get(self.N, "x")
-            self.lam_bar.append(stmpc_solver.get(self.N, "lam"))
+            self.lam_bar[task_id].append(stmpc_solver.get(self.N, "lam"))
 
             # get e_p_bar for the hierarchy constraints
             e_p_bar = []
@@ -489,6 +493,8 @@ class NavHTMPC(HTMPCBase):
 
         self.stmpcs, self.stmpc_solvers, self.stmpc_p_structs = self._construct(self.stmpc_cost_fcns, self.stmpc_constraints)
         self.constraints = common_csts + [self.BasePoseSE2LexConstraint]
+
+        self.lam_bar = [None, None]
 
 if __name__ == "__main__":
     # robot mdl
