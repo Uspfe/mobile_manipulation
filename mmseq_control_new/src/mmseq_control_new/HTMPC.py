@@ -188,15 +188,58 @@ class HTMPCBase(MPC):
                 if task_id ==0 and self.lam_bar[task_id] is not None:
                     stmpc_solver.set(k, 'lam', self.lam_bar[task_id][k])
                 elif task_id != 0 and self.lam_bar[task_id-1] is not None and k!=0 and k<self.N:
+                    '''
+                        .. note:: regarding lam, t: \n
+                                the inequalities are internally organized in the following order: \n
+                                [ lbu lbx lg lh lphi ubu ubx ug uh uphi; \n
+                                lsbu lsbx lsg lsh lsphi usbu usbx usg ush usphi]
+                    '''
                     lam_prev = self.lam_bar[task_id-1][k]
                     lam_curr = np.zeros_like(stmpc_solver.get(i, "lam"))
-                    lam_curr[:27] = lam_prev[:27].copy()
-                    lam_curr[27:27+21] = lam_prev[27:27+21].copy()
-                    lam_curr[27+27:27+27+27] = lam_prev[27+21:27+21+27].copy()
-                    lam_curr[27+27+27:27+27+27+21] = lam_prev[27+21+27:27+21+27+21].copy()
-                    lam_curr[27+27+27+27:] = lam_prev[27+21+27+21:].copy()
-                    stmpc_solver.set(k, 'lam', lam_curr)
+                    dims = stmpc.dims
+                    nu = dims.nu
+                    nx = dims.nx
+                    nh = dims.nh
+                    nh_common = self.stmpcs[0].dims.nh
 
+                    # lbx lbu
+                    idx_lbx = nx+nu
+                    lam_curr[:idx_lbx] = lam_prev[:idx_lbx].copy()
+                    
+                    # lbh
+                    # h constraints = [special ones (Lex) + common ones]
+                    # special constraint lam copied from previous control iteration
+                    idx_lbhspecial = idx_lbx + nh - nh_common
+                    if self.lam_bar[task_id] is not None:
+                        lam_curr[idx_lbx:idx_lbhspecial] = self.lam_bar[task_id][k][idx_lbx:idx_lbhspecial]
+
+                    # common constraint lam copied from previous task iteration
+                    idx_lbhcommon_curr = idx_lbhspecial + nh_common
+                    idx_lbhcommon_prev = idx_lbx + nh_common
+                    lam_curr[idx_lbhspecial:idx_lbhcommon_curr] = lam_prev[idx_lbx:idx_lbhcommon_prev].copy()
+                    
+                    # ubu ubx
+                    idx_ub_curr = idx_lbhcommon_curr
+                    idx_ub_prev = idx_lbhcommon_prev
+
+                    idx_ubx_curr = idx_ub_curr + nu + nx
+                    idx_ubx_prev = idx_ub_prev + nu + nx
+                    lam_curr[idx_ub_curr:idx_ubx_curr] = lam_prev[idx_ub_prev:idx_ubx_prev].copy()
+
+                    # ubh
+                    # special constraint lam copied from previous control iteration
+                    idx_ubhspecial = idx_ubx_curr + nh - nh_common
+                    if self.lam_bar[task_id] is not None:
+                        lam_curr[idx_ubx_curr:idx_ubhspecial] = self.lam_bar[task_id][k][idx_ubx_curr:idx_ubhspecial]
+
+                    # common constraint lam copied from previous task iteration
+                    idx_ubhcommon_curr = idx_ubhspecial + nh_common
+                    idx_ubhcommon_prev = idx_ubx_prev + nh_common
+                    lam_curr[idx_ubhspecial:idx_ubhcommon_curr] = lam_prev[idx_ubx_prev:idx_ubhcommon_prev].copy()
+                    
+                    # slacks
+                    lam_curr[idx_ubhcommon_curr:] = lam_prev[idx_ubhcommon_prev:].copy()
+                    stmpc_solver.set(k, 'lam', lam_curr)
 
                 # set parameters for tracking cost functions
                 p_keys = p_struct.keys()
