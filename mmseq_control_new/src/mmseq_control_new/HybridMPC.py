@@ -120,11 +120,11 @@ class RAL25(HybridMPC):
                 robot_states: Tuple[NDArray[np.float64], NDArray[np.float64]], 
                 planners: List[Union[Planner, TrajectoryPlanner]], 
                 map=None):
-        curr_controller_name = "HTMPC"
-        for planner in planners:
-            print(planners)
-            if "baseframe" in planner.name.split("_"):
-                curr_controller_name = "NavMPC"
+        if planners[0].type == "base" and planners[1].type == "EE":
+            curr_controller_name = "NavHTMPC"
+        elif planners[0].type == "EE" and planners[1].type == "base":
+            curr_controller_name = "ManHTMPC"
+
         self.py_logger.info("Acting Controller {}".format(curr_controller_name))
         controller = self.controllers[curr_controller_name] 
 

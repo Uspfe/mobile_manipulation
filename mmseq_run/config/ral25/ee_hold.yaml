@@ -10,15 +10,8 @@ planner:
     yaw_accel: 100
     tracking_err_tol: 0.6
     ref_traj_duration: 12
-    intermediate_waypoints: [[[1.2, -0.8, -0.3],
-                              [2.35, -1.25, 0],
-                              [3.5, -1.1, 1.4],
-                              [4.1, -0.3, 1.65]],
-                             [[4.1, 2.35, 1.78],
-                              [3.6, 3.7, 2.8],
-                              [2.44, 3.45, -3.11],
-                              [1.21, 3.3, -2.2],
-                              [1.1, 2.0, -1.51]]
+    intermediate_waypoints: [[[2.5, -0.0, 0.0]],
+                             [[10, 0.0, 0.0]]
                              ]
     plan_on_start: True
   # - frame_id: base_link
@@ -43,15 +36,15 @@ planner:
   - frame_id: base
     name: ee_global_planner
     planner_type: EEPoseSE3WaypointOnDemand
-    target_waypoints: [[5., 0.4, 0.9, 1.57, 0, 1.57],
-                       [0.2, 1.1, 0.8, 1.57, 0, -1.57]] # in base frame
-    hold_period: 2
+    target_waypoints: [[3.706, -0.3, 0.9, 1.57, 0, 0],
+                       [10, -0.3, 0.7, 1.57, 0, 1.57]] # in base frame
+    hold_period: 20
     tracking_err_tol: 0.3
 simulation:
   duration: 100
   robot:
     #home: [0., -0.2, 0, 0.5pi, -0.75pi, 0.75pi, -0.25pi, 0.5pi, 0.417pi]  # standard
-    home: [-0, 0, -0., 0.25pi, -0.3pi, 0.5pi, -0.25pi, 0.6pi, 0.417pi]
+    home: [-0, 0, -0., 0.25pi, -0.3pi, 0.5pi, -0.25pi, 0.6pi, -0.25]
 
 include:
   - package: "mmseq_run"
@@ -67,7 +60,7 @@ include:
   - package: "mmseq_run"
     path: "config/map/SDF3D.yaml"
   - package: "mmseq_run"
-    path: "config/scene/ral25.yaml"
+    path: "config/scene/single_object.yaml"
 logging:
   log_dir: "$MOBILE_MANIPULATION_CENTRAL_BAG_DIR/ral25/"
   log_level: 10 # 0 - not set, 10 - debug, 20 - info

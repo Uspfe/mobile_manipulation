@@ -3,9 +3,9 @@ controller:
   sdf_collision_avoidance_enabled: True
 
   control_modes:
-    - key: "NavMPC"
+    - key: "NavHTMPC"
       package: "mmseq_run"
-      path: "config/controller/NavMPC.yaml"
-    - key: "HTMPC"
+      path: "config/controller/NavHTMPCWorld.yaml"
+    - key: "ManHTMPC"
       package: "mmseq_run"
-      path: "config/controller/HTMPC_EEBase.yaml"
+      path: "config/controller/ManHTMPC.yaml"

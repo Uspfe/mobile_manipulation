@@ -466,6 +466,8 @@ class HTMPCBase(MPC):
         super().reset()
         for solver in self.stmpc_solvers:
             solver.reset()
+        
+        self.lam_bar = [None, None]
 
 class HTMPC(HTMPCBase):
 
@@ -503,6 +505,7 @@ class HTMPC(HTMPCBase):
         self.stmpcs, self.stmpc_solvers, self.stmpc_p_structs = self._construct(self.stmpc_cost_fcns, self.stmpc_constraints)
         self.constraints = common_csts + [self.EEPoseSE3LexConstraint if config["ee_pose_tracking_enabled"] else self.EEPos3LexConstraint]
 
+        self.lam_bar = [None, None]
 
 class NavHTMPC(HTMPCBase):
 
@@ -539,7 +542,7 @@ class NavHTMPC(HTMPCBase):
 
         self.lam_bar = [None, None]
 
-class NavHTMPCWorldFrame(HTMPCBase):
+class NavHTMPCWorld(HTMPCBase):
 
     def __init__(self, config):
         super().__init__(config)
