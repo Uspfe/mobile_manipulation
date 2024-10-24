@@ -27,7 +27,7 @@ controller:
   hierarchy_const_tol: 
     BasePoseSE2: [0.01, 0.01, 0.01]
     EEPos3: [0.01, 0.01, 0.01]
-    EEPose: [0.01, 0.01, 0.01, 0.01, 0.01, 0.1]
+    EEPose: [0.01, 0.01, 0.01, 0.01, 0.01, 0.05]
     EEPoseBaseFrame: [0.01, 0.01, 0.01, 0.01, 0.01, 0.1]
 
   self_collision_emergency_stop: True
