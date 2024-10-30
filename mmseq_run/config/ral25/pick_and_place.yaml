@@ -5,8 +5,8 @@ planner:
   - frame_id: base
     name: base_local_planner
     planner_type: ROSTrajectoryPlannerOnDemand
-    cruise_speed: 0.4
-    yaw_speed: 0.35
+    cruise_speed: 0.5
+    yaw_speed: 0.45
     yaw_accel: 100
     tracking_err_tol: 0.6
     ref_traj_duration: 12
@@ -43,8 +43,8 @@ planner:
   - frame_id: base
     name: ee_global_planner
     planner_type: EEPoseSE3WaypointOnDemand
-    target_waypoints: [[5., 0.4, 0.9, 1.57, 0, 1.57],
-                       [0.0, 1.0, 0.9, 1.57, 0, -1.57]] # in base frame
+    target_waypoints: [[4.9, 0.4, 0.95, 1.57, 0, 1.57],
+                       [0.1, 1.0, 0.95, 1.57, 0, -1.57]] # in base frame
     hold_period: 2
     tracking_err_tol: 0.5
 simulation:

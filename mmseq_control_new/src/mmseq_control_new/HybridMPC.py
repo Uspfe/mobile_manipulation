@@ -136,7 +136,7 @@ class RAL25(HybridMPC):
             controller.u_bar = self.u_bar.copy()
             controller.x_bar = self.x_bar.copy()
             controller.t_bar = self.t_bar.copy()
-            solver_iter_num = 3
+            solver_iter_num = 5
 
             self.py_logger.info("Controller Changed. Set solver iter to {}".format(solver_iter_num))
 
