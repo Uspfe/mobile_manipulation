@@ -29,6 +29,20 @@ class SemiStaticDataPlotter(DataPlotter):
         if process:
             self.trim_data()
             self.get_key_time_index()
+            self.get_collision_info()
+    
+    def get_collision_info(self):
+        sdf_dict = self.data["signed_distance_detailed"]["sdf"]
+        for pair, sd in sdf_dict.items():
+            if "base" in pair:
+                base_sdf = sd
+                break
+
+        self.collision_time_index = min(np.argmin(base_sdf), len(self.data["r_bw_ws"])-1)
+        if base_sdf[self.collision_time_index] > 0:
+            self.collided = False
+        else:
+            self.collided = True
 
     def trim_data(self):
         x_cutoff = 5.5
@@ -105,10 +119,9 @@ class SemiStaticDataPlotter(DataPlotter):
         if r_b is None:
             return
         
-        collision_time_index = np.where(self.data["signed_distance"]<0)[0]
-        if len(collision_time_index) > 0:
-            plot_circle(r_b[collision_time_index[0], :2], BASE_RADIUS, axes)
-            plot_cross(r_b[collision_time_index[0], :2],linewidth=2, length=0.05, ax=axes)
+
+        plot_circle(r_b[self.collision_time_index, :2], BASE_RADIUS, axes)
+        plot_cross(r_b[self.collision_time_index, :2],linewidth=2, length=0.05, ax=axes)
     
     def plot_key_base_frame(self, axes, color):
         r_b = self.data.get("r_bw_ws", None)
@@ -162,7 +175,7 @@ class SemiStaticDataPlotter(DataPlotter):
 
         axes.plot(ts, sds, label=legend, color=color, linestyle="-",linewidth=linewidth)
         axes.set_ylabel("Sd(q) (m)")
-        axes.set_xlabel("t (s)")
+        axes.set_xlabel("Time (s)")
 
         axes.legend()
         axes.grid('on')
@@ -175,7 +188,9 @@ class SemiStaticHTDataPlotter(HTMPCDataPlotter):
         super().__init__(folder_path, data_plotter_class)
         for plotter in self.plotters:
             plotter.trim_data()
-    
+            plotter.get_key_time_index()
+            plotter.get_collision_info()
+
     def plot_robot_boundary(self, axes):
         self.plotters[-1].plot_robot_boundary(axes)
 
@@ -222,102 +237,112 @@ class SemiStaticBenchmarkPlotter():
 
         self.t_idx_perceptive_raw = np.where(self.plotters[0].data["raw"]["xs"]["value"][:, 0] < BOX_CENTER[0] - self.perception_distance - 0.3)[0][-1]
 
-    def plot_base_path(self):
+    def plot_base_path(self, file_name="path_comparison"):
 
-        f, axes = plt.subplots(1, 1, sharex=True, figsize=(3.5, 1.3))
+        f, axes = plt.subplots(self.num_plotters, 1, sharex=True, figsize=(3.5, 2.7))
         cm_index = [0.8, 0.6, 0.4, 0.2]
         line_width = [2.0, 2.0, 2.0, 2.0, 2.0]
         colors = sns.color_palette("ch:s=.35,rot=-.35", n_colors=3)
         cm = LinearSegmentedColormap.from_list(
             "my_list", colors, N=50)
         
-        # plot perceptive region
-        x_perceptive = BOX_CENTER[0] - 0.3 - self.perception_distance
-        axes.axvspan(x_perceptive, 7, color="green", alpha=0.1)  # alpha for transparency
-        axes.axvline(x_perceptive, color='darkgreen', linestyle='--')  # Optional visual for x-value
+        for id, ax in enumerate(axes):
+            # plot perceptive region
+            x_perceptive = BOX_CENTER[0] - 0.3 - self.perception_distance
+            ax.axvspan(x_perceptive, 7, color="orange", alpha=0.1)  # alpha for transparency
+            ax.axvline(x_perceptive, color='darkorange', linestyle='--')  # Optional visual for x-value
 
-        arrow_length = 1.8
-        y = -0.5
-        axes.annotate(
-            '', 
-            xy=(x_perceptive + arrow_length, y), 
-            xytext=(x_perceptive+arrow_length*0.05, y),
-            arrowprops=dict(arrowstyle='->', linewidth=2)
-        )
+            arrow_length = 1.8
+            y = -0.4
+            ax.annotate(
+                '', 
+                xy=(x_perceptive + arrow_length, y), 
+                xytext=(x_perceptive+arrow_length*0.05, y),
+                arrowprops=dict(arrowstyle='<->', linewidth=2)
+            )
 
-        # Plot left-pointing arrow
-        axes.annotate(
-            '', 
-            xy=(x_perceptive - arrow_length, y), 
-            xytext=(x_perceptive-arrow_length*0.05, y),
-            arrowprops=dict(arrowstyle='->', linewidth=2)
-        )
+            # Plot left-pointing arrow
+            ax.annotate(
+                '', 
+                xy=(x_perceptive - arrow_length, y), 
+                xytext=(x_perceptive-arrow_length*0.05, y),
+                arrowprops=dict(arrowstyle='<->', linewidth=2)
+            )
 
-        # Add text annotation at the center
-        axes.text(
-            x_perceptive+arrow_length/2, y, "Perceptive",
-            ha='center', va='center', 
-            bbox=dict(facecolor='white', edgecolor='black', boxstyle='round,pad=0.3')
-        )
-        axes.text(
-            x_perceptive-arrow_length/2, y, "Blinded",
-            ha='center', va='center',
-            bbox=dict(facecolor='white', edgecolor='black', boxstyle='round,pad=0.3')
-        )
+            # Add text annotation at the center
+            ax.text(
+                x_perceptive+arrow_length/2, y, "Perceptive",
+                ha='center', va='center', 
+                bbox=dict(facecolor='white', edgecolor='black', boxstyle='round,pad=0.3')
+            )
+            ax.text(
+                x_perceptive-arrow_length/2, y, "Blinded",
+                ha='center', va='center',
+                bbox=dict(facecolor='white', edgecolor='black', boxstyle='round,pad=0.3')
+            )
 
-        # plot base path
-        plot_square_box(0.6, BOX_CENTER[:2], axes)
+            # plot base path
+            plot_square_box(0.6, BOX_CENTER[:2], ax)
 
-        for id, p in enumerate(self.plotters):
-            if p.data["name"][:8] == "Baseline":
-                sns_color= sns.color_palette("Paired")
-                color = SCARLET
-            else:
-                color = cm(cm_index[id])
-            axes = p.plot_base_path(axes, id, worldframe=False, linewidth=line_width[id], color=color)
-            p.plot_robot_boundary(axes)
+            p = self.plotters[id]
+            color = cm(0.8)
+            ax = p.plot_base_path(ax, id, worldframe=False, linewidth=2, color=color)
+            p.plot_robot_boundary(ax)
             # p.plot_key_base_frame(axes, color=color)
 
-        # plot base ref path
-        self.plotters[-1].plot_base_ref_path(axes, self.num_plotters, legend="ref", worldframe=False, color=SCARLET)
-        
-        # plotters[0].plot_ee_waypoints(axes, num_plotters, legend="")
+            # plot base ref path
+            p.plot_base_ref_path(ax, id, legend="Base Ref", worldframe=False, color=SCARLET)
+            
+            ax.legend(loc="upper left")
+            ax.grid('on')
 
-        # axes.set_aspect("equal")
-        plt.legend(loc="upper left")
-        plt.grid('on')
+            ax.set_aspect('equal', 'box')
+            ax.set_title('Base Path')
+            ax.set_xlim([-0.1, 6.1])
+            if id>0:
+                ylim = axes[id-1].get_ylim()
+                ax.set_ylim(ylim)
 
-        axes.set_aspect('equal', 'box')
-        axes.set_title('Base Path')
-        axes.set_xlim([-0.1, 6.1])
-        axes.annotate("Base collided \nwith the box.", xy=(4.5, -0.05), xycoords="data",
-                            xytext=(5.5, 0.4),
-                            horizontalalignment='center', arrowprops=dict(arrowstyle="->", lw=1.),
-                            fontsize=6,
-                            bbox=dict(facecolor='white', edgecolor='black', boxstyle='round,pad=0.3'))
+            # for label in ax.get_yticklabels():
+            #     label.set_rotation(45)  # Set desired angle, e.g., 45 degrees
+            if p.collided:
+                ax.annotate("Collision", xy=(4.5, -0.05), xycoords="data",
+                                    xytext=(5.5, 0.4),
+                                    horizontalalignment='center', arrowprops=dict(arrowstyle="->", lw=1.),
+                                    fontsize=6,
+                                    bbox=dict(facecolor='white', edgecolor='black', boxstyle='round,pad=0.3'))
+            if not p.collided:
+                ax.annotate("Pass", xy=(4.5, -0.05), xycoords="data",
+                                    xytext=(5.5, 0.4),
+                                    horizontalalignment='center', arrowprops=dict(arrowstyle="->", lw=1.),
+                                    fontsize=6,
+                                    bbox=dict(facecolor='white', edgecolor='black', boxstyle='round,pad=0.3'))
 
+        axes[0].xaxis.label.set_visible(False)
+        axes[1].title.set_visible(False)
 
-
-        plt.subplots_adjust(top=0.92,
-                            bottom=0.218,
+        axes[0].set_title("Actual Base Path")
+        plt.subplots_adjust(top=0.93,
+                            bottom=0.102,
                             left=0.152,
                             right=0.974,
-                            hspace=0.2,
+                            hspace=0.0,
                             wspace=0.2)
 
 
 
         f = plt.gcf()
-        f.savefig(self.folder_path + "/path_comparison.pdf" , pad_inches=0)
+        f.savefig(self.folder_path + "/" + file_name + ".pdf" , pad_inches=0)
 
     def plot_base_path_htmpc_vs_stmpc(self):
 
-        f, axes = plt.subplots(1, 1, sharex=True, figsize=(3.5, 1.3))
+        f, axes = plt.subplots(1, 1, sharex=True, figsize=(3.5, 1.5))
         cm_index = [0.8, 0.6, 0.4, 0.2]
         line_width = [2.0, 2.0, 2.0, 2.0, 2.0]
-        colors = sns.color_palette("ch:s=.35,rot=-.35", n_colors=3)
+        colors = sns.color_palette(palette="colorblind", n_colors=6)
         cm = LinearSegmentedColormap.from_list(
             "my_list", colors, N=50)
+        plot_square_box(0.6, BOX_CENTER[:2], axes)
         
         # plot base path
         for id, p in enumerate(self.plotters):
@@ -325,10 +350,10 @@ class SemiStaticBenchmarkPlotter():
                 sns_color= sns.color_palette("Paired")
                 color = SCARLET
             else:
-                color = cm(cm_index[id%3])
+                color = colors[id%3]
             linestyle = "-." if "HTMPC" in p.data['name'] else '-'
             axes = p.plot_base_path(axes, id, worldframe=False, linewidth=line_width[id%3], color=color, linestyle=linestyle, legend='')
-            p.plot_robot_boundary(axes)
+            # p.plot_robot_boundary(axes)
             # p.plot_key_base_frame(axes, color=color)
 
 
@@ -337,13 +362,13 @@ class SemiStaticBenchmarkPlotter():
         
         from matplotlib.lines import Line2D
         legend_elements = [
-            Line2D([0], [0],color=cm(0.8), lw=1, linestyle='-', label="STMPC-CBF"),
-            Line2D([0], [0],color=cm(0.8), lw=1, linestyle='-.', label="HTMPC-CBF"),
+            Line2D([0], [0],color='black', lw=1, linestyle='-', label="WSMPC-CBF"),
+            Line2D([0], [0],color='black', lw=1, linestyle='-.', label="HTMPC-CBF"),
         ]
 
         # Add the legend
         main_legend = plt.legend(handles=legend_elements, title="Controller Type",loc="upper left")
-        plt.legend(handles=[Line2D([0], [0],color=SCARLET, lw=2, linestyle='--', label="Ref")],loc="lower right")
+        plt.legend(handles=[Line2D([0], [0],color=SCARLET, lw=2, linestyle='--', label="Base Ref")],loc="lower right")
         axes.add_artist(main_legend)
 
         # Annotate Gamma
@@ -352,7 +377,7 @@ class SemiStaticBenchmarkPlotter():
         text_x = arrow_start_x
         axes.annotate("", xy=(arrow_end_x, 1.15), xycoords="data",
                             xytext=(arrow_start_x, 1.15),
-                            horizontalalignment='center', arrowprops=dict(arrowstyle="->", lw=1.),
+                            horizontalalignment='center', arrowprops=dict(arrowstyle="<->", lw=1.),
                             fontsize=6,
                             bbox=dict(facecolor='white', edgecolor='lightgrey', boxstyle='round,pad=0.3'))
         axes.text(
@@ -362,7 +387,7 @@ class SemiStaticBenchmarkPlotter():
         )
         axes.annotate("", xy=(arrow_end_x, 0.8), xycoords="data",
                             xytext=(arrow_start_x, 0.8),
-                            horizontalalignment='center', arrowprops=dict(arrowstyle="->", lw=1.),
+                            horizontalalignment='center', arrowprops=dict(arrowstyle="<->", lw=1.),
                             fontsize=6,
                             bbox=dict(facecolor='white', edgecolor='lightgrey', boxstyle='round,pad=0.3'))
         axes.text(
@@ -372,7 +397,7 @@ class SemiStaticBenchmarkPlotter():
         )
         axes.annotate("", xy=(arrow_end_x, 0.64), xycoords="data",
                             xytext=(arrow_start_x, 0.45),
-                            horizontalalignment='center', arrowprops=dict(arrowstyle="->", lw=1.),
+                            horizontalalignment='center', arrowprops=dict(arrowstyle="<->", lw=1.),
                             fontsize=6,
                             bbox=dict(facecolor='white', edgecolor='lightgrey', boxstyle='round,pad=0.3'))
         axes.text(
@@ -383,8 +408,10 @@ class SemiStaticBenchmarkPlotter():
         plt.grid('on')
 
         axes.set_aspect('equal', 'box')
-        axes.set_title('Base Path')
+        axes.set_title('Actual Base Path')
         axes.set_xlim([1.5 , 7.5])
+        # axes.set_ylim([-0.1 , 1.4])
+
 
         plt.subplots_adjust(top=0.92,
                             bottom=0.218,
@@ -437,16 +464,16 @@ class SemiStaticBenchmarkPlotter():
 
         f, axes = plt.subplots(1, 1, sharex=True, figsize=(3.5, 2.0))
         t_perceptive = self.plotters[0].data['raw']['xs']['ts'][self.t_idx_perceptive_raw]
-        axes.axvspan(t_perceptive, 8, color="green", alpha=0.1)  # alpha for transparency
-        axes.axvline(t_perceptive, color='darkgreen', linestyle='--')  # Optional visual for x-value
+        axes.axvspan(t_perceptive, 8, color="orange", alpha=0.1)  # alpha for transparency
+        axes.axvline(t_perceptive, color='darkorange', linestyle='--')  # Optional visual for x-value
 
         arrow_length = 2.5
         y = 0.8
         axes.annotate(
             '', 
-            xy=(t_perceptive + arrow_length, y), 
-            xytext=(t_perceptive+arrow_length*0.05, y),
-            arrowprops=dict(arrowstyle='->', linewidth=2)
+            xy=(t_perceptive + 0.5 + arrow_length, y), 
+            xytext=(t_perceptive + 0.5+arrow_length*0.05, y),
+            arrowprops=dict(arrowstyle='<->', linewidth=2)
         )
 
         # Plot left-pointing arrow
@@ -454,12 +481,12 @@ class SemiStaticBenchmarkPlotter():
             '', 
             xy=(t_perceptive - arrow_length, y), 
             xytext=(t_perceptive-arrow_length*0.05, y),
-            arrowprops=dict(arrowstyle='->', linewidth=2)
+            arrowprops=dict(arrowstyle='<->', linewidth=2)
         )
 
         # Add text annotation at the center
         axes.text(
-            t_perceptive+arrow_length/2, y, "Perceptive",
+            t_perceptive + 0.5+arrow_length/2, y, "Perceptive",
             ha='center', va='center', 
             bbox=dict(facecolor='white', edgecolor='black', boxstyle='round,pad=0.3')
         )
@@ -490,8 +517,8 @@ class SemiStaticBenchmarkPlotter():
         plt.legend(loc="lower left")
         plt.grid('on')
         axes.set_xlim([0, 6.8])
-        axes.set_title("Signed Distance (Robot Wholebody to Obstalces)")
-
+        axes.set_title("Signed Distance \n(Robot Wholebody to Obstalces)")
+        axes.set_ylabel(r"$\min_{j}\; h_j(x)$")
 
         plt.subplots_adjust(top=0.87,
                             bottom=0.181,

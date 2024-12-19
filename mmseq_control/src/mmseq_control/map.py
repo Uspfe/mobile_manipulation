@@ -583,6 +583,8 @@ class SDF3DNew:
         # ax1.set_ylabel(labels[y_idx])
         plt.show(block=block)
 
+        return ax
+
     def vis3d(self, x_lim, y_lim, z_lim, block=True):
         Nx = int(1.0/0.01 * (x_lim[1] - x_lim[0]))+1
         Ny = int(1.0/0.01 * (y_lim[1] - y_lim[0]))+1

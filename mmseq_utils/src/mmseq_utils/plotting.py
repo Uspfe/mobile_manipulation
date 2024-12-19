@@ -268,11 +268,35 @@ class DataPlotter:
             sdf_param_names = ["_".join(["mpc","sdf","param", str(i)])+"s" for i in range(self.model_interface.sdf_map.dim+1)]
             sdf_param = [self.data[name] for name in sdf_param_names]
             params["sdf"] = sdf_param
-        sds_dict = self.model_interface.evaluteSignedDistance(names, qs, params)
+        sds_dict = self.model_interface.evaluteSignedDistance(names, qs, copy.deepcopy(params))
         sds = np.array([sd for sd in sds_dict.values()])
         for id, name in enumerate(names):
             self.data["_".join(["signed_distance", name])] = sds_dict[name]
         self.data["signed_distance"] = np.min(sds, axis=0)
+
+        names = []
+        params = {}
+
+        if self.config["controller"]["self_collision_avoidance_enabled"]:
+            names += ["self"]
+            params = {"self": []}
+
+        if self.config["controller"]["sdf_collision_avoidance_enabled"]:
+            param_names =  ["_".join(["mpc","sdf", "param", str(i)])+"s" for i in range(self.model_interface.sdf_map.dim+1)]
+            sdf_params = [self.data[name] for name in param_names]
+            params["sdf"] = sdf_params
+            names += ["sdf"]
+
+        if self.config["controller"]["static_obstacles_collision_avoidance_enabled"]:
+            params["static_obstacles"] = []
+            names += ["static_obstacles"]
+        sds_dict_detailed = self.model_interface.evaluteSignedDistancePerPair(names, qs, params)
+        self.data["signed_distance_detailed"] = {}
+
+        for name, sds in sds_dict_detailed.items():
+            self.data["signed_distance_detailed"][name] = {}
+            for pair, sd in sds.items():
+                self.data["signed_distance_detailed"][name][pair] = sd
 
         # normalized state and input w.r.t bounds
         # -1 --> saturate lower bounds
@@ -2137,9 +2161,9 @@ class ROSBagPlotter:
         ur10_msgs = [msg for _, msg, _ in bag.read_messages("/ur10/joint_states")]
         ridgeback_msgs = [msg for _, msg, _ in bag.read_messages("/ridgeback/joint_states")]
 
-        tas, qas, vas = ros_utils.parse_ur10_joint_state_msgs(ur10_msgs, False)
+        tas, qas, vas, effas = ros_utils.parse_ur10_joint_state_msgs(ur10_msgs, False)
         tbs, qbs, vbs = ros_utils.parse_ridgeback_joint_state_msgs(ridgeback_msgs, False)
-        self.data["ur10"]["joint_states"] = {"ts": tas, "qs": qas, "vs": vas}           # 125hz
+        self.data["ur10"]["joint_states"] = {"ts": tas, "qs": qas, "vs": vas, "effs":effas}           # 125hz
         self.data["ridgeback"]["joint_states"] = {"ts": tbs, "qs": qbs, "vs": vbs}      # 50hz
         
         dts = tbs[1:] - tbs[:-1]
@@ -2405,7 +2429,7 @@ class ROSBagPlotter:
     def plot_joint_states(self, axes=None, legend=""):
         if axes is None:
             axes = []
-            for i in range(4):
+            for i in range(5):
                 f = plt.figure()
                 axes.append(f.gca())
 
@@ -2445,6 +2469,15 @@ class ROSBagPlotter:
         ax.legend()
         ax.grid()
 
+        ax = axes[4]
+        ax.plot(self.data["ur10"]["joint_states"]["ts"],
+                self.data["ur10"]["joint_states"]["effs"], '-', label=[r"$eff_{}$".format(i+1) for i in range(6)])
+        ax.set_title("UR10 Joint Efforts")
+        ax.set_xlabel("Time (s)")
+        ax.set_ylabel("Joint Efforts")
+        ax.legend()
+        ax.grid()
+
     def plot_joint_vel_tracking(self, axes=None, legend=""):
         if axes is None:
             f1, ax1 = plt.subplots(6, 1, sharex=True)
@@ -2479,6 +2512,17 @@ class ROSBagPlotter:
             ax[i].legend()
         ax[0].set_title("Ridgeback Velocity Tracking (Body Frame)")
         ax[2].set_xlabel("Time (s)")
+
+        f3, ax3 = plt.subplots(6, 1, sharex=True)
+
+        for i in range(6):
+            ax3[i].plot(self.data["ur10"]["joint_states"]["ts"],
+                self.data["ur10"]["joint_states"]["effs"][:, i], '-', label=[r"$eff_{}$".format(i+1)])
+            ax3[i].set_ylabel("Joint Efforts")
+            ax3[i].legend()
+            ax3[i].grid()
+        ax3[0].set_title("UR10 Joint Efforts")
+        ax3[-1].set_xlabel("Time (s)")
 
 
     def plot_tracking(self, axes=None, subscript=""):

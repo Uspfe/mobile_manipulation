@@ -18,10 +18,10 @@ def plot_square_box(dimension, center, ax=None):
         (center_x - half_dim, center_y - half_dim),  # Bottom-left corner
         dimension,  # Width
         dimension,  # Height
-        edgecolor='darkgrey',  # Border color
+        edgecolor='lightgrey',  # Border color
         facecolor='lightgrey',  # Fill color
-        linewidth=2,  # Border thickness
-        alpha=1     # Transparency of the fill
+        linewidth=1,  # Border thickness
+        alpha=1.0     # Transparency of the fill
     )
 
     # Add the square to the plot
