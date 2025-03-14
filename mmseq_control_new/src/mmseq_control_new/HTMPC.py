@@ -500,8 +500,12 @@ class HTMPC(HTMPCBase):
         if config["ee_pose_tracking_enabled"]:
             self.stmpc_cost_fcns.append([self.EEPoseSE3Cost, self.RegularizationCost, self.CtrlEffCost] + common_cost_fcns)
         else:
-            self.stmpc_cost_fcns.append([self.EEPos3Cost, self.RegularizationCost, self.CtrlEffCost] + common_cost_fcns)
-        self.stmpc_cost_fcns.append([self.BasePoseSE2Cost, self.BaseVel3Cost, self.CtrlEffCost] + common_cost_fcns)
+            self.stmpc_cost_fcns.append([self.EEPos3Cost, self.EEVel3Cost, self.RegularizationCost, self.CtrlEffCost] + common_cost_fcns)
+        
+        if config["base_pose_tracking_enabled"]:
+            self.stmpc_cost_fcns.append([self.BasePoseSE2Cost, self.BaseVel3Cost, self.CtrlEffCost] + common_cost_fcns)
+        else:
+            self.stmpc_cost_fcns.append([self.BasePos2Cost, self.BaseVel2Cost, self.CtrlEffCost] + common_cost_fcns)
 
         self.stmpc_constraints = [common_csts]
         if config["ee_pose_tracking_enabled"]:

@@ -26,11 +26,32 @@ controller:
   home: "default"
   self_collision_avoidance_enabled: True
   sdf_collision_avoidance_enabled: False
-  type: "STMPC"
+  base_pose_tracking_enabled: False
+  ee_pose_tracking_enabled: False
+  type: "HTMPC" # "HTMPC" or "STMPC"
+  acados:
+    ocp_solver_options:
+      qp_solver: "FULL_CONDENSING_HPIPM"
+      # FULL_CONDENSING_QPOASES
+      # PARTIAL_CONDENSING_HPIPM, FULL_CONDENSING_QPOASES, FULL_CONDENSING_HPIPM,
+      # PARTIAL_CONDENSING_QPDUNES, PARTIAL_CONDENSING_OSQP, FULL_CONDENSING_DAQP
+      hessian_approx: "GAUSS_NEWTON"
+      integrator_type: "IRK"
+      print_level: 0
+      nlp_solver_type: "SQP"  #SQP_RTI, SQP
+      globalization: "MERIT_BACKTRACKING"
+      qp_solver_iter_max: 100
+      nlp_solver_tol_comp: 1.e-06
+      nlp_solver_tol_stat: 1.0e-03
+      nlp_solver_tol_eq: 1.0e-02
+      nlp_solver_tol_ineq: 1.0e-02
+      nlp_solver_max_iter: 100
+      qp_solver_warm_start: 2
+      nlp_solver_ext_qp_res: 0
 
 
 simulation:
-  duration: 5
+  duration: 10
 
 include:
   - package: "mmseq_run"

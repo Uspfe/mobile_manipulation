@@ -23,12 +23,14 @@ controller:
   static_obstacles_collision_avoidance_enabled: False
   ee_upward_constraint_enabled: False
   cst_tol_schedule_enabled: False
+  ee_pose_tracking_enabled: True
   base_pose_tracking_enabled: True
   hierarchy_const_tol: 
     BasePoseSE2: [0.01, 0.01, 0.01]
     EEPos3: [0.01, 0.01, 0.01]
     EEPose: [0.01, 0.01, 0.01, 0.01, 0.01, 0.05]
     EEPoseBaseFrame: [0.01, 0.01, 0.01, 0.01, 0.01, 0.1]
+    BasePos2: [0.01, 0.01]
 
   self_collision_emergency_stop: True
 
