@@ -66,5 +66,5 @@ include:
     path: "config/map/SDF3D.yaml"
 
 logging:
-  log_dir: "/home/ubuntu/"
+  log_dir: "self_collision_avoidance"
   log_level: 4 # 0 - not set, 10 - debug, 20 - info

@@ -54,6 +54,11 @@ python3 -m pip install -r requirements.txt
    ```
    where `$ISAACSIM_PYTHON' is the `./python.sh` file in the Isaac Sim root folder.
 
+## Compile Controller
+```
+rosrun mmseq_control_new mpc_generate_c_code.py --config $(rospack find mmseq_run)/config/self_collision_avoidance.yaml
+```
+
 ## Run controller and Pybullet simulation synchronously in one loop
 ```
 roscd mmseq_run/scripts
