@@ -7,6 +7,7 @@ import yaml
 
 from mmseq_utils.parsing import parse_path
 
+
 class DataLogger:
     """Log data for later saving and viewing."""
 
@@ -66,13 +67,3 @@ class DataLogger:
             yaml.safe_dump(self.config, stream=f, default_flow_style=False)
 
         print(f"Saved data to {dir_path}.")
-
-
-
-
-
-
-
-
-
-

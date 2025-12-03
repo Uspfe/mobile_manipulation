@@ -67,6 +67,7 @@ class PyBulletInputMapping:
         forward(q, v) -> (q_pyb, v_pyb)
         inverse(q_pyb, v_pyb) -> (q, v)
     """
+
     @staticmethod
     def from_string(s):
         s = s.lower()
@@ -90,7 +91,9 @@ class SimulatedRobot:
         # base_simple.urdf model instead of the Ridgeback.
         urdf_path = parsing.parse_and_compile_urdf(config["robot"]["urdf"])
         # urdf_path = parsing.parse_ros_path(config["robot"]["urdf"])
-        self.uid = pyb.loadURDF(parsing.parse_path(urdf_path), position, orientation, useFixedBase=True)
+        self.uid = pyb.loadURDF(
+            parsing.parse_path(urdf_path), position, orientation, useFixedBase=True
+        )
 
         # home position
         self.home = parsing.parse_array(config["robot"]["home"])
@@ -170,7 +173,9 @@ class SimulatedRobot:
 
         # add process noise
         if add_noise:
-            v_pyb_noisy = v_pyb + np.random.normal(scale=self.v_cmd_std_dev, size=v_pyb.shape)
+            v_pyb_noisy = v_pyb + np.random.normal(
+                scale=self.v_cmd_std_dev, size=v_pyb.shape
+            )
         else:
             v_pyb_noisy = v_pyb
 
@@ -222,11 +227,7 @@ class SimulatedRobot:
     def link_velocity(self, link_idx=None):
         if link_idx is None:
             link_idx = self.tool_idx
-        state = pyb.getLinkState(
-            self.uid,
-            link_idx,
-            computeLinkVelocity=True,
-        )
+        state = pyb.getLinkState(self.uid, link_idx, computeLinkVelocity=True)
         return np.array(state[-2]), np.array(state[-1])
 
     def jacobian(self, q=None):

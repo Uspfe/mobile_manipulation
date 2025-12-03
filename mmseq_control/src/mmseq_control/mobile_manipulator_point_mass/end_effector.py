@@ -1,10 +1,13 @@
 import numpy as np
 
-def generate_intermediate_points_withouth_trajectory(self, points, prediction_horizon=None):
+
+def generate_intermediate_points_withouth_trajectory(
+    self, points, prediction_horizon=None
+):
     intermediate_points = []
     if prediction_horizon == None:
         prediction_horizon = len(points)
-    for i in range(prediction_horizon+1):
+    for i in range(prediction_horizon + 1):
         if i == len(points):
             intermediate_points.append((points[0][0], points[0][1], points[0][2]))
         else:

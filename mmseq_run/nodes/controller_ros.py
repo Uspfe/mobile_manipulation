@@ -20,22 +20,35 @@ from mmseq_control.robot import MobileManipulator3D
 import mmseq_plan.TaskManager as TaskManager
 from mmseq_utils import parsing
 from mmseq_utils.logging import DataLogger
-from mobile_manipulation_central.ros_interface import MobileManipulatorROSInterface, ViconObjectInterface
+from mobile_manipulation_central.ros_interface import (
+    MobileManipulatorROSInterface,
+    ViconObjectInterface,
+)
+
 
 class ControllerROSNode:
-
     def __init__(self):
-
         np.set_printoptions(precision=3, suppress=True)
         argv = rospy.myargv(argv=sys.argv)
         parser = argparse.ArgumentParser()
-        parser.add_argument("--config", required=True, help="Path to configuration file.")
-        parser.add_argument("--ctrl_config", type=str,
-                            help="controller config. This overwrites the yaml settings in config if not set to default")
-        parser.add_argument("--planner_config", type=str,
-                            help="plannner config. This overwrites the yaml settings in config if not set to default")
-        parser.add_argument("--logging_sub_folder", type=str,
-                            help="save data in a sub folder of logging director")
+        parser.add_argument(
+            "--config", required=True, help="Path to configuration file."
+        )
+        parser.add_argument(
+            "--ctrl_config",
+            type=str,
+            help="controller config. This overwrites the yaml settings in config if not set to default",
+        )
+        parser.add_argument(
+            "--planner_config",
+            type=str,
+            help="plannner config. This overwrites the yaml settings in config if not set to default",
+        )
+        parser.add_argument(
+            "--logging_sub_folder",
+            type=str,
+            help="save data in a sub folder of logging director",
+        )
         args = parser.parse_args(argv[1:])
 
         # load configuration and overwrite with args
@@ -48,7 +61,9 @@ class ControllerROSNode:
             config = parsing.recursive_dict_update(config, planner_config)
 
         if args.logging_sub_folder != "default":
-            config["logging"]["log_dir"] = os.path.join(config["logging"]["log_dir"], args.logging_sub_folder)
+            config["logging"]["log_dir"] = os.path.join(
+                config["logging"]["log_dir"], args.logging_sub_folder
+            )
 
         self.ctrl_config = config["controller"]
         self.planner_config = config["planner"]
@@ -60,7 +75,9 @@ class ControllerROSNode:
 
         # set py logger level
         ch = logging.StreamHandler()
-        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+        formatter = logging.Formatter(
+            "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+        )
         ch.setFormatter(formatter)
         self.planner_log = logging.getLogger("Planner")
         self.planner_log.setLevel(config["logging"]["log_level"])
@@ -83,9 +100,15 @@ class ControllerROSNode:
 
         # ROS Related
         self.robot_interface = MobileManipulatorROSInterface()
-        self.vicon_tool_interface = ViconObjectInterface(self.ctrl_config["robot"]["tool_vicon_name"])
-        self.plan_visualization_pub = rospy.Publisher("plan_visualization", Marker, queue_size=10)
-        self.tracking_point_pub = rospy.Publisher("controller_tracking_pt", MultiDOFJointTrajectory, queue_size=5)
+        self.vicon_tool_interface = ViconObjectInterface(
+            self.ctrl_config["robot"]["tool_vicon_name"]
+        )
+        self.plan_visualization_pub = rospy.Publisher(
+            "plan_visualization", Marker, queue_size=10
+        )
+        self.tracking_point_pub = rospy.Publisher(
+            "controller_tracking_pt", MultiDOFJointTrajectory, queue_size=5
+        )
 
         self.sot_lock = threading.Lock()
         rospy.on_shutdown(self.shutdownhook)
@@ -101,7 +124,6 @@ class ControllerROSNode:
     def run(self):
         rate = rospy.Rate(self.ctrl_rate)
 
-
         while not self.robot_interface.ready():
             self.robot_interface.brake()
             rate.sleep()
@@ -114,18 +136,31 @@ class ControllerROSNode:
         use_vicon_tool_data = True
         if not self.vicon_tool_interface.ready():
             use_vicon_tool_data = False
-            print("Controller did not receive vicon tool " + self.ctrl_config["robot"]["tool_vicon_name"] + ". Using Robot Model")
+            print(
+                "Controller did not receive vicon tool "
+                + self.ctrl_config["robot"]["tool_vicon_name"]
+                + ". Using Robot Model"
+            )
             self.robot = MobileManipulator3D(self.ctrl_config)
         else:
-            print("Controlelr received vicon tool " + self.ctrl_config["robot"]["tool_vicon_name"])
+            print(
+                "Controlelr received vicon tool "
+                + self.ctrl_config["robot"]["tool_vicon_name"]
+            )
 
         planner_class = getattr(TaskManager, self.planner_config["sot_type"])
         self.sot = planner_class(self.planner_config)
         if use_vicon_tool_data:
-            self.planner_coord_transform(self.robot_interface.q, self.vicon_tool_interface.position, self.sot.planners)
+            self.planner_coord_transform(
+                self.robot_interface.q,
+                self.vicon_tool_interface.position,
+                self.sot.planners,
+            )
         else:
             ee_pos, _ = self.robot.getEE(self.robot_interface.q)
-            self.planner_coord_transform(self.robot_interface.q, ee_pos, self.sot.planners)
+            self.planner_coord_transform(
+                self.robot_interface.q, ee_pos, self.sot.planners
+            )
 
         rospy.Timer(rospy.Duration(0, int(1e8)), self._publish_planner_data)
 
@@ -146,7 +181,7 @@ class ControllerROSNode:
             planners = self.sot.getPlanners(num_planners=2)
             self.sot_lock.release()
             tc1 = time.perf_counter()
-            u, acc = self.controller.control(t-t0, robot_states, planners)
+            u, acc = self.controller.control(t - t0, robot_states, planners)
             tc2 = time.perf_counter()
             self.controller_log.log(5, "Controller Run Time: {}".format(tc2 - tc1))
 
@@ -154,12 +189,18 @@ class ControllerROSNode:
 
             # Update Task Manager
             if use_vicon_tool_data:
-                ee_states = (self.vicon_tool_interface.position, self.vicon_tool_interface.orientation)
+                ee_states = (
+                    self.vicon_tool_interface.position,
+                    self.vicon_tool_interface.orientation,
+                )
             else:
                 ee_states = self.robot.getEE(robot_states[0])
-            states = {"base": (robot_states[0][:3], robot_states[1][:3]), "EE": ee_states}
+            states = {
+                "base": (robot_states[0][:3], robot_states[1][:3]),
+                "EE": ee_states,
+            }
             self.sot_lock.acquire()
-            self.sot.update(t-t0, states)
+            self.sot.update(t - t0, states)
             self.sot_lock.release()
 
             self._publish_trajectory_tracking_pt(t - t0, robot_states, planners)
@@ -194,7 +235,9 @@ class ControllerROSNode:
 
             if self.controller.__class__.__name__ == "HTIDKC":
                 for id, name in enumerate(self.controller.task_names):
-                    self.logger.append("task_violations_" + name, self.controller.ws[id])
+                    self.logger.append(
+                        "task_violations_" + name, self.controller.ws[id]
+                    )
                 # only log once at the beginning.
                 if not self.logger.data.get("task_names"):
                     self.logger.append("task_names", self.controller.task_names)
@@ -213,20 +256,25 @@ class ControllerROSNode:
                 planner.target_pos = R_wb @ planner.target_pos + P
             elif planner.__class__.__name__ == "EEPosTrajectoryCircle":
                 planner.c = R_wb @ planner.c + P
-                planner.plan['p'] = planner.plan['p'] @ R_wb.T + P
+                planner.plan["p"] = planner.plan["p"] @ R_wb.T + P
 
             elif planner.__class__.__name__ == "BaseSingleWaypoint":
-                planner.target_pos = (R_wb @ np.hstack((planner.target_pos, 0)))[:2] + P[:2]
+                planner.target_pos = (R_wb @ np.hstack((planner.target_pos, 0)))[
+                    :2
+                ] + P[:2]
             elif planner.__class__.__name__ == "BasePosTrajectoryCircle":
                 planner.c = R_wb[:2, :2] @ planner.c + P[:2]
-                planner.plan['p'] = planner.plan['p'] @ R_wb[:2, :2].T + P[:2]
-            elif planner.__class__.__name__ == "BasePosTrajectoryLine" or planner.__class__.__name__ == "BasePosTrajectorySqaureWave":
-                planner.plan['p'] = planner.plan['p'] @ R_wb[:2, :2].T + P[:2]
+                planner.plan["p"] = planner.plan["p"] @ R_wb[:2, :2].T + P[:2]
+            elif (
+                planner.__class__.__name__ == "BasePosTrajectoryLine"
+                or planner.__class__.__name__ == "BasePosTrajectorySqaureWave"
+            ):
+                planner.plan["p"] = planner.plan["p"] @ R_wb[:2, :2].T + P[:2]
 
     def _make_marker(self, marker_type, id, rgba, scale):
         # make a visualization marker array for the occupancy grid
         m = Marker()
-        m.header.frame_id = 'world'
+        m.header.frame_id = "world"
         m.header.stamp = rospy.Time.now()
         m.id = id
         m.type = marker_type
@@ -239,32 +287,37 @@ class ControllerROSNode:
         m.color.g = rgba[1]
         m.color.b = rgba[2]
         m.color.a = rgba[3]
-        m.lifetime = rospy.Duration.from_sec(1./self.ctrl_rate)
+        m.lifetime = rospy.Duration.from_sec(1.0 / self.ctrl_rate)
 
         m.pose.orientation.w = 1
 
         return m
 
     def _publish_planner_data(self, event):
-
         self.sot_lock.acquire()
         for pid, planner in enumerate(self.sot.planners):
             color = [0] * 3
             color[pid % 3] = 1
             if planner.ref_type == "waypoint":
                 if planner.ref_data_type == "Vec3":
-                    marker_plan = self._make_marker(Marker.SPHERE, pid, rgba=color + [1], scale=[0.1, 0.1, 0.1])
+                    marker_plan = self._make_marker(
+                        Marker.SPHERE, pid, rgba=color + [1], scale=[0.1, 0.1, 0.1]
+                    )
                     marker_plan.pose.position = Point(*planner.target_pos)
                 elif planner.ref_data_type == "Vec2":
-                    marker_plan = self._make_marker(Marker.CYLINDER, pid, rgba=color + [1], scale=[0.1, 0.1, 0.5])
+                    marker_plan = self._make_marker(
+                        Marker.CYLINDER, pid, rgba=color + [1], scale=[0.1, 0.1, 0.5]
+                    )
                     marker_plan.pose.position = Point(*planner.target_pos, 0.25)
             elif planner.ref_type == "trajectory":
-                marker_plan = self._make_marker(Marker.LINE_STRIP, pid, rgba=color + [1], scale=[0.1, 0.1, 0.1])
+                marker_plan = self._make_marker(
+                    Marker.LINE_STRIP, pid, rgba=color + [1], scale=[0.1, 0.1, 0.1]
+                )
 
                 if planner.ref_data_type == "Vec3":
-                    marker_plan.points = [Point(*pt) for pt in planner.plan['p']]
+                    marker_plan.points = [Point(*pt) for pt in planner.plan["p"]]
                 elif planner.ref_data_type == "Vec2":
-                    marker_plan.points = [Point(*pt, 0) for pt in planner.plan['p']]
+                    marker_plan.points = [Point(*pt, 0) for pt in planner.plan["p"]]
 
             marker_plan.lifetime = rospy.Duration.from_sec(0.1)
             self.plan_visualization_pub.publish(marker_plan)
@@ -272,7 +325,6 @@ class ControllerROSNode:
         self.sot_lock.release()
 
     def _publish_trajectory_tracking_pt(self, t, robot_states, planners):
-
         msg = MultiDOFJointTrajectory()
         msg.header.stamp = rospy.Time.now()
 
@@ -310,6 +362,7 @@ class ControllerROSNode:
             msg.points.append(pt_msg)
 
         self.tracking_point_pub.publish(msg)
+
 
 if __name__ == "__main__":
     rospy.init_node("controller_ros")

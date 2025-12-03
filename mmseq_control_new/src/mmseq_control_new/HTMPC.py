@@ -5,7 +5,7 @@ from typing import Optional, List, Dict, Tuple, Union
 from numpy.typing import NDArray
 from scipy.interpolate import interp1d
 
-from mmseq_plan.PlanBaseClass import Planner,TrajectoryPlanner
+from mmseq_plan.PlanBaseClass import Planner, TrajectoryPlanner
 from mmseq_utils.math import wrap_pi_array
 from mmseq_utils.casadi_struct import casadi_sym_struct
 from mmseq_control_new.MPCConstraints import HierarchicalTrackingConstraint
@@ -14,32 +14,36 @@ import mobile_manipulation_central as mm
 
 from mmseq_control_new.MPC import MPC, INF
 
+
 class HTMPCBase(MPC):
-
     def _construct(self, stmpc_cost_fcns, stmpc_constraints):
-
         name = self.params["acados"].get("name", "MM")
-        stmpc_names = ["_".join([name, cost_fcns[0].name]) for cost_fcns in stmpc_cost_fcns]
+        stmpc_names = [
+            "_".join([name, cost_fcns[0].name]) for cost_fcns in stmpc_cost_fcns
+        ]
         num_stmpcs = len(stmpc_names)
 
         stmpcs = []
         stmpc_solvers = []
         stmpc_p_structs = []
         for i in range(num_stmpcs):
-            ocp, ocp_solver, p_struct = super()._construct(stmpc_cost_fcns[i], stmpc_constraints[i], 1, stmpc_names[i])
+            ocp, ocp_solver, p_struct = super()._construct(
+                stmpc_cost_fcns[i], stmpc_constraints[i], 1, stmpc_names[i]
+            )
             stmpcs.append(ocp)
             stmpc_solvers.append(ocp_solver)
             stmpc_p_structs.append(p_struct)
-        
+
         return stmpcs, stmpc_solvers, stmpc_p_structs
 
-    def control(self, 
-                t: float, 
-                robot_states: Tuple[NDArray[np.float64], NDArray[np.float64]], 
-                planners: List[Union[Planner, TrajectoryPlanner]], 
-                map=None,
-                solve_iter_num=1):
-        
+    def control(
+        self,
+        t: float,
+        robot_states: Tuple[NDArray[np.float64], NDArray[np.float64]],
+        planners: List[Union[Planner, TrajectoryPlanner]],
+        map=None,
+        solve_iter_num=1,
+    ):
         task_num = len(planners)
         self.py_logger.debug("control time {}".format(t))
         self.curr_control_time = t
@@ -53,11 +57,16 @@ class HTMPCBase(MPC):
         # 0.1 Get warm start point
         # self.u_bar[:-1] = self.u_bar[1:]
         # self.u_bar[-1] = 0
-        # self.x_bar = self._predictTrajectories(xo, self.u_bar)            
+        # self.x_bar = self._predictTrajectories(xo, self.u_bar)
         if self.t_bar is not None:
-            self.u_t = interp1d(self.t_bar, self.u_bar, axis=0, 
-                                bounds_error=False, fill_value="extrapolate")
-            t_bar_new = t + np.arange(self.N)* self.dt
+            self.u_t = interp1d(
+                self.t_bar,
+                self.u_bar,
+                axis=0,
+                bounds_error=False,
+                fill_value="extrapolate",
+            )
+            t_bar_new = t + np.arange(self.N) * self.dt
             self.u_bar = self.u_t(t_bar_new)
             self.x_bar = self._predictTrajectories(xo, self.u_bar)
         else:
@@ -73,19 +82,26 @@ class HTMPCBase(MPC):
         self.rbase_bar = []
 
         for planner in planners:
-            # get tracking points from planner, tracking points are tuples of desired position and velocity (p, v) 
-            # for planners without velocity reference, none should be given (p, None) 
+            # get tracking points from planner, tracking points are tuples of desired position and velocity (p, v)
+            # for planners without velocity reference, none should be given (p, None)
             r_bar_map = {}
             if planner.ref_type == "path":
-                p_bar, v_bar = planner.getTrackingPointArray((xo[:self.DoF], xo[self.DoF:]), self.N+1, self.dt)
+                p_bar, v_bar = planner.getTrackingPointArray(
+                    (xo[: self.DoF], xo[self.DoF :]), self.N + 1, self.dt
+                )
             else:
-                r_bar = [planner.getTrackingPoint(t + k * self.dt, (self.x_bar[k, :self.DoF], self.x_bar[k, self.DoF:]))
-                            for k in range(self.N + 1)]
+                r_bar = [
+                    planner.getTrackingPoint(
+                        t + k * self.dt,
+                        (self.x_bar[k, : self.DoF], self.x_bar[k, self.DoF :]),
+                    )
+                    for k in range(self.N + 1)
+                ]
                 p_bar = [r[0] for r in r_bar]
                 v_bar = [r[1] for r in r_bar]
             contains_none = any(item is None for item in v_bar)
             velocity_ref_available = not contains_none
-            
+
             acceptable_ref = True
             if planner.type == "EE":
                 if planner.ref_data_type == "Vec3":
@@ -121,20 +137,22 @@ class HTMPCBase(MPC):
                     acceptable_ref = False
 
             if not acceptable_ref:
-                self.py_logger.warning(f"unknown cost type {planner.ref_data_type}, planner {planner.name}")
-            
+                self.py_logger.warning(
+                    f"unknown cost type {planner.ref_data_type}, planner {planner.name}"
+                )
+
             if planner.type == "EE":
-                self.ree_bar = p_bar 
+                self.ree_bar = p_bar
             elif planner.type == "base":
                 self.rbase_bar = p_bar
-            
+
             r_bar_maps.append(r_bar_map)
 
         t1 = time.perf_counter()
         if map is not None and self.params["sdf_collision_avoidance_enabled"]:
             self.model_interface.sdf_map.update_map(*map)
         t2 = time.perf_counter()
-        self.log["time_map_update"] = [t2 - t1, t2-t1]
+        self.log["time_map_update"] = [t2 - t1, t2 - t1]
 
         # Optimal tracking error
         e_p_bar_map = {}
@@ -142,16 +160,23 @@ class HTMPCBase(MPC):
         curr_p_map_bars = [None for i in range(task_num)]
         map_params = self.model_interface.sdf_map.get_params()
 
-        for task_id, (stmpc, stmpc_solver, p_struct, stmpc_cost_fcns) in enumerate(zip(self.stmpcs, self.stmpc_solvers, self.stmpc_p_structs, self.stmpc_cost_fcns)):
+        for task_id, (stmpc, stmpc_solver, p_struct, stmpc_cost_fcns) in enumerate(
+            zip(
+                self.stmpcs,
+                self.stmpc_solvers,
+                self.stmpc_p_structs,
+                self.stmpc_cost_fcns,
+            )
+        ):
             tracking_cost_fcn = stmpc_cost_fcns[0]
             tracking_cost_fcn_name = tracking_cost_fcn.name
             tracking_cost_fcns[task_id] = tracking_cost_fcn
             r_bar_map = r_bar_maps[task_id]
 
-            for solver_iter in range(solve_iter_num):                
+            for solver_iter in range(solve_iter_num):
                 t1 = time.perf_counter()
                 curr_p_map_bar = []
-                for k in range(self.N+1):
+                for k in range(self.N + 1):
                     # set parameters
                     curr_p_map = p_struct(0)
                     if self.params["sdf_collision_avoidance_enabled"]:
@@ -166,37 +191,59 @@ class HTMPCBase(MPC):
 
                     # Set regularization
                     if "eps_Regularization" in curr_p_map.keys():
-                        curr_p_map["eps_Regularization"] = self.params["cost_params"]["Regularization"]["eps"]
+                        curr_p_map["eps_Regularization"] = self.params["cost_params"][
+                            "Regularization"
+                        ]["eps"]
 
                     for name in self.collision_link_names:
                         cbf_cst_type = False
 
-                        if name in self.model_interface.scene.collision_link_names["static_obstacles"]:
-                            if self.params["collision_constraint_type"]["static_obstacles"] == "SignedDistanceConstraintCBF":
+                        if (
+                            name
+                            in self.model_interface.scene.collision_link_names[
+                                "static_obstacles"
+                            ]
+                        ):
+                            if (
+                                self.params["collision_constraint_type"][
+                                    "static_obstacles"
+                                ]
+                                == "SignedDistanceConstraintCBF"
+                            ):
                                 cbf_cst_type = True
                         else:
-                            if self.params["collision_constraint_type"][name] == "SignedDistanceConstraintCBF":
+                            if (
+                                self.params["collision_constraint_type"][name]
+                                == "SignedDistanceConstraintCBF"
+                            ):
                                 cbf_cst_type = True
 
                         if cbf_cst_type:
                             p_name = "_".join(["gamma", name])
-                            curr_p_map[p_name] = self.params["collision_cbf_gamma"][name]
+                            curr_p_map[p_name] = self.params["collision_cbf_gamma"][
+                                name
+                            ]
 
                     # set initial guess
-                    stmpc_solver.set(k, 'x', x_bar_initial[k])
+                    stmpc_solver.set(k, "x", x_bar_initial[k])
                     if k < self.N:
-                        stmpc_solver.set(k, 'u', u_bar_initial[k])
+                        stmpc_solver.set(k, "u", u_bar_initial[k])
 
-                    if task_id ==0 and self.lam_bar[task_id] is not None:
-                        stmpc_solver.set(k, 'lam', self.lam_bar[task_id][k])
-                    elif task_id != 0 and self.lam_bar[task_id-1] is not None and k!=0 and k<self.N:
-                        '''
-                            .. note:: regarding lam, t: \n
-                                    the inequalities are internally organized in the following order: \n
-                                    [ lbu lbx lg lh lphi ubu ubx ug uh uphi; \n
-                                    lsbu lsbx lsg lsh lsphi usbu usbx usg ush usphi]
-                        '''
-                        lam_prev = self.lam_bar[task_id-1][k]
+                    if task_id == 0 and self.lam_bar[task_id] is not None:
+                        stmpc_solver.set(k, "lam", self.lam_bar[task_id][k])
+                    elif (
+                        task_id != 0
+                        and self.lam_bar[task_id - 1] is not None
+                        and k != 0
+                        and k < self.N
+                    ):
+                        """
+                        .. note:: regarding lam, t: \n
+                                the inequalities are internally organized in the following order: \n
+                                [ lbu lbx lg lh lphi ubu ubx ug uh uphi; \n
+                                lsbu lsbx lsg lsh lsphi usbu usbx usg ush usphi]
+                        """
+                        lam_prev = self.lam_bar[task_id - 1][k]
                         lam_curr = np.zeros_like(stmpc_solver.get(i, "lam"))
                         dims = stmpc.dims
                         nu = dims.nu
@@ -205,49 +252,60 @@ class HTMPCBase(MPC):
                         nh_common = self.stmpcs[0].dims.nh
 
                         # lbx lbu
-                        idx_lbx = nx+nu
+                        idx_lbx = nx + nu
                         lam_curr[:idx_lbx] = lam_prev[:idx_lbx].copy()
-                        
+
                         # lbh
                         # h constraints = [special ones (Lex) + common ones]
                         # special constraint lam copied from previous control iteration
                         idx_lbhspecial = idx_lbx + nh - nh_common
                         if self.lam_bar[task_id] is not None:
-                            lam_curr[idx_lbx:idx_lbhspecial] = self.lam_bar[task_id][k][idx_lbx:idx_lbhspecial]
+                            lam_curr[idx_lbx:idx_lbhspecial] = self.lam_bar[task_id][k][
+                                idx_lbx:idx_lbhspecial
+                            ]
 
                         # common constraint lam copied from previous task iteration
                         idx_lbhcommon_curr = idx_lbhspecial + nh_common
                         idx_lbhcommon_prev = idx_lbx + nh_common
-                        lam_curr[idx_lbhspecial:idx_lbhcommon_curr] = lam_prev[idx_lbx:idx_lbhcommon_prev].copy()
-                        
+                        lam_curr[idx_lbhspecial:idx_lbhcommon_curr] = lam_prev[
+                            idx_lbx:idx_lbhcommon_prev
+                        ].copy()
+
                         # ubu ubx
                         idx_ub_curr = idx_lbhcommon_curr
                         idx_ub_prev = idx_lbhcommon_prev
 
                         idx_ubx_curr = idx_ub_curr + nu + nx
                         idx_ubx_prev = idx_ub_prev + nu + nx
-                        lam_curr[idx_ub_curr:idx_ubx_curr] = lam_prev[idx_ub_prev:idx_ubx_prev].copy()
+                        lam_curr[idx_ub_curr:idx_ubx_curr] = lam_prev[
+                            idx_ub_prev:idx_ubx_prev
+                        ].copy()
 
                         # ubh
                         # special constraint lam copied from previous control iteration
                         idx_ubhspecial = idx_ubx_curr + nh - nh_common
                         if self.lam_bar[task_id] is not None:
-                            lam_curr[idx_ubx_curr:idx_ubhspecial] = self.lam_bar[task_id][k][idx_ubx_curr:idx_ubhspecial]
+                            lam_curr[idx_ubx_curr:idx_ubhspecial] = self.lam_bar[
+                                task_id
+                            ][k][idx_ubx_curr:idx_ubhspecial]
 
                         # common constraint lam copied from previous task iteration
                         idx_ubhcommon_curr = idx_ubhspecial + nh_common
                         idx_ubhcommon_prev = idx_ubx_prev + nh_common
-                        lam_curr[idx_ubhspecial:idx_ubhcommon_curr] = lam_prev[idx_ubx_prev:idx_ubhcommon_prev].copy()
-                        
+                        lam_curr[idx_ubhspecial:idx_ubhcommon_curr] = lam_prev[
+                            idx_ubx_prev:idx_ubhcommon_prev
+                        ].copy()
+
                         # slacks
-                        lam_curr[idx_ubhcommon_curr:] = lam_prev[idx_ubhcommon_prev:].copy()
-                        stmpc_solver.set(k, 'lam', lam_curr)
+                        lam_curr[idx_ubhcommon_curr:] = lam_prev[
+                            idx_ubhcommon_prev:
+                        ].copy()
+                        stmpc_solver.set(k, "lam", lam_curr)
 
                     # set parameters for tracking cost functions
                     p_keys = p_struct.keys()
 
-
-                    for (name, r_bar) in r_bar_map.items():
+                    for name, r_bar in r_bar_map.items():
                         p_name_r = "_".join(["r", name])
                         p_name_W = "_".join(["W", name])
 
@@ -257,12 +315,16 @@ class HTMPCBase(MPC):
 
                             # Set weight matricies, assuming identity matrix with identical diagonal terms
                             if k == self.N:
-                                curr_p_map[p_name_W] = np.diag(self.params["cost_params"][name]["P"])
+                                curr_p_map[p_name_W] = np.diag(
+                                    self.params["cost_params"][name]["P"]
+                                )
                             else:
-                                curr_p_map[p_name_W] = np.diag(self.params["cost_params"][name]["Qk"])
+                                curr_p_map[p_name_W] = np.diag(
+                                    self.params["cost_params"][name]["Qk"]
+                                )
                         else:
                             self.py_logger.warning(f"unknown p name {p_name_r}")
-                    
+
                     for p in range(task_id):
                         # set parameters for lexicographic optimality constraints
                         name = self.stmpc_cost_fcns[p][0].name
@@ -274,21 +336,35 @@ class HTMPCBase(MPC):
                         # set reference
                         curr_p_map[p_name_r] = r_k
 
-                    curr_p_map["Qqa_ControlEffort"] = self.params["cost_params"]["Effort"]["Qqa"]
-                    curr_p_map["Qqb_ControlEffort"] = self.params["cost_params"]["Effort"]["Qqb"]
-                    curr_p_map["Qva_ControlEffort"] = self.params["cost_params"]["Effort"]["Qva"]
-                    curr_p_map["Qvb_ControlEffort"] = self.params["cost_params"]["Effort"]["Qvb"]
-                    curr_p_map["Qua_ControlEffort"] = self.params["cost_params"]["Effort"]["Qua"]
-                    curr_p_map["Qub_ControlEffort"] = self.params["cost_params"]["Effort"]["Qub"]
+                    curr_p_map["Qqa_ControlEffort"] = self.params["cost_params"][
+                        "Effort"
+                    ]["Qqa"]
+                    curr_p_map["Qqb_ControlEffort"] = self.params["cost_params"][
+                        "Effort"
+                    ]["Qqb"]
+                    curr_p_map["Qva_ControlEffort"] = self.params["cost_params"][
+                        "Effort"
+                    ]["Qva"]
+                    curr_p_map["Qvb_ControlEffort"] = self.params["cost_params"][
+                        "Effort"
+                    ]["Qvb"]
+                    curr_p_map["Qua_ControlEffort"] = self.params["cost_params"][
+                        "Effort"
+                    ]["Qua"]
+                    curr_p_map["Qub_ControlEffort"] = self.params["cost_params"][
+                        "Effort"
+                    ]["Qub"]
 
-                    stmpc_solver.set(k, 'p', curr_p_map.cat.full().flatten())
+                    stmpc_solver.set(k, "p", curr_p_map.cat.full().flatten())
                     curr_p_map_bar.append(curr_p_map)
 
                 t2 = time.perf_counter()
                 self.log["time_ocp_set_params"][task_id] = t2 - t1
 
                 # Log: initial cost
-                self.log["cost_iter"][task_id, 0] = self.evaluate_cost_function(tracking_cost_fcn, self.x_bar, self.u_bar, curr_p_map_bar)
+                self.log["cost_iter"][task_id, 0] = self.evaluate_cost_function(
+                    tracking_cost_fcn, self.x_bar, self.u_bar, curr_p_map_bar
+                )
 
                 # Solve stmpc
                 t1 = time.perf_counter()
@@ -296,21 +372,20 @@ class HTMPCBase(MPC):
                 t2 = time.perf_counter()
                 self.log["time_ocp_solve"][task_id] = t2 - t1
 
-                stmpc_solver.print_statistics() # encapsulates: stat = ocp_solver.get_stats("statistics")
+                stmpc_solver.print_statistics()  # encapsulates: stat = ocp_solver.get_stats("statistics")
 
-                if stmpc_solver.status !=0:
-
+                if stmpc_solver.status != 0:
                     x_bar = []
                     u_bar = []
                     print(f"xo: {xo}")
                     for i in range(self.N):
                         print(f"stage {i}: x: {stmpc_solver.get(i, 'x')}")
-                        x_bar.append(stmpc_solver.get(i, 'x'))
+                        x_bar.append(stmpc_solver.get(i, "x"))
                         print(f"stage {i}: u: {stmpc_solver.get(i, 'u')}")
-                        u_bar.append(stmpc_solver.get(i, 'u'))
-                    
-                    x_bar.append(stmpc_solver.get(self.N, 'x'))
-                        
+                        u_bar.append(stmpc_solver.get(i, "u"))
+
+                    x_bar.append(stmpc_solver.get(self.N, "x"))
+
                     for i in range(self.N):
                         print(f"stage {i}: lam: {stmpc_solver.get(i, 'lam')}")
 
@@ -324,43 +399,43 @@ class HTMPCBase(MPC):
                         print(f"stage {i}: sl: {stmpc_solver.get(i, 'sl')}")
                     for i in range(self.N):
                         print(f"stage {i}: su: {stmpc_solver.get(i, 'su')}")
-                        # v = self.evaluate_constraints(self.collisionCsts['sdf'], 
+                        # v = self.evaluate_constraints(self.collisionCsts['sdf'],
                         #                                     x_bar, u_bar, curr_p_map_bar)
-                        # h = self.evaluate_sdf_h_fcn(self.collisionCsts['sdf'], 
+                        # h = self.evaluate_sdf_h_fcn(self.collisionCsts['sdf'],
                         #                             x_bar, u_bar, curr_p_map_bar)
-                        # xdot = self.evaluate_sdf_xdot_fcn(self.collisionCsts['sdf'], 
+                        # xdot = self.evaluate_sdf_xdot_fcn(self.collisionCsts['sdf'],
                         #                             x_bar, u_bar, curr_p_map_bar)
                         # for i in range(self.N):
                         #     print(f"stage {i}: t: {stmpc_solver.get(i, 't')}")
                         #     print(f"state {i}: sdf: {v[i]}")
                         #     print(f"state {i}: h: {h[i]}")
                         #     print(f"state {i}: xdot: {xdot[i]}")
-                    
 
-                    self.log["iter_snapshot"][task_id] = {"t": t,
-                                                        "xo": xo,
-                                                        "p_map_bar": [p.cat.full().flatten() for p in curr_p_map_bar],
-                                                        "x_bar_init": x_bar_initial,
-                                                        "u_bar_init": u_bar_initial,
-                                                        "x_bar": x_bar,
-                                                        "u_bar": u_bar,
-                                                        }
+                    self.log["iter_snapshot"][task_id] = {
+                        "t": t,
+                        "xo": xo,
+                        "p_map_bar": [p.cat.full().flatten() for p in curr_p_map_bar],
+                        "x_bar_init": x_bar_initial,
+                        "u_bar_init": u_bar_initial,
+                        "x_bar": x_bar,
+                        "u_bar": u_bar,
+                    }
 
                     # get iterate:
                     solution = self.log["iter_snapshot"][task_id]
 
-                    lN = len(str(self.N+1))
-                    for i in range(self.N+1):
-                        i_string = f'{i:0{lN}d}'
-                        solution['x_'+i_string] = stmpc_solver.get(i,'x')
-                        solution['u_'+i_string] = stmpc_solver.get(i,'u')
-                        solution['z_'+i_string] = stmpc_solver.get(i,'z')
-                        solution['lam_'+i_string] = stmpc_solver.get(i,'lam')
-                        solution['t_'+i_string] = stmpc_solver.get(i, 't')
-                        solution['sl_'+i_string] = stmpc_solver.get(i, 'sl')
-                        solution['su_'+i_string] = stmpc_solver.get(i, 'su')
+                    lN = len(str(self.N + 1))
+                    for i in range(self.N + 1):
+                        i_string = f"{i:0{lN}d}"
+                        solution["x_" + i_string] = stmpc_solver.get(i, "x")
+                        solution["u_" + i_string] = stmpc_solver.get(i, "u")
+                        solution["z_" + i_string] = stmpc_solver.get(i, "z")
+                        solution["lam_" + i_string] = stmpc_solver.get(i, "lam")
+                        solution["t_" + i_string] = stmpc_solver.get(i, "t")
+                        solution["sl_" + i_string] = stmpc_solver.get(i, "sl")
+                        solution["su_" + i_string] = stmpc_solver.get(i, "su")
                         if i < self.N:
-                            solution['pi_'+i_string] = stmpc_solver.get(i,'pi')
+                            solution["pi_" + i_string] = stmpc_solver.get(i, "pi")
 
                     # for k in list(solution.keys()):
                     #     if len(solution[k]) == 0:
@@ -368,46 +443,66 @@ class HTMPCBase(MPC):
 
                     # stmpc_solver.store_iterate(filename=str(self.output_dir / "iter_{:.2f}.json".format(t)))
                     if self.params["acados"]["raise_exception_on_failure"]:
-                        raise Exception(f'acados acados_ocp_solver returned status {self.solver_status}')
+                        raise Exception(
+                            f"acados acados_ocp_solver returned status {self.solver_status}"
+                        )
                 else:
                     self.log["iter_snapshot"][task_id] = None
 
                 # get solution
                 self.lam_bar[task_id] = []
                 for i in range(self.N):
-                    x_bar_initial[i,:] = stmpc_solver.get(i, "x")
-                    u_bar_initial[i,:] = stmpc_solver.get(i, "u")
+                    x_bar_initial[i, :] = stmpc_solver.get(i, "x")
+                    u_bar_initial[i, :] = stmpc_solver.get(i, "u")
                     self.lam_bar[task_id].append(stmpc_solver.get(i, "lam"))
 
-                x_bar_initial[self.N,:] = stmpc_solver.get(self.N, "x")
+                x_bar_initial[self.N, :] = stmpc_solver.get(self.N, "x")
                 self.lam_bar[task_id].append(stmpc_solver.get(self.N, "lam"))
 
                 # get e_p_bar for the hierarchy constraints
                 e_p_bar = []
-                for k in range(self.N+1):
+                for k in range(self.N + 1):
                     # Relaxed Lex Constraints |e_k| \leq |e^*_k| + eps
-                    rhs = np.abs(tracking_cost_fcn.get_e(x_bar_initial[k],[],r_bar_map[tracking_cost_fcn_name][k]))
-                    rhs += np.array(self.params["hierarchy_const_tol"][tracking_cost_fcn_name])
+                    rhs = np.abs(
+                        tracking_cost_fcn.get_e(
+                            x_bar_initial[k], [], r_bar_map[tracking_cost_fcn_name][k]
+                        )
+                    )
+                    rhs += np.array(
+                        self.params["hierarchy_const_tol"][tracking_cost_fcn_name]
+                    )
                     e_p_bar.append(rhs)
                     # self.py_logger.debug(f"task:{tracking_cost_fcn_name}, time{k}: e_p + eps {rhs}")
-                
+
                 e_p_bar_map[tracking_cost_fcn_name] = np.array(e_p_bar)
-                self.py_logger.debug(f"cost {tracking_cost_fcn_name}: {stmpc_solver.get_cost()}")
+                self.py_logger.debug(
+                    f"cost {tracking_cost_fcn_name}: {stmpc_solver.get_cost()}"
+                )
 
                 # Log: solver status, step size, cost after stmpc
                 self.log["solver_status"][task_id] = stmpc_solver.status
                 if stmpc.solver_options.nlp_solver_type != "SQP_RTI":
-                    self.log["step_size"][task_id] = np.mean(stmpc_solver.get_stats('alpha'))
+                    self.log["step_size"][task_id] = np.mean(
+                        stmpc_solver.get_stats("alpha")
+                    )
                 else:
                     self.log["step_size"][task_id] = -1
-                self.log["cost_iter"][task_id, 1] = self.evaluate_cost_function(tracking_cost_fcn, x_bar_initial, u_bar_initial, curr_p_map_bar)
-                self.log["sqp_iter"][task_id] = stmpc_solver.get_stats('sqp_iter')
-                self.log["qp_iter"][task_id] = sum(stmpc_solver.get_stats('qp_iter'))
-                self.log["_".join(["ocp_param", str(task_id)])]=[p.cat.full().flatten() for p in curr_p_map_bar]
+                self.log["cost_iter"][task_id, 1] = self.evaluate_cost_function(
+                    tracking_cost_fcn, x_bar_initial, u_bar_initial, curr_p_map_bar
+                )
+                self.log["sqp_iter"][task_id] = stmpc_solver.get_stats("sqp_iter")
+                self.log["qp_iter"][task_id] = sum(stmpc_solver.get_stats("qp_iter"))
+                self.log["_".join(["ocp_param", str(task_id)])] = [
+                    p.cat.full().flatten() for p in curr_p_map_bar
+                ]
                 self.log["x_bar"][task_id] = x_bar_initial
                 self.log["u_bar"][task_id] = u_bar_initial
 
-                self.py_logger.debug("Task {} solver_iter{}: cost{}".format(task_id, solver_iter, stmpc_solver.get_cost()))
+                self.py_logger.debug(
+                    "Task {} solver_iter{}: cost{}".format(
+                        task_id, solver_iter, stmpc_solver.get_cost()
+                    )
+                )
 
                 curr_p_map_bars[task_id] = curr_p_map_bar
 
@@ -417,78 +512,101 @@ class HTMPCBase(MPC):
         self.u_bar = u_bar_initial.copy()
 
         self.ee_bar, self.base_bar = self._getEEBaseTrajectories(self.x_bar)
-        self.sdf_bar["EE"] = self.model_interface.sdf_map.query_val(self.ee_bar[:, 0],self.ee_bar[:, 1],self.ee_bar[:, 2]).flatten()
-        self.sdf_grad_bar["EE"] = self.model_interface.sdf_map.query_grad(self.ee_bar[:, 0],self.ee_bar[:, 1],self.ee_bar[:, 2]).reshape((3,-1))
-        
-        self.sdf_bar["base"] = self.model_interface.sdf_map.query_val(self.base_bar[:, 0], self.base_bar[:, 1], np.ones(self.N+1)*0.2)
-        self.sdf_grad_bar["base"] = self.model_interface.sdf_map.query_grad(self.base_bar[:, 0], self.base_bar[:, 1], np.ones(self.N+1)*0.2).reshape((3,-1))
+        self.sdf_bar["EE"] = self.model_interface.sdf_map.query_val(
+            self.ee_bar[:, 0], self.ee_bar[:, 1], self.ee_bar[:, 2]
+        ).flatten()
+        self.sdf_grad_bar["EE"] = self.model_interface.sdf_map.query_grad(
+            self.ee_bar[:, 0], self.ee_bar[:, 1], self.ee_bar[:, 2]
+        ).reshape((3, -1))
+
+        self.sdf_bar["base"] = self.model_interface.sdf_map.query_val(
+            self.base_bar[:, 0], self.base_bar[:, 1], np.ones(self.N + 1) * 0.2
+        )
+        self.sdf_grad_bar["base"] = self.model_interface.sdf_map.query_grad(
+            self.base_bar[:, 0], self.base_bar[:, 1], np.ones(self.N + 1) * 0.2
+        ).reshape((3, -1))
 
         sdf_param = self.model_interface.sdf_map.get_params()
         for i, param in enumerate(sdf_param):
             self.log["_".join(["sdf", "param", str(i)])] = param
-            
+
         # Log: final cost for each task after all stmpcs have been solved
         for i, tracking_cost_fcn in enumerate(tracking_cost_fcns):
-            self.log["cost_final"][i] = self.evaluate_cost_function(tracking_cost_fcn, 
-                                                             self.x_bar,
-                                                             self.u_bar,
-                                                             curr_p_map_bars[i])
-            for k in range(self.N+1):
+            self.log["cost_final"][i] = self.evaluate_cost_function(
+                tracking_cost_fcn, self.x_bar, self.u_bar, curr_p_map_bars[i]
+            )
+            for k in range(self.N + 1):
                 # Relaxed Lex Constraints |e_k| \leq |e^*_k| + eps
-                rhs = np.abs(tracking_cost_fcn.get_e(self.x_bar[k],[],r_bar_maps[i][tracking_cost_fcn.name][k]))
+                rhs = np.abs(
+                    tracking_cost_fcn.get_e(
+                        self.x_bar[k], [], r_bar_maps[i][tracking_cost_fcn.name][k]
+                    )
+                )
                 # self.py_logger.debug(f"task:{tracking_cost_fcn.name}, time{k}: e_p + eps {rhs}")
 
-        self.v_cmd = self.x_bar[0][self.robot.DoF:].copy()
+        self.v_cmd = self.x_bar[0][self.robot.DoF :].copy()
 
         return self.v_cmd, self.u_prev, self.u_bar.copy(), self.x_bar[:, 9:].copy()
-    
+
     def _get_log(self, task_num=2):
-        log = {"cost_iter": np.zeros((task_num, 2)),
-        "cost_final": np.zeros(task_num),
-        "solver_status": np.zeros(task_num),
-        "step_size": np.zeros(task_num),
-        "sqp_iter": np.zeros(task_num),
-        "qp_iter": np.zeros(task_num),
-        "time_map_update": np.zeros(task_num),
-        "time_ocp_set_params": np.zeros(task_num),
-        "time_ocp_solve": np.zeros(task_num),
-        "time_ocp_set_params_map" : np.zeros(task_num),
-        "time_ocp_set_params_set_x" : np.zeros(task_num),
-        "time_ocp_set_params_tracking" : np.zeros(task_num),
-        "time_ocp_set_params_setp" : np.zeros(task_num),
-        "x_bar": np.zeros((task_num, self.x_bar.shape[0], self.x_bar.shape[1])),
-        "u_bar": np.zeros((task_num, self.u_bar.shape[0], self.u_bar.shape[1])),
-        "iter_snapshot":[{},{}]
+        log = {
+            "cost_iter": np.zeros((task_num, 2)),
+            "cost_final": np.zeros(task_num),
+            "solver_status": np.zeros(task_num),
+            "step_size": np.zeros(task_num),
+            "sqp_iter": np.zeros(task_num),
+            "qp_iter": np.zeros(task_num),
+            "time_map_update": np.zeros(task_num),
+            "time_ocp_set_params": np.zeros(task_num),
+            "time_ocp_solve": np.zeros(task_num),
+            "time_ocp_set_params_map": np.zeros(task_num),
+            "time_ocp_set_params_set_x": np.zeros(task_num),
+            "time_ocp_set_params_tracking": np.zeros(task_num),
+            "time_ocp_set_params_setp": np.zeros(task_num),
+            "x_bar": np.zeros((task_num, self.x_bar.shape[0], self.x_bar.shape[1])),
+            "u_bar": np.zeros((task_num, self.u_bar.shape[0], self.u_bar.shape[1])),
+            "iter_snapshot": [{}, {}],
         }
 
         for i in range(task_num):
             log["_".join(["ocp_param", str(i)])] = []
 
-        for i in range(self.model_interface.sdf_map.dim+1):
+        for i in range(self.model_interface.sdf_map.dim + 1):
             log["_".join(["sdf", "param", str(i)])] = 0
 
         return log
-    
+
     def reset(self):
         super().reset()
         for solver in self.stmpc_solvers:
             solver.reset()
-        
+
         self.lam_bar = [None, None]
 
-class HTMPC(HTMPCBase):
 
+class HTMPC(HTMPCBase):
     def __init__(self, config):
         super().__init__(config)
-            
-        self.EEPos3LexConstraint = HierarchicalTrackingConstraint(self.EEPos3Cost, "_".join([self.EEPos3Cost.name, "Lex"]))
-        self.EEPoseSE3LexConstraint = HierarchicalTrackingConstraint(self.EEPoseSE3Cost, "_".join([self.EEPoseSE3Cost.name, "Lex"]))
-        self.BasePos2LexConstraint = HierarchicalTrackingConstraint(self.BasePos2Cost, "_".join([self.BasePos2Cost.name, "Lex"]))
+
+        self.EEPos3LexConstraint = HierarchicalTrackingConstraint(
+            self.EEPos3Cost, "_".join([self.EEPos3Cost.name, "Lex"])
+        )
+        self.EEPoseSE3LexConstraint = HierarchicalTrackingConstraint(
+            self.EEPoseSE3Cost, "_".join([self.EEPoseSE3Cost.name, "Lex"])
+        )
+        self.BasePos2LexConstraint = HierarchicalTrackingConstraint(
+            self.BasePos2Cost, "_".join([self.BasePos2Cost.name, "Lex"])
+        )
         common_csts = []
         common_cost_fcns = []
         for name in self.collision_link_names:
-            if name in self.model_interface.scene.collision_link_names["static_obstacles"]:
-                softened = self.params["collision_constraints_softend"]["static_obstacles"]
+            if (
+                name
+                in self.model_interface.scene.collision_link_names["static_obstacles"]
+            ):
+                softened = self.params["collision_constraints_softend"][
+                    "static_obstacles"
+                ]
             else:
                 softened = self.params["collision_constraints_softend"][name]
 
@@ -498,14 +616,31 @@ class HTMPC(HTMPCBase):
                 common_csts.append(self.collisionCsts[name])
         self.stmpc_cost_fcns = []
         if config["ee_pose_tracking_enabled"]:
-            self.stmpc_cost_fcns.append([self.EEPoseSE3Cost, self.RegularizationCost, self.CtrlEffCost] + common_cost_fcns)
+            self.stmpc_cost_fcns.append(
+                [self.EEPoseSE3Cost, self.RegularizationCost, self.CtrlEffCost]
+                + common_cost_fcns
+            )
         else:
-            self.stmpc_cost_fcns.append([self.EEPos3Cost, self.EEVel3Cost, self.RegularizationCost, self.CtrlEffCost] + common_cost_fcns)
-        
+            self.stmpc_cost_fcns.append(
+                [
+                    self.EEPos3Cost,
+                    self.EEVel3Cost,
+                    self.RegularizationCost,
+                    self.CtrlEffCost,
+                ]
+                + common_cost_fcns
+            )
+
         if config["base_pose_tracking_enabled"]:
-            self.stmpc_cost_fcns.append([self.BasePoseSE2Cost, self.BaseVel3Cost, self.CtrlEffCost] + common_cost_fcns)
+            self.stmpc_cost_fcns.append(
+                [self.BasePoseSE2Cost, self.BaseVel3Cost, self.CtrlEffCost]
+                + common_cost_fcns
+            )
         else:
-            self.stmpc_cost_fcns.append([self.BasePos2Cost, self.BaseVel2Cost, self.CtrlEffCost] + common_cost_fcns)
+            self.stmpc_cost_fcns.append(
+                [self.BasePos2Cost, self.BaseVel2Cost, self.CtrlEffCost]
+                + common_cost_fcns
+            )
 
         self.stmpc_constraints = [common_csts]
         if config["ee_pose_tracking_enabled"]:
@@ -513,22 +648,37 @@ class HTMPC(HTMPCBase):
         else:
             self.stmpc_constraints.append([self.EEPos3LexConstraint] + common_csts)
 
-        self.stmpcs, self.stmpc_solvers, self.stmpc_p_structs = self._construct(self.stmpc_cost_fcns, self.stmpc_constraints)
-        self.constraints = common_csts + [self.EEPoseSE3LexConstraint if config["ee_pose_tracking_enabled"] else self.EEPos3LexConstraint]
+        self.stmpcs, self.stmpc_solvers, self.stmpc_p_structs = self._construct(
+            self.stmpc_cost_fcns, self.stmpc_constraints
+        )
+        self.constraints = common_csts + [
+            (
+                self.EEPoseSE3LexConstraint
+                if config["ee_pose_tracking_enabled"]
+                else self.EEPos3LexConstraint
+            )
+        ]
 
         self.lam_bar = [None, None]
+
 
 class NavHTMPC(HTMPCBase):
-
     def __init__(self, config):
         super().__init__(config)
-            
-        self.BasePoseSE2LexConstraint = HierarchicalTrackingConstraint(self.BasePoseSE2Cost, "_".join([self.BasePoseSE2Cost.name, "Lex"]))
+
+        self.BasePoseSE2LexConstraint = HierarchicalTrackingConstraint(
+            self.BasePoseSE2Cost, "_".join([self.BasePoseSE2Cost.name, "Lex"])
+        )
         common_csts = []
         common_cost_fcns = []
         for name in self.collision_link_names:
-            if name in self.model_interface.scene.collision_link_names["static_obstacles"]:
-                softened = self.params["collision_constraints_softend"]["static_obstacles"]
+            if (
+                name
+                in self.model_interface.scene.collision_link_names["static_obstacles"]
+            ):
+                softened = self.params["collision_constraints_softend"][
+                    "static_obstacles"
+                ]
             else:
                 softened = self.params["collision_constraints_softend"][name]
 
@@ -538,32 +688,50 @@ class NavHTMPC(HTMPCBase):
                 common_csts.append(self.collisionCsts[name])
 
         self.stmpc_cost_fcns = []
-        self.stmpc_cost_fcns.append([self.BasePoseSE2Cost, self.BaseVel3Cost, self.CtrlEffCost] + common_cost_fcns)
+        self.stmpc_cost_fcns.append(
+            [self.BasePoseSE2Cost, self.BaseVel3Cost, self.CtrlEffCost]
+            + common_cost_fcns
+        )
 
         if config["ee_pose_tracking_enabled"]:
-            self.stmpc_cost_fcns.append([self.EEPoseBaseFrameSE3Cost, self.RegularizationCost, self.CtrlEffCost] + common_cost_fcns)
+            self.stmpc_cost_fcns.append(
+                [self.EEPoseBaseFrameSE3Cost, self.RegularizationCost, self.CtrlEffCost]
+                + common_cost_fcns
+            )
         else:
-            self.stmpc_cost_fcns.append([self.EEPos3BaseFrameCost, self.RegularizationCost, self.CtrlEffCost] + common_cost_fcns)
+            self.stmpc_cost_fcns.append(
+                [self.EEPos3BaseFrameCost, self.RegularizationCost, self.CtrlEffCost]
+                + common_cost_fcns
+            )
 
         self.stmpc_constraints = [common_csts]
         self.stmpc_constraints.append([self.BasePoseSE2LexConstraint] + common_csts)
 
-        self.stmpcs, self.stmpc_solvers, self.stmpc_p_structs = self._construct(self.stmpc_cost_fcns, self.stmpc_constraints)
+        self.stmpcs, self.stmpc_solvers, self.stmpc_p_structs = self._construct(
+            self.stmpc_cost_fcns, self.stmpc_constraints
+        )
         self.constraints = common_csts + [self.BasePoseSE2LexConstraint]
 
         self.lam_bar = [None, None]
+
 
 class NavHTMPCWorld(HTMPCBase):
-
     def __init__(self, config):
         super().__init__(config)
-            
-        self.BasePoseSE2LexConstraint = HierarchicalTrackingConstraint(self.BasePoseSE2Cost, "_".join([self.BasePoseSE2Cost.name, "Lex"]))
+
+        self.BasePoseSE2LexConstraint = HierarchicalTrackingConstraint(
+            self.BasePoseSE2Cost, "_".join([self.BasePoseSE2Cost.name, "Lex"])
+        )
         common_csts = []
         common_cost_fcns = []
         for name in self.collision_link_names:
-            if name in self.model_interface.scene.collision_link_names["static_obstacles"]:
-                softened = self.params["collision_constraints_softend"]["static_obstacles"]
+            if (
+                name
+                in self.model_interface.scene.collision_link_names["static_obstacles"]
+            ):
+                softened = self.params["collision_constraints_softend"][
+                    "static_obstacles"
+                ]
             else:
                 softened = self.params["collision_constraints_softend"][name]
 
@@ -573,26 +741,40 @@ class NavHTMPCWorld(HTMPCBase):
                 common_csts.append(self.collisionCsts[name])
 
         self.stmpc_cost_fcns = []
-        self.stmpc_cost_fcns.append([self.BasePoseSE2Cost, self.BaseVel3Cost, self.CtrlEffCost] + common_cost_fcns)
+        self.stmpc_cost_fcns.append(
+            [self.BasePoseSE2Cost, self.BaseVel3Cost, self.CtrlEffCost]
+            + common_cost_fcns
+        )
 
         if config["ee_pose_tracking_enabled"]:
-            self.stmpc_cost_fcns.append([self.EEPoseSE3Cost, self.RegularizationCost, self.CtrlEffCost] + common_cost_fcns)
+            self.stmpc_cost_fcns.append(
+                [self.EEPoseSE3Cost, self.RegularizationCost, self.CtrlEffCost]
+                + common_cost_fcns
+            )
         else:
-            self.stmpc_cost_fcns.append([self.EEPos3Cost, self.RegularizationCost, self.CtrlEffCost] + common_cost_fcns)
+            self.stmpc_cost_fcns.append(
+                [self.EEPos3Cost, self.RegularizationCost, self.CtrlEffCost]
+                + common_cost_fcns
+            )
 
         self.stmpc_constraints = [common_csts]
         self.stmpc_constraints.append([self.BasePoseSE2LexConstraint] + common_csts)
 
-        self.stmpcs, self.stmpc_solvers, self.stmpc_p_structs = self._construct(self.stmpc_cost_fcns, self.stmpc_constraints)
+        self.stmpcs, self.stmpc_solvers, self.stmpc_p_structs = self._construct(
+            self.stmpc_cost_fcns, self.stmpc_constraints
+        )
         self.constraints = common_csts + [self.BasePoseSE2LexConstraint]
 
         self.lam_bar = [None, None]
+
 
 if __name__ == "__main__":
     # robot mdl
     from mmseq_utils import parsing
-    path_to_config = parsing.parse_ros_path({"package": "mmseq_run",
-                                             "path":"config/self_collision_avoidance.yaml"})
+
+    path_to_config = parsing.parse_ros_path(
+        {"package": "mmseq_run", "path": "config/self_collision_avoidance.yaml"}
+    )
     config = parsing.load_config(path_to_config)
 
     HTMPC(config["controller"])

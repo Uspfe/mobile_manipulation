@@ -6,13 +6,13 @@ import numpy as np
 import casadi as cs
 import time
 import logging
-import copy 
+import copy
 
 from typing import Optional, List, Dict, Tuple, Union
 from numpy.typing import NDArray
 from scipy.interpolate import interp1d
 
-from mmseq_plan.PlanBaseClass import Planner,TrajectoryPlanner
+from mmseq_plan.PlanBaseClass import Planner, TrajectoryPlanner
 from mmseq_utils.math import wrap_pi_array
 from mmseq_utils.casadi_struct import casadi_sym_struct
 from mmseq_control_new.MPCConstraints import HierarchicalTrackingConstraint
@@ -25,8 +25,8 @@ import mmseq_control_new.HTMPC as HTMPC_Mod
 from mmseq_utils.parsing import load_config, parse_ros_path, recursive_dict_update
 import mobile_manipulation_central as mm
 
-class HybridMPC():
 
+class HybridMPC:
     def __init__(self, config_in) -> None:
         self.controllers = {}
         self.logs = {}
@@ -37,7 +37,9 @@ class HybridMPC():
         for path in control_modes:
             config_mode = load_config(parse_ros_path(path))
             name = path["key"]
-            config_mode["controller"] = recursive_dict_update(copy.deepcopy(config), config_mode["controller"])
+            config_mode["controller"] = recursive_dict_update(
+                copy.deepcopy(config), config_mode["controller"]
+            )
 
             ctrl_config = config_mode["controller"]
             control_class = getattr(HTMPC_Mod, ctrl_config["type"], None)
@@ -49,7 +51,7 @@ class HybridMPC():
 
             # config[name] = ctrl_config
             print("Add controller {}".format(name))
-    
+
         self.params = config
 
         model_controller = self.controllers[name]
@@ -63,14 +65,13 @@ class HybridMPC():
         self.DoF = self.robot.DoF
         self.home = mm.load_home_position(config.get("home", "default"))
 
-
         self.dt = self.params["dt"]
-        self.tf = self.params['prediction_horizon']
+        self.tf = self.params["prediction_horizon"]
         self.N = int(self.tf / self.dt)
         self.QPsize = self.nx * (self.N + 1) + self.nu * self.N
 
         self.x_bar = np.zeros((self.N + 1, self.nx))  # current best guess x0,...,xN
-        self.x_bar[:, :self.DoF] = self.home
+        self.x_bar[:, : self.DoF] = self.home
         self.u_bar = np.zeros((self.N, self.nu))  # current best guess u0,...,uN-1
         self.t_bar = None
         self.zopt = np.zeros(self.QPsize)  # current linearization point
@@ -85,41 +86,41 @@ class HybridMPC():
         self.rbase_bar = None
         self.ee_bar = None
         self.base_bar = None
-        self.sdf_bar = {"EE":None,
-                        "base": None}
-        self.sdf_grad_bar = {"EE":None,
-                            "base": None}
-        
+        self.sdf_bar = {"EE": None, "base": None}
+        self.sdf_grad_bar = {"EE": None, "base": None}
+
         self.log = self._get_log()
-        
+
     @abstractmethod
-    def control(self, 
-                t: float, 
-                robot_states: Tuple[NDArray[np.float64], NDArray[np.float64]], 
-                planners: List[Union[Planner, TrajectoryPlanner]], 
-                map=None):
-        
+    def control(
+        self,
+        t: float,
+        robot_states: Tuple[NDArray[np.float64], NDArray[np.float64]],
+        planners: List[Union[Planner, TrajectoryPlanner]],
+        map=None,
+    ):
         pass
-    
 
     def _get_log(self):
         log = {"curr_controller": ""}
         for name in self.controllers.keys():
             log[name] = {}
-        
+
         return log
 
-class RAL25(HybridMPC):
 
+class RAL25(HybridMPC):
     def __init__(self, config) -> None:
         super().__init__(config)
         self.prev_controller_name = None
-    
-    def control(self, 
-                t: float, 
-                robot_states: Tuple[NDArray[np.float64], NDArray[np.float64]], 
-                planners: List[Union[Planner, TrajectoryPlanner]], 
-                map=None):
+
+    def control(
+        self,
+        t: float,
+        robot_states: Tuple[NDArray[np.float64], NDArray[np.float64]],
+        planners: List[Union[Planner, TrajectoryPlanner]],
+        map=None,
+    ):
         if planners[0].type == "base" and planners[1].type == "EE":
             curr_controller_name, controller = self._get_controller("Nav")
         elif planners[0].type == "EE" and planners[1].type == "base":
@@ -130,18 +131,22 @@ class RAL25(HybridMPC):
 
         solver_iter_num = 1
 
-        if self.prev_controller_name is not None and self.prev_controller_name != curr_controller_name:
+        if (
+            self.prev_controller_name is not None
+            and self.prev_controller_name != curr_controller_name
+        ):
             controller.reset()
-            # pass in xu bar 
+            # pass in xu bar
             controller.u_bar = self.u_bar.copy()
             controller.x_bar = self.x_bar.copy()
             controller.t_bar = self.t_bar.copy()
             solver_iter_num = 5
 
-            self.py_logger.info("Controller Changed. Set solver iter to {}".format(solver_iter_num))
+            self.py_logger.info(
+                "Controller Changed. Set solver iter to {}".format(solver_iter_num)
+            )
 
             # controller.lam_bar = None
-
 
         results = controller.control(t, robot_states, planners, map, solver_iter_num)
         self._copy_internal_states(controller)
@@ -149,18 +154,17 @@ class RAL25(HybridMPC):
         self.prev_controller_name = curr_controller_name
 
         return results
-    
 
     def _get_controller(self, name_id="Nav"):
         for controller_name, controller in self.controllers.items():
             if name_id in controller_name:
                 return controller_name, controller
-        self.py_logger.warning("Did not find controller with name id {}".format(name_id))
+        self.py_logger.warning(
+            "Did not find controller with name id {}".format(name_id)
+        )
         return controller_name, controller
 
-    
     def _copy_internal_states(self, controller: MPC):
-
         self.x_bar = controller.x_bar.copy()
         self.u_bar = controller.u_bar.copy()
         self.t_bar = controller.t_bar.copy()
@@ -169,10 +173,11 @@ class RAL25(HybridMPC):
         self.sdf_bar = copy.deepcopy(controller.sdf_bar)
         self.sdf_grad_bar = copy.deepcopy(controller.sdf_grad_bar)
 
-        self.ee_bar, self.base_bar = controller.ee_bar.copy(), controller.base_bar.copy()
-    
+        self.ee_bar, self.base_bar = (
+            controller.ee_bar.copy(),
+            controller.base_bar.copy(),
+        )
+
     def _log(self, controller, controller_name):
         self.log["curr_controller"] = controller_name
         self.log[controller_name] = copy.deepcopy(controller.log)
-
-

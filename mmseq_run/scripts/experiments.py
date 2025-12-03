@@ -43,6 +43,7 @@ def planner_coord_transform(q, ree, planners):
         elif planner.__class__.__name__ == "BasePosTrajectoryLine":
             planner.plan["p"] = planner.plan["p"] @ R_wb[:2, :2].T + P[:2]
 
+
 def main():
     np.set_printoptions(precision=3, suppress=True)
 
@@ -55,15 +56,30 @@ def main():
         const="",
         help="Record video. Optionally specify prefix for video directory.",
     )
-    parser.add_argument("--ctrl_config", type=str, default="default",
-                        help="controller config. This overwrites the yaml settings in config if not set to default")
-    parser.add_argument("--planner_config", type=str, default="default",
-                        help="plannner config. This overwrites the yaml settings in config if not set to default")
-    parser.add_argument("--logging_sub_folder", type=str, default="default",
-                        help="save data in a sub folder of logging director")
-    parser.add_argument("--GUI", action="store_true",
-                        help="Pybullet GUI. This overwrites the yaml settings")
-    args = parser.parse_args() 
+    parser.add_argument(
+        "--ctrl_config",
+        type=str,
+        default="default",
+        help="controller config. This overwrites the yaml settings in config if not set to default",
+    )
+    parser.add_argument(
+        "--planner_config",
+        type=str,
+        default="default",
+        help="plannner config. This overwrites the yaml settings in config if not set to default",
+    )
+    parser.add_argument(
+        "--logging_sub_folder",
+        type=str,
+        default="default",
+        help="save data in a sub folder of logging director",
+    )
+    parser.add_argument(
+        "--GUI",
+        action="store_true",
+        help="Pybullet GUI. This overwrites the yaml settings",
+    )
+    args = parser.parse_args()
 
     # load configuration and overwrite with args
     config = parsing.load_config(args.config)
@@ -75,7 +91,9 @@ def main():
         config = parsing.recursive_dict_update(config, planner_config)
 
     if args.logging_sub_folder != "default":
-        config["logging"]["log_dir"] = os.path.join(config["logging"]["log_dir"], args.logging_sub_folder)
+        config["logging"]["log_dir"] = os.path.join(
+            config["logging"]["log_dir"], args.logging_sub_folder
+        )
 
     if args.GUI:
         config["simulation"]["pybullet_connection"] = "GUI"
@@ -112,7 +130,9 @@ def main():
 
     # set py logger level
     ch = logging.StreamHandler()
-    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    formatter = logging.Formatter(
+        "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    )
     ch.setFormatter(formatter)
     planner_log = logging.getLogger("Planner")
     planner_log.setLevel(config["logging"]["log_level"])
@@ -168,9 +188,7 @@ def main():
 
         if sot.__class__.__name__ == "SoTSequentialTasks":
             if t > 12 and t < 12.2:
-                human_pos = np.array([[-3, -3, 0.8],
-                                      [-3, 3, 0.8],
-                                      [3, -0, 1.0]])
+                human_pos = np.array([[-3, -3, 0.8], [-3, 3, 0.8], [3, -0, 1.0]])
                 # self.sot.update_planner(self.vicon_marker_swarm_interface.position, states)
                 sot.update_planner(human_pos, states)
 
@@ -208,7 +226,7 @@ def main():
         logger.append("ω_ew_ws", ω_ew_w)
         logger.append("r_bw_ws", robot_states[0][:2])
 
-        if len(r_ew_wd)>0:
+        if len(r_ew_wd) > 0:
             if r_bw_wd.shape[0] == 2:
                 logger.append("r_bw_w_ds", r_bw_wd)
 
@@ -216,19 +234,19 @@ def main():
                 logger.append("r_bw_w_ds", r_bw_wd[:2])
                 logger.append("yaw_bw_w_ds", r_bw_wd[2])
                 logger.append("yaw_bw_ws", robot_states[0][2])
-        if len(v_bw_wd)>0:
+        if len(v_bw_wd) > 0:
             if v_bw_wd.shape[0] == 2:
                 logger.append("v_bw_w_ds", v_bw_wd)
-            elif  v_bw_wd.shape[0] == 3:
+            elif v_bw_wd.shape[0] == 3:
                 logger.append("v_bw_w_ds", v_bw_wd[:2])
                 logger.append("ω_bw_w_ds", v_bw_wd[2])
-        if len(r_ew_wd)>0:
+        if len(r_ew_wd) > 0:
             logger.append("r_ew_w_ds", r_ew_wd)
-        if len(v_ew_wd)>0:
+        if len(v_ew_wd) > 0:
             logger.append("v_ew_w_ds", v_ew_wd)
         if "MPC" in ctrl_config["type"]:
-            for (key, val) in controller.log.items():
-                    logger.append("_".join(["mpc", key])+"s", val)
+            for key, val in controller.log.items():
+                logger.append("_".join(["mpc", key]) + "s", val)
 
         # sim_log.log(20, "Time {}".format(t))
         time.sleep(sim.timestep)
@@ -236,6 +254,7 @@ def main():
     data_name = ctrl_config["type"]
     timestamp = datetime.datetime.now()
     logger.save(timestamp, data_name)
+
 
 if __name__ == "__main__":
     main()

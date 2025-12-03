@@ -3,18 +3,18 @@ import rosbag
 from mmseq_utils.plotting import ROSBagPlotter
 
 
-
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('-f', "--bagfiles", nargs='+', required=True, help="path to bag files")
+    parser.add_argument(
+        "-f", "--bagfiles", nargs="+", required=True, help="path to bag files"
+    )
 
-    parser.add_argument("--robot", action="store_true",
-                        help="plot robot data")
-    parser.add_argument("--estimation", action="store_true",
-                        help="plot estimation data")
-    parser.add_argument("--topichz", action="store_true",
-                        help="plot topic frequency")
-  
+    parser.add_argument("--robot", action="store_true", help="plot robot data")
+    parser.add_argument(
+        "--estimation", action="store_true", help="plot estimation data"
+    )
+    parser.add_argument("--topichz", action="store_true", help="plot topic frequency")
+
     args = parser.parse_args()
 
     plotter1 = ROSBagPlotter(args.bagfiles[0])
@@ -29,6 +29,6 @@ def main():
 
     plotter1.plot_show()
 
+
 if __name__ == "__main__":
     main()
-

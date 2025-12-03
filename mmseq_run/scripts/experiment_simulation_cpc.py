@@ -11,7 +11,9 @@ from spatialmath.base import rotz
 
 
 import mmseq_plan.TaskManager as TaskManager
-from mmseq_control.mobile_manipulator_point_mass.mobile_manipulator_class import MobileManipulatorPointMass
+from mmseq_control.mobile_manipulator_point_mass.mobile_manipulator_class import (
+    MobileManipulatorPointMass,
+)
 from mmseq_control.robot import CasadiModelInterface
 import mmseq_plan.CPCPlanner as CPCPlanner
 import mmseq_plan.SequentialPlanner as SequentialPlanner
@@ -44,6 +46,7 @@ def planner_coord_transform(q, ree, planners):
         elif planner.__class__.__name__ == "BasePosTrajectoryLine":
             planner.plan["p"] = planner.plan["p"] @ R_wb[:2, :2].T + P[:2]
 
+
 def main():
     np.set_printoptions(precision=3, suppress=True)
 
@@ -56,16 +59,18 @@ def main():
         const="",
         help="Record video. Optionally specify prefix for video directory.",
     )
-    parser.add_argument("--GUI", action="store_true",
-                        help="Pybullet GUI. This overwrites the yaml settings")
-    args = parser.parse_args() 
+    parser.add_argument(
+        "--GUI",
+        action="store_true",
+        help="Pybullet GUI. This overwrites the yaml settings",
+    )
+    args = parser.parse_args()
 
     # load configuration and overwrite with args
     config = parsing.load_config(args.config)
 
     if args.GUI:
         config["simulation"]["pybullet_connection"] = "GUI"
-
 
     sim_config = config["simulation"]
     ctrl_config = config["controller"]
@@ -86,21 +91,25 @@ def main():
     planner_config = config["planner"]["tasks"][0]
 
     planner = getattr(CPCPlanner, planner_config["planner_type"], None)
-    optimization_type = 'cpc'
+    optimization_type = "cpc"
     if planner is None:
         planner = getattr(SequentialPlanner, planner_config["planner_type"], None)
-        optimization_type = 'sequential'
+        optimization_type = "sequential"
     if planner is None:
-        raise ValueError("Planner type {} not found".format(planner_config["planner_type"]))
+        raise ValueError(
+            "Planner type {} not found".format(planner_config["planner_type"])
+        )
     # generate plan
     planner = planner(planner_config)
     planner.generatePlanFromConfig()
 
     # set py logger level
     ch = logging.StreamHandler()
-    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    formatter = logging.Formatter(
+        "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    )
     ch.setFormatter(formatter)
-    
+
     sim_log = logging.getLogger("Simulator")
     sim_log.setLevel(config["logging"]["log_level"])
     sim_log.addHandler(ch)
@@ -139,13 +148,12 @@ def main():
         ee_states = (ee_curr_pos, ee_cur_orn)
         states = {"base": (robot_states[0][:3], robot_states[1][:3]), "EE": ee_states}
 
-
         # log
         r_ew_w, Q_we = robot.link_pose()
         v_ew_w, ω_ew_w = robot.link_velocity()
         r_ew_wd = []
         r_bw_wd = []
-        
+
         logger.append("ts", t)
         logger.append("xs", np.hstack(robot_states))
         logger.append("controller_run_time", t1 - t0)
@@ -158,9 +166,9 @@ def main():
         logger.append("ω_ew_ws", ω_ew_w)
         logger.append("r_bw_ws", robot_states[0][:2])
 
-        if len(r_ew_wd)>0:
+        if len(r_ew_wd) > 0:
             logger.append("r_ew_w_ds", r_ew_wd)
-        if len(r_bw_wd)>0:
+        if len(r_bw_wd) > 0:
             logger.append("r_bw_w_ds", r_bw_wd)
 
         sim_log.log(20, "Time {}".format(t))
@@ -169,6 +177,7 @@ def main():
     data_name = ctrl_config["type"]
     timestamp = datetime.datetime.now()
     logger.save(timestamp, data_name)
+
 
 if __name__ == "__main__":
     main()

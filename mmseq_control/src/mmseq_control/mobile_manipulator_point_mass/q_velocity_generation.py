@@ -1,6 +1,9 @@
 import numpy as np
 
-def generate_waypoints_q_dot(self, dict_graph, end_effector_velocity_dict, v_max, v_min):
+
+def generate_waypoints_q_dot(
+    self, dict_graph, end_effector_velocity_dict, v_max, v_min
+):
     q_dot_dict = {}
     for i in range(len(dict_graph)):
         q_dot_dict[i] = {}
@@ -18,6 +21,5 @@ def generate_waypoints_q_dot(self, dict_graph, end_effector_velocity_dict, v_max
                         append = False
                         break
                 if append:
-                    q_dot_dict[i][j].append(q_dot[:,0])
+                    q_dot_dict[i][j].append(q_dot[:, 0])
     return q_dot_dict
-

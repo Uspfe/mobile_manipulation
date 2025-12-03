@@ -12,7 +12,11 @@ import rospy
 from mmseq_simulator import simulation
 from mmseq_utils import parsing
 from mmseq_utils.logging import DataLogger
-from mobile_manipulation_central.simulation_ros_interface import SimulatedMobileManipulatorROSInterface, SimulatedViconObjectInterface
+from mobile_manipulation_central.simulation_ros_interface import (
+    SimulatedMobileManipulatorROSInterface,
+    SimulatedViconObjectInterface,
+)
+
 
 def main():
     np.set_printoptions(precision=3, suppress=True)
@@ -27,10 +31,16 @@ def main():
         const="",
         help="Record video. Optionally specify prefix for video directory.",
     )
-    parser.add_argument("--logging_sub_folder", type=str,
-                        help="save data in a sub folder of logging director")
-    parser.add_argument("--GUI", action="store_true",
-                        help="STMPC type, SQP or lex. This overwrites the yaml settings")
+    parser.add_argument(
+        "--logging_sub_folder",
+        type=str,
+        help="save data in a sub folder of logging director",
+    )
+    parser.add_argument(
+        "--GUI",
+        action="store_true",
+        help="STMPC type, SQP or lex. This overwrites the yaml settings",
+    )
     args = parser.parse_args(argv[1:])
 
     # load configuration and overwrite with args
@@ -39,7 +49,9 @@ def main():
     if args.GUI:
         config["simulation"]["pybullet_connection"] = "GUI"
     if args.logging_sub_folder != "default":
-        config["logging"]["log_dir"] = os.path.join(config["logging"]["log_dir"], args.logging_sub_folder)
+        config["logging"]["log_dir"] = os.path.join(
+            config["logging"]["log_dir"], args.logging_sub_folder
+        )
 
     sim_config = config["simulation"]
 
@@ -68,7 +80,9 @@ def main():
     ros_interface = SimulatedMobileManipulatorROSInterface()
     ros_interface.publish_time(t)
 
-    vicon_tool_interface = SimulatedViconObjectInterface(sim_config["robot"]["tool_vicon_name"])
+    vicon_tool_interface = SimulatedViconObjectInterface(
+        sim_config["robot"]["tool_vicon_name"]
+    )
     while not ros_interface.ready():
         q, v = robot.joint_states()
         ros_interface.publish_feedback(t, q, v)
@@ -91,12 +105,11 @@ def main():
         base_curr_pos, _ = robot.link_pose(-1)
         vicon_tool_interface.publish_pose(t, ee_curr_pos, ee_curr_orn)
 
-
         # log
         r_ew_w, Q_we = robot.link_pose()
         v_ew_w, ω_ew_w = robot.link_velocity()
         logger.append("ts", t)
-        logger.append("xs", np.hstack((q,v)))
+        logger.append("xs", np.hstack((q, v)))
         logger.append("cmd_vels", cmd_vel_world)
         logger.append("r_ew_ws", r_ew_w)
         logger.append("Q_wes", Q_we)
@@ -113,6 +126,7 @@ def main():
 
     timestamp = datetime.datetime.now()
     logger.save(timestamp, "sim")
+
 
 if __name__ == "__main__":
     main()

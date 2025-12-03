@@ -74,7 +74,9 @@ class ConvexPolyhedron:
         V_2d = project_vertices_on_axes(V_3d, point, plane_span)
         return wind_polygon_vertices(V_2d)
 
-    def distance_from_centroid_to_boundary(self, axis, offset=None, tol=1e-8, debug=False):
+    def distance_from_centroid_to_boundary(
+        self, axis, offset=None, tol=1e-8, debug=False
+    ):
         """Get the distance from the shape's position to its boundary in
         direction given by axis.
 
@@ -108,6 +110,7 @@ class ConvexPolyhedron:
         d = res.x[0]
         if debug:
             import IPython
+
             IPython.embed()
         assert d >= -tol, "Distance to boundary is negative!"
         return d
@@ -247,7 +250,6 @@ def wind_polygon_vertices(V):
 
 # TODO rename now that we can handle arbitrary polyhedra
 def box_box_axis_aligned_contact(box1, box2, tol=1e-8, debug=False):
-
     # in general, we need to test all face normals and all axes that are cross
     # products between pairs of face normals, one from each shape
     # <https://www.geometrictools.com/Documentation/DynamicCollisionDetection.pdf>
@@ -287,6 +289,7 @@ def box_box_axis_aligned_contact(box1, box2, tol=1e-8, debug=False):
             # shapes are not intersecting, nothing more to do
             print("Shapes not intersecting.")
             import IPython
+
             IPython.embed()
             return None, None
 

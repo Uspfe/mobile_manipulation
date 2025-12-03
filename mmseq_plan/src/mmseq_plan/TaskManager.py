@@ -13,6 +13,7 @@ from mmseq_utils.math import wrap_pi_scalar
 import mmseq_plan.CPCPlanner as CPCPlanner
 import mmseq_plan.SequentialPlanner as SequentialPlanner
 
+
 class SoTBase(ABC):
     def __init__(self, config):
         self.config = config
@@ -20,12 +21,16 @@ class SoTBase(ABC):
 
         self.planners = []
         for task_entry in config["tasks"]:
-            if task_entry["name"] == "whole_body": 
+            if task_entry["name"] == "whole_body":
                 planner = getattr(CPCPlanner, task_entry["planner_type"], None)
                 if planner is None:
-                    planner = getattr(SequentialPlanner, task_entry["planner_type"], None)
+                    planner = getattr(
+                        SequentialPlanner, task_entry["planner_type"], None
+                    )
                 if planner is None:
-                    raise ValueError("Planner type {} not found".format(task_entry["planner_type"]))
+                    raise ValueError(
+                        "Planner type {} not found".format(task_entry["planner_type"])
+                    )
                 # generate plan
                 planner = planner(task_entry)
                 planner.generatePlanFromConfig()
@@ -40,7 +45,11 @@ class SoTBase(ABC):
                 if planner_class is not None:
                     planner = planner_class(task_entry)
                 else:
-                    self.logger.warning("planner type {} not recognized".format(task_entry["planner_type"]))
+                    self.logger.warning(
+                        "planner type {} not recognized".format(
+                            task_entry["planner_type"]
+                        )
+                    )
                 self.planners.append(planner)
 
         self.planner_num = len(self.planners)
@@ -61,6 +70,7 @@ class SoTBase(ABC):
 
     def print(self):
         print("There are {} numbers of planners.".format(self.planner_num))
+
 
 class SoTStatic(SoTBase):
     def __init__(self, config):
@@ -87,12 +97,17 @@ class SoTStatic(SoTBase):
         # current task is finished move on to next task, unless it's the last task in the stack
         if finished:
             if self.curr_task_id != self.planner_num - 1:
-                self.curr_task_id = min(self.planner_num-1, self.curr_task_id + 1)
-                self.logger.info("SoT finished %d/%d tasks.", self.curr_task_id, self.planner_num)
+                self.curr_task_id = min(self.planner_num - 1, self.curr_task_id + 1)
+                self.logger.info(
+                    "SoT finished %d/%d tasks.", self.curr_task_id, self.planner_num
+                )
             else:
-                self.logger.info("SoT finished %d/%d tasks.", self.curr_task_id+1, self.planner_num)
+                self.logger.info(
+                    "SoT finished %d/%d tasks.", self.curr_task_id + 1, self.planner_num
+                )
 
         return finished, 1
+
 
 class SoTCycle(SoTBase):
     def __init__(self, config):
@@ -126,7 +141,9 @@ class SoTCycle(SoTBase):
             self.planners[self.curr_task_id].reset()
             self.curr_task_id += self.task_increment
             self.curr_task_id %= self.planner_num
-            self.logger.info("SoT current task is %d/%d", self.curr_task_id, self.planner_num)
+            self.logger.info(
+                "SoT current task is %d/%d", self.curr_task_id, self.planner_num
+            )
 
         if self.shuffle_is_triggered:
             self.shuffle()
@@ -137,16 +154,24 @@ class SoTCycle(SoTBase):
         curr_ee_task = self.curr_task_id + (1 - self.curr_task_id % 2)
         curr_ee_task_idx = (curr_ee_task - 1) // 2
 
-        seq_curr = np.arange(self.planner_num).reshape((self.planner_num//2, 2))
+        seq_curr = np.arange(self.planner_num).reshape((self.planner_num // 2, 2))
         if np.random.random() > 0.0:
             if curr_ee_task != self.planner_num - 1:
-                seq_to_shuffle = np.vstack((seq_curr[:curr_ee_task_idx], seq_curr[curr_ee_task_idx+1:]))
+                seq_to_shuffle = np.vstack(
+                    (seq_curr[:curr_ee_task_idx], seq_curr[curr_ee_task_idx + 1 :])
+                )
             else:
                 seq_to_shuffle = seq_curr[:curr_ee_task_idx]
 
             np.random.shuffle(seq_to_shuffle)
             if curr_ee_task != self.planner_num - 1:
-                seq_new = np.vstack((seq_to_shuffle[:curr_ee_task_idx], seq_curr[curr_ee_task_idx], seq_to_shuffle[curr_ee_task_idx:]))
+                seq_new = np.vstack(
+                    (
+                        seq_to_shuffle[:curr_ee_task_idx],
+                        seq_curr[curr_ee_task_idx],
+                        seq_to_shuffle[curr_ee_task_idx:],
+                    )
+                )
             else:
                 seq_new = np.vstack((seq_to_shuffle, seq_curr[curr_ee_task_idx]))
 
@@ -158,8 +183,13 @@ class SoTCycle(SoTBase):
         self.planners = [self.planners[i] for i in seq_new]
         self.shuffle_is_triggered = False
 
-        planner_name_new = [self.planners[2*i + 1].name for i in range(self.planner_num//2)]
-        self.logger.info("Curr Task: {} New Task Seq: {}".format(self.curr_task_id, planner_name_new))
+        planner_name_new = [
+            self.planners[2 * i + 1].name for i in range(self.planner_num // 2)
+        ]
+        self.logger.info(
+            "Curr Task: {} New Task Seq: {}".format(self.curr_task_id, planner_name_new)
+        )
+
 
 class SoTSequentialTasks(SoTCycle):
     def __init__(self, config):
@@ -172,9 +202,12 @@ class SoTSequentialTasks(SoTCycle):
         self.curr_ee_target_pos_z = config["initial_ee_target_pos_z"]
         self.seat_pos = np.array(config["seat_pos"])
 
-        ee_target_pos, base_target_pos = self._get_waypoints(self.curr_waypoints_index,
-                                                             self.curr_ee_target_pos_z)
-        task_list = self._get_task_config_list(ee_target_pos, base_target_pos, config["initial_base_pos"])
+        ee_target_pos, base_target_pos = self._get_waypoints(
+            self.curr_waypoints_index, self.curr_ee_target_pos_z
+        )
+        task_list = self._get_task_config_list(
+            ee_target_pos, base_target_pos, config["initial_base_pos"]
+        )
         config["tasks"] = task_list
 
         super().__init__(config)
@@ -183,20 +216,26 @@ class SoTSequentialTasks(SoTCycle):
     def update_planner(self, human_pos, robot_states):
         base_pos = robot_states["base"][0][:2]
         if len(human_pos) != self.target_num:
-            print("human_pos length isn't correct expected {} got {}".format(self.target_num, len(human_pos)))
+            print(
+                "human_pos length isn't correct expected {} got {}".format(
+                    self.target_num, len(human_pos)
+                )
+            )
             return
 
         new_waypoints_index = self._get_new_waypoints_index(human_pos)
         new_ee_target_pos_z = self._get_new_ee_target_pos_z(human_pos)
-        new_ee_target_pos, new_base_target_pos = self._get_waypoints(new_waypoints_index, new_ee_target_pos_z)
+        new_ee_target_pos, new_base_target_pos = self._get_waypoints(
+            new_waypoints_index, new_ee_target_pos_z
+        )
         new_ee_target_pos = np.array(new_ee_target_pos)
         new_base_target_pos = np.array(new_base_target_pos)
 
         for i in range(self.target_num):
-            prev_base_task_index = i*2
+            prev_base_task_index = i * 2
             ee_task_index = prev_base_task_index + 1
             if self.started:
-                next_base_task_index = (prev_base_task_index + 2)%self.planner_num
+                next_base_task_index = (prev_base_task_index + 2) % self.planner_num
             else:
                 next_base_task_index = prev_base_task_index + 2
 
@@ -208,21 +247,32 @@ class SoTSequentialTasks(SoTCycle):
                     self.planners[ee_task_index].target_pos = new_ee_target_pos[i]
 
                     # Corresponding base task hasn't been executed yet
-                    if prev_base_task_index > self.curr_task_id+1:
-                        self.planners[prev_base_task_index].target_pos = new_base_target_pos[i]
+                    if prev_base_task_index > self.curr_task_id + 1:
+                        self.planners[prev_base_task_index].target_pos = (
+                            new_base_target_pos[i]
+                        )
                         self.planners[prev_base_task_index].regeneratePlan()
 
                         if next_base_task_index < self.planner_num:
-                            self.planners[next_base_task_index].initial_pos = new_base_target_pos[i]
+                            self.planners[next_base_task_index].initial_pos = (
+                                new_base_target_pos[i]
+                            )
                             self.planners[next_base_task_index].regeneratePlan()
 
-                    elif prev_base_task_index == self.curr_task_id or prev_base_task_index == (self.curr_task_id + 1):
+                    elif (
+                        prev_base_task_index == self.curr_task_id
+                        or prev_base_task_index == (self.curr_task_id + 1)
+                    ):
                         self.planners[prev_base_task_index].initial_pos = base_pos
-                        self.planners[prev_base_task_index].target_pos = new_base_target_pos[i]
+                        self.planners[prev_base_task_index].target_pos = (
+                            new_base_target_pos[i]
+                        )
                         self.planners[prev_base_task_index].regeneratePlan()
 
                         if next_base_task_index < self.planner_num:
-                            self.planners[next_base_task_index].initial_pos = new_base_target_pos[i]
+                            self.planners[next_base_task_index].initial_pos = (
+                                new_base_target_pos[i]
+                            )
                             self.planners[next_base_task_index].regeneratePlan()
                     elif prev_base_task_index == self.curr_task_id - 1:
                         if next_base_task_index < self.planner_num:
@@ -253,7 +303,9 @@ class SoTSequentialTasks(SoTCycle):
     def _get_waypoints(self, wpt_index, ee_target_pos_z):
         if max(wpt_index) < len(self.ee_target_pos_xy):
             ee_target_xy = [self.ee_target_pos_xy[i] for i in wpt_index]
-            ee_target_pos = np.hstack((ee_target_xy, np.expand_dims(ee_target_pos_z, axis=-1)))
+            ee_target_pos = np.hstack(
+                (ee_target_xy, np.expand_dims(ee_target_pos_z, axis=-1))
+            )
 
             base_target_pos = [self.base_target_pos[i] for i in wpt_index]
 
@@ -266,12 +318,12 @@ class SoTSequentialTasks(SoTCycle):
 
         for i in range(self.target_num):
             base_config = basep.BasePosTrajectoryLine.getDefaultParams()
-            base_config["name"] = "Base Pos " + str(i+1)
+            base_config["name"] = "Base Pos " + str(i + 1)
 
             if i == 0:
                 base_config["initial_pos"] = initial_base_pos
             else:
-                base_config["initial_pos"] = base_target_pos[i-1]
+                base_config["initial_pos"] = base_target_pos[i - 1]
 
             base_config["target_pos"] = base_target_pos[i]
             base_config["tracking_err_tol"] = self.base_tracking_err_tol
@@ -279,9 +331,9 @@ class SoTSequentialTasks(SoTCycle):
 
             ee_config = eep.EESimplePlanner.getDefaultParams()
             ee_config["frame_id"] = "base"
-            ee_config["name"] = "EE Pos "+ str(i+1)
+            ee_config["name"] = "EE Pos " + str(i + 1)
             ee_config["target_pos"] = ee_target_pos[i]
-            ee_config["hold_period"] = 1.
+            ee_config["hold_period"] = 1.0
 
             task_config_list.append(base_config)
             task_config_list.append(ee_config)
@@ -292,7 +344,6 @@ class SoTSequentialTasks(SoTCycle):
         Pee = states["EE"][0]
         Pb = states["base"][:2]
         if not self.config.get("use_joy", False) or "joy" not in states.keys():
-
             # check if current task is finished
             planner = self.planners[self.curr_task_id]
             if planner.type == "EE":
@@ -308,7 +359,6 @@ class SoTSequentialTasks(SoTCycle):
                 task_id_increment = 0
 
         else:
-
             # joy is 1 when an EE task is finished
             planner = self.planners[self.curr_task_id]
 
@@ -338,22 +388,24 @@ class SoTSequentialTasks(SoTCycle):
         # current task is finished move on to next task, unless it's the last task in the stack
         if finished:
             for i in range(task_id_increment):
-                self.planners[self.curr_task_id+i].reset()
+                self.planners[self.curr_task_id + i].reset()
             self.curr_task_id += task_id_increment
             self.curr_task_id %= self.planner_num
             for i in range(2):
                 next_task_id = (self.curr_task_id + i) % self.planner_num
-                if self.planners[next_task_id].type=="base":
+                if self.planners[next_task_id].type == "base":
                     self.planners[next_task_id].initial_pos = Pb[0][:2]
                     self.planners[next_task_id].regeneratePlan()
                     self.planners[next_task_id].start_time = 0
 
-            self.logger.info("SoT current task is %d/%d", self.curr_task_id, self.planner_num)
+            self.logger.info(
+                "SoT current task is %d/%d", self.curr_task_id, self.planner_num
+            )
 
         return finished, task_id_increment
 
-class SoTSequentialTasksBaseline(SoTCycle):
 
+class SoTSequentialTasksBaseline(SoTCycle):
     def __init__(self, config):
         super().__init__(config)
         self.curr_task_id = 0
@@ -363,7 +415,6 @@ class SoTSequentialTasksBaseline(SoTCycle):
         Pee = states["EE"][0]
         Pb = states["base"][:2]
         if not self.config.get("use_joy", False) or "joy" not in states.keys():
-
             # check if current task is finished
             planner = self.planners[self.curr_task_id]
             if planner.type == "EE":
@@ -379,7 +430,6 @@ class SoTSequentialTasksBaseline(SoTCycle):
                 task_id_increment = 0
 
         else:
-
             # joy is 1 when an EE task is finished
             planner = self.planners[self.curr_task_id]
 
@@ -396,26 +446,26 @@ class SoTSequentialTasksBaseline(SoTCycle):
             else:
                 task_id_increment = 0
 
-
             print(task_id_increment)
 
         # current task is finished move on to next task, unless it's the last task in the stack
         if finished:
             for i in range(task_id_increment):
-                self.planners[self.curr_task_id+i].reset()
+                self.planners[self.curr_task_id + i].reset()
             self.curr_task_id += task_id_increment
             self.curr_task_id %= self.planner_num
             next_task_id = (self.curr_task_id + 1) % self.planner_num
-            if self.planners[next_task_id].type =="base":
+            if self.planners[next_task_id].type == "base":
                 Pb[0][2] = wrap_pi_scalar(Pb[0][2])
                 self.planners[next_task_id].initial_pose = Pb[0]
                 self.planners[next_task_id].regeneratePlan()
                 self.planners[next_task_id].start_time = 0
 
-            self.logger.info("SoT current task is %d/%d", self.curr_task_id, self.planner_num)
+            self.logger.info(
+                "SoT current task is %d/%d", self.curr_task_id, self.planner_num
+            )
 
         return finished, task_id_increment
-
 
 
 class SoTTimed(SoTBase):
@@ -424,13 +474,16 @@ class SoTTimed(SoTBase):
         super().__init__(config)
 
         self.task_switching_time = self.config["task_switching_time"]
-        assert(len(self.task_switching_time)+2 == len(self.planners))
+        assert len(self.task_switching_time) + 2 == len(self.planners)
 
     def getPlanners(self, num_planners=2):
         return [self.planners[0], self.planners[self.curr_base_task_id]]
 
     def update(self, t, states):
-        if self.curr_base_task_id < self.planner_num - 1 and t > self.task_switching_time[self.curr_base_task_id-1]:
+        if (
+            self.curr_base_task_id < self.planner_num - 1
+            and t > self.task_switching_time[self.curr_base_task_id - 1]
+        ):
             self.curr_base_task_id += 1
             self.curr_base_task_id = min(self.curr_base_task_id, self.planner_num - 1)
 
@@ -438,12 +491,12 @@ class SoTTimed(SoTBase):
 
         return True, 1
 
+
 class SoTBottomTaskFixed(SoTBase):
     def __init__(self, config):
         super().__init__(config)
         self.fixed_task_id = self.planner_num - 1
         self.curr_task_id = 0
-
 
     def getPlanners(self, num_planners=2):
         return [self.planners[self.curr_task_id], self.planners[self.fixed_task_id]]
@@ -466,8 +519,8 @@ class SoTBottomTaskFixed(SoTBase):
 
         return finished, 1
 
-class SoTRal25(SoTBase):
 
+class SoTRal25(SoTBase):
     def __init__(self, config):
         super().__init__(config)
         self.curr_task_id = 0
@@ -479,11 +532,11 @@ class SoTRal25(SoTBase):
 
     def getPlanners(self, num_planners=2):
         # get the top #num_planners in the stack
-        ids = np.arange(self.curr_task_id, self.curr_task_id+self.curr_task_num)
+        ids = np.arange(self.curr_task_id, self.curr_task_id + self.curr_task_num)
         ids %= self.total_task_num
 
         return [self.planners[id] for id in ids]
-    
+
     def update(self, t, states):
         # check if current task is finished
         planner = self.planners[self.curr_task_id]
@@ -499,24 +552,29 @@ class SoTRal25(SoTBase):
                 self.curr_task_id = 2
                 # two tasks for odd number task id (EE task)
                 self.planners[self.curr_task_id].regeneratePlan(states["EE"])
-                self.planners[(self.curr_task_id+1)%self.total_task_num].regeneratePlan(states["base"])
+                self.planners[
+                    (self.curr_task_id + 1) % self.total_task_num
+                ].regeneratePlan(states["base"])
             else:
                 self.curr_task_id = 0
-        
+
         return finished, 0
-    
+
     def print(self):
-        self.logger.log("Currently at Task {} with Task num {}".format(self.curr_task_id, self.curr_task_num))
+        self.logger.log(
+            "Currently at Task {} with Task num {}".format(
+                self.curr_task_id, self.curr_task_num
+            )
+        )
+
 
 class SoTRal25NavOnly(SoTBase):
-
     def __init__(self, config):
         super().__init__(config)
 
     def getPlanners(self, num_planners=1):
-
         return self.planners
-    
+
     def update(self, t, states):
         # check if current task is finished
         planner = self.planners[0]
@@ -528,15 +586,18 @@ class SoTRal25NavOnly(SoTBase):
 
         if finished:
             self.planners[0].regeneratePlan(states["base"])
-    
+
         return finished, 0
-    
+
+
 if __name__ == "__main__":
     config_path = "$PROJECTMM3D_HOME/experiments/config/sim/simulation.yaml"
     config = parsing.load_config(config_path)
 
     ch = logging.StreamHandler()
-    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    formatter = logging.Formatter(
+        "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    )
     ch.setFormatter(formatter)
     planner_log = logging.getLogger("Planner")
     planner_log.setLevel(logging.INFO)
@@ -545,6 +606,3 @@ if __name__ == "__main__":
     sot = SoTCycle(config["planner"])
     sot.curr_task_id = 5
     sot.shuffle()
-
-
-

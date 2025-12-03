@@ -1,4 +1,5 @@
 """Utilities for parsing general configuration dictionaries."""
+
 from pathlib import Path
 
 import rospkg
@@ -9,6 +10,7 @@ import os
 import xacro
 import subprocess
 import re
+
 
 # This is from <https://github.com/Maples7/dict-recursive-update/blob/07204cdab891ac4123b19fe3fa148c3dd1c93992/dict_recursive_update/__init__.py>
 def recursive_dict_update(default, custom):
@@ -61,7 +63,7 @@ def load_config(path, depth=0, max_depth=5):
     #     if "transform_params" in d["controller"]["robot"]["urdf"]["args"].keys():
     #         del d["controller"]["robot"]["urdf"]["args"]["transform_params"]
     #     if "visual_params" in d["controller"]["robot"]["urdf"]["args"].keys():
-    #         del d["controller"]["robot"]["urdf"]["args"]["visual_params"]     
+    #         del d["controller"]["robot"]["urdf"]["args"]["visual_params"]
     return d
 
 
@@ -114,31 +116,37 @@ def parse_diag_matrix_dict(d):
     base = np.diag(diag)
     return scale * base
 
+
 def parse_path(path):
     # Regular expression to match the $(rospack find <package>) command
-    rospack_pattern = r'\$\((rospack find \w+)\)'
-    
+    rospack_pattern = r"\$\((rospack find \w+)\)"
+
     # Search for the $(rospack find <package>) command
     match = re.search(rospack_pattern, path)
     if match:
-        rospack_command = match.group(1)  # Extract the rospack command (e.g., "rospack find mmseq_control")
-        
+        rospack_command = match.group(
+            1
+        )  # Extract the rospack command (e.g., "rospack find mmseq_control")
+
         try:
             # Use subprocess to run the rospack command (e.g., rospack find mmseq_control)
-            package_path = subprocess.check_output(rospack_command.split(), text=True).strip()
-            
+            package_path = subprocess.check_output(
+                rospack_command.split(), text=True
+            ).strip()
+
             # Replace the $(rospack find <package>) part with the actual path
             resolved_path = re.sub(rospack_pattern, package_path, path)
-            
+
             # Expand any environment variables in the resolved path
             expanded_path = os.path.expandvars(resolved_path)
-            
+
             return expanded_path
         except subprocess.CalledProcessError as e:
             print(f"Error running command {rospack_command}: {e}")
             return None
     else:
         return os.path.expandvars(path)
+
 
 def millis_to_secs(ms):
     """Convert milliseconds to seconds."""
@@ -158,6 +166,7 @@ def xacro_include(path):
     return f"""
     <xacro:include filename="{path}" />
     """
+
 
 def parse_and_compile_urdf(d, max_runs=10, compare_existing=True):
     """Parse and compile a URDF from a xacro'd URDF file."""
@@ -216,6 +225,7 @@ def parse_and_compile_urdf(d, max_runs=10, compare_existing=True):
 
     return output_path.as_posix()
 
+
 def parse_support_offset(d):
     """Parse the x-y offset of an object relative to its support plane.
 
@@ -244,7 +254,6 @@ class _BalancedObjectWrapper:
         self.fixture = fixture
 
 
-
 def parse_local_half_extents(shape_config):
     type_ = shape_config["type"].lower()
     if type_ == "cuboid" or type_ == "right_triangular_prism":
@@ -256,8 +265,8 @@ def parse_local_half_extents(shape_config):
         return 0.5 * np.array([w, w, h])
     raise ValueError(f"Unsupported shape type: {type_}")
 
-def parse_to_yaml_dict(d):
 
+def parse_to_yaml_dict(d):
     for key in d:
         if isinstance(d[key], dict):
             d[key] = parse_to_yaml_dict(d[key])
@@ -265,6 +274,7 @@ def parse_to_yaml_dict(d):
             d[key] = d[key].tolist()
 
     return d
+
 
 def parse_single_camera_yaml(dict_cam):
     path_to_cam_params = parse_ros_path(dict_cam["params"])

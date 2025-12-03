@@ -43,11 +43,17 @@ def camera_from_dict(d, r_ew_w=None):
 
     if from_position:
         return Camera.from_camera_position(
-            target_position=target, camera_position=position, width=width,height=height
+            target_position=target, camera_position=position, width=width, height=height
         )
     else:
         return Camera.from_distance_rpy(
-            target_position=target, distance=distance, roll=roll, pitch=pitch, yaw=yaw, width=width,height=height
+            target_position=target,
+            distance=distance,
+            roll=roll,
+            pitch=pitch,
+            yaw=yaw,
+            width=width,
+            height=height,
         )
 
 

@@ -127,15 +127,10 @@ class BulletBody:
         box = geometry.Box3d(half_extents)
 
         collision_uid = pyb.createCollisionShape(
-            shapeType=pyb.GEOM_CYLINDER,
-            radius=radius,
-            height=height,
+            shapeType=pyb.GEOM_CYLINDER, radius=radius, height=height
         )
         visual_uid = pyb.createVisualShape(
-            shapeType=pyb.GEOM_CYLINDER,
-            radius=radius,
-            length=height,
-            rgbaColor=color,
+            shapeType=pyb.GEOM_CYLINDER, radius=radius, length=height, rgbaColor=color
         )
         return BulletBody(
             mass=mass,
@@ -156,13 +151,10 @@ class BulletBody:
         box = geometry.Box3d(half_extents)
 
         collision_uid = pyb.createCollisionShape(
-            shapeType=pyb.GEOM_BOX,
-            halfExtents=tuple(half_extents),
+            shapeType=pyb.GEOM_BOX, halfExtents=tuple(half_extents)
         )
         visual_uid = pyb.createVisualShape(
-            shapeType=pyb.GEOM_BOX,
-            halfExtents=tuple(half_extents),
-            rgbaColor=color,
+            shapeType=pyb.GEOM_BOX, halfExtents=tuple(half_extents), rgbaColor=color
         )
         return BulletBody(
             mass=mass,
@@ -181,13 +173,10 @@ class BulletBody:
         box = geometry.Box3d(half_extents)
 
         collision_uid = pyb.createCollisionShape(
-            shapeType=pyb.GEOM_SPHERE,
-            radius=radius,
+            shapeType=pyb.GEOM_SPHERE, radius=radius
         )
         visual_uid = pyb.createVisualShape(
-            shapeType=pyb.GEOM_SPHERE,
-            radius=radius,
-            rgbaColor=color,
+            shapeType=pyb.GEOM_SPHERE, radius=radius, rgbaColor=color
         )
         return BulletBody(
             mass=mass,
@@ -401,6 +390,7 @@ class BulletDynamicObstacle:
             pyb.resetBaseVelocity(self.body.uid, linearVelocity=list(cmd_vel))
         return reset
 
+
 #
 # class EEObject:
 #     def __init__(self, position, orientation, side_lengths):
@@ -535,7 +525,9 @@ class BulletSimulation:
 
         # setup obstacles
         if config["static_obstacles"]["enabled"]:
-            urdf_path = parsing.parse_and_compile_urdf(config["static_obstacles"]["urdf"])
+            urdf_path = parsing.parse_and_compile_urdf(
+                config["static_obstacles"]["urdf"]
+            )
             obstacles_uid = pyb.loadURDF(parsing.parse_path(urdf_path))
             pyb.changeDynamics(obstacles_uid, -1, mass=0)  # change to static object
 
@@ -548,7 +540,7 @@ class BulletSimulation:
                 self.dynamic_obstacles.append(obstacle)
 
         # mark world frame
-        debug_frame_world(0.5, [0]*3, line_width=3)
+        debug_frame_world(0.5, [0] * 3, line_width=3)
 
         # mark frame at the initial position
         debug_frame_world(0.2, list(r_ew_w), orientation=Q_we, line_width=3)

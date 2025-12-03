@@ -3,19 +3,21 @@ import rosbag
 import argparse
 from std_msgs.msg import String  # Change this to the correct message type
 
+
 def extract_last_message(bag_file, topic_name):
     last_msg = None
     last_msg_time = None
 
-    with rosbag.Bag(bag_file, 'r') as bag:
+    with rosbag.Bag(bag_file, "r") as bag:
         for topic, msg, t in bag.read_messages(topics=[topic_name]):
             last_msg = msg
             last_msg_time = t
 
     return last_msg, last_msg_time
 
+
 def publish_message_at_rate(topic_name, message, rate_hz):
-    rospy.init_node('last_message_publisher', anonymous=True)
+    rospy.init_node("last_message_publisher", anonymous=True)
     pub = rospy.Publisher(topic_name, type(message), queue_size=10)
     rate = rospy.Rate(rate_hz)
 
@@ -25,11 +27,21 @@ def publish_message_at_rate(topic_name, message, rate_hz):
         pub.publish(message)
         rate.sleep()
 
-if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='Extract and publish the last message of a topic from a ROS bag file.')
-    parser.add_argument('bag_file', type=str, help='Path to the ROS bag file')
-    parser.add_argument('topic_name', type=str, help='The topic name to extract and publish')
-    parser.add_argument('rate_hz', type=float, default=10, help='The rate (in Hz) at which to publish the message')
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(
+        description="Extract and publish the last message of a topic from a ROS bag file."
+    )
+    parser.add_argument("bag_file", type=str, help="Path to the ROS bag file")
+    parser.add_argument(
+        "topic_name", type=str, help="The topic name to extract and publish"
+    )
+    parser.add_argument(
+        "rate_hz",
+        type=float,
+        default=10,
+        help="The rate (in Hz) at which to publish the message",
+    )
 
     args = parser.parse_args()
 

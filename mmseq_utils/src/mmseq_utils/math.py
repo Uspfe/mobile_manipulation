@@ -36,7 +36,7 @@ def rectangle_r_tau(w, h):
 
 def equilateral_triangle_area(side_length):
     """Area of an equilateral triangle."""
-    return np.sqrt(3) * side_length ** 2 / 4
+    return np.sqrt(3) * side_length**2 / 4
 
 
 def equilateral_triangle_r_tau(side_length):
@@ -46,7 +46,7 @@ def equilateral_triangle_r_tau(side_length):
     sec = 1.0 / np.cos(θ)
     tan = np.tan(θ)
     area = equilateral_triangle_area(side_length)
-    return h ** 3 * (tan * sec + np.log(tan + sec)) / area
+    return h**3 * (tan * sec + np.log(tan + sec)) / area
 
 
 def quat_to_rot(q):
@@ -98,8 +98,8 @@ def quat_inverse(q):
 
 def cylinder_inertia_matrix(mass, radius, height):
     """Inertia matrix for cylinder aligned along z-axis."""
-    xx = yy = mass * (3 * radius ** 2 + height ** 2) / 12
-    zz = 0.5 * mass * radius ** 2
+    xx = yy = mass * (3 * radius**2 + height**2) / 12
+    zz = 0.5 * mass * radius**2
     return np.diag([xx, yy, zz])
 
 
@@ -107,9 +107,9 @@ def cuboid_inertia_matrix(mass, side_lengths):
     """Inertia matrix for a rectangular cuboid with side_lengths in (x, y, z)
     dimensions."""
     lx, ly, lz = side_lengths
-    xx = ly ** 2 + lz ** 2
-    yy = lx ** 2 + lz ** 2
-    zz = lx ** 2 + ly ** 2
+    xx = ly**2 + lz**2
+    yy = lx**2 + lz**2
+    zz = lx**2 + ly**2
     return mass * np.diag([xx, yy, zz]) / 12.0
 
 
@@ -149,14 +149,16 @@ def plane_span(normal):
     """
     return null_space(normal[None, :]).T
 
+
 def wrap_to_2_pi_scalar(theta):
-    while np.abs(theta-np.pi) > np.pi:
+    while np.abs(theta - np.pi) > np.pi:
         if theta > 2 * np.pi:
             theta -= 2 * np.pi
         elif theta < 0:
             theta += 2 * np.pi
 
     return theta
+
 
 def wrap_to_2_pi_array(thetas):
     thetas_wrapped = [wrap_to_2_pi_scalar(theta) for theta in thetas]
@@ -168,10 +170,11 @@ def wrap_pi_scalar(theta):
     while np.abs(theta) > np.pi:
         if theta > np.pi:
             theta -= 2 * np.pi
-        elif theta < - np.pi:
+        elif theta < -np.pi:
             theta += 2 * np.pi
 
     return theta
+
 
 def wrap_pi_array(thetas):
     thetas_wrapped = [wrap_pi_scalar(theta) for theta in thetas]
@@ -180,7 +183,7 @@ def wrap_pi_array(thetas):
 
 
 def rms_continuous(ts, data):
-    """ RMS of data over a period of time
+    """RMS of data over a period of time
 
     :param ts: 1D array of length N, time stamp of each row of data
     :param data: 2D array, N x data dimension
@@ -188,13 +191,13 @@ def rms_continuous(ts, data):
     """
     dts = ts[1:] - ts[:-1]
     dts = np.hstack((dts, dts[-1]))
-    rms = (np.sum(data ** 2 * dts, axis=0) / (ts[-1] - ts[0])) ** 0.5
+    rms = (np.sum(data**2 * dts, axis=0) / (ts[-1] - ts[0])) ** 0.5
 
     return rms
 
 
 def integrate_zoh(ts, data):
-    """ Numerical integration(ZOH) of data over a period of time
+    """Numerical integration(ZOH) of data over a period of time
 
     :param ts: 1D array of length N, time stamp of each row of data
     :param data: 2D array, N x data dimension
@@ -202,9 +205,10 @@ def integrate_zoh(ts, data):
     """
     dts = ts[1:] - ts[:-1]
     dts = np.hstack((dts, dts[-1]))
-    integral = np.sum(data*dts, axis=0)
+    integral = np.sum(data * dts, axis=0)
 
     return integral / (ts[-1] - ts[0])
+
 
 def statistics(data):
     mean = np.mean(data, axis=0)
@@ -213,13 +217,15 @@ def statistics(data):
 
     return mean, max, min
 
+
 def statistics_std(data):
     std = np.std(data, axis=0)
 
     return std
 
+
 def normalize_wrt_bounds(lower_bound, upper_bound, data):
-    """ Normalize data wrt bounds
+    """Normalize data wrt bounds
         # -1 --> saturate lower bounds
         # 1  --> saturate upper bounds
         # 0  --> mean
@@ -235,38 +241,45 @@ def normalize_wrt_bounds(lower_bound, upper_bound, data):
 
     return data_normalized
 
+
 def casadi_SO2(theta):
-    R = cs.MX(2,2)
-    R[0,0] = cs.cos(theta)
-    R[1,1] = cs.cos(theta)
-    R[1,0] = cs.sin(theta)
-    R[0,1] = -cs.sin(theta)
+    R = cs.MX(2, 2)
+    R[0, 0] = cs.cos(theta)
+    R[1, 1] = cs.cos(theta)
+    R[1, 0] = cs.sin(theta)
+    R[0, 1] = -cs.sin(theta)
 
     return R
+
 
 def casadi_SO3_Rx(theta):
-    R = cs.MX(3,3)
-    R[0,0] = cs.cos(theta)
-    R[1,1] = cs.cos(theta)
-    R[1,0] = cs.sin(theta)
-    R[0,1] = -cs.sin(theta)
-    R[2,2] = 1
+    R = cs.MX(3, 3)
+    R[0, 0] = cs.cos(theta)
+    R[1, 1] = cs.cos(theta)
+    R[1, 0] = cs.sin(theta)
+    R[0, 1] = -cs.sin(theta)
+    R[2, 2] = 1
 
     return R
 
+
 def casadi_SO3_log(R):
-    theta = cs.acos((cs.trace(R) - 1)/2)
-    coeff_large_angle = theta/(2*cs.sin(theta))
-    coeff_small_angle = theta/(2*(theta - theta**3/6 + theta**5/120))
-    omega_cross_large_angle =  coeff_large_angle* (R - R.T)
+    theta = cs.acos((cs.trace(R) - 1) / 2)
+    coeff_large_angle = theta / (2 * cs.sin(theta))
+    coeff_small_angle = theta / (2 * (theta - theta**3 / 6 + theta**5 / 120))
+    omega_cross_large_angle = coeff_large_angle * (R - R.T)
     omega_cross_small_angle = coeff_small_angle * (R - R.T)
-    omega_large_angle = cs.vertcat(omega_cross_large_angle[2,1], 
-                                   omega_cross_large_angle[0,2], 
-                                   omega_cross_large_angle[1,0])
-    omega_small_angle = cs.vertcat(omega_cross_small_angle[2,1], 
-                                   omega_cross_small_angle[0,2], 
-                                   omega_cross_small_angle[1,0])
-    
+    omega_large_angle = cs.vertcat(
+        omega_cross_large_angle[2, 1],
+        omega_cross_large_angle[0, 2],
+        omega_cross_large_angle[1, 0],
+    )
+    omega_small_angle = cs.vertcat(
+        omega_cross_small_angle[2, 1],
+        omega_cross_small_angle[0, 2],
+        omega_cross_small_angle[1, 0],
+    )
+
     omega_list = [omega_small_angle, omega_large_angle]
     omega = cs.conditional(theta > 1e-2, omega_list, 0, False)
 

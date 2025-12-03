@@ -1,8 +1,9 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
+
 def sqaure_wave(peak, valley, period, round, dt):
-    """ Trajectory generation for sqaure wave
+    """Trajectory generation for sqaure wave
 
     :param peak: 1D array, peak value
     :param valley: 1Darray, valley value
@@ -14,12 +15,14 @@ def sqaure_wave(peak, valley, period, round, dt):
 
     n = len(peak)
     if len(valley) != n:
-        raise ValueError("peak dimension () should match valley()".format(len(peak), len(valley)))
+        raise ValueError(
+            "peak dimension () should match valley()".format(len(peak), len(valley))
+        )
 
-    N = int(period/dt)
+    N = int(period / dt)
     plan_pos = np.zeros((N, n))
-    plan_pos[:int(N/2), :] = peak
-    plan_pos[int(N/2):, :] = valley
+    plan_pos[: int(N / 2), :] = peak
+    plan_pos[int(N / 2) :, :] = valley
 
     plan_pos = np.tile(plan_pos, [round, 1])
     plan_vel = np.zeros_like(plan_pos)
@@ -27,12 +30,12 @@ def sqaure_wave(peak, valley, period, round, dt):
 
     return {"t": t, "p": plan_pos, "v": plan_vel}
 
-def interpolate(t, plan):
 
+def interpolate(t, plan):
     if t >= plan["t"][-1]:
-        return plan['p'][-1], np.zeros_like(plan['p'][-1])
+        return plan["p"][-1], np.zeros_like(plan["p"][-1])
     elif t <= plan["t"][0]:
-        return plan['p'][0], np.zeros_like(plan['p'][0])
+        return plan["p"][0], np.zeros_like(plan["p"][0])
 
     indx = np.argwhere(plan["t"] < t)[-1][0]
     dt = plan["t"][indx + 1] - plan["t"][indx]
@@ -46,7 +49,3 @@ def interpolate(t, plan):
     v = (v1 - v0) / dt * (t - indx * dt) + v0
 
     return p, v
-
-
-
-

@@ -9,12 +9,15 @@ from mmseq_utils.logging import DataLogger
 from mmseq_utils.plotting import DataPlotter
 from mmseq_utils import parsing
 
+
 def main():
     np.set_printoptions(precision=3, suppress=True)
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", required=True, help="Path to configuration file.")
-    parser.add_argument("--jointId", type=int, default=0, help="Joint index to simulate step response.")
+    parser.add_argument(
+        "--jointId", type=int, default=0, help="Joint index to simulate step response."
+    )
     parser.add_argument(
         "--video",
         nargs="?",
@@ -70,6 +73,7 @@ def main():
     plotter = DataPlotter.from_logger(logger)
     plotter.plot_cmd_vs_real_vel()
     plotter.show()
+
 
 if __name__ == "__main__":
     main()

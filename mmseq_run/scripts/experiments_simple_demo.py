@@ -17,14 +17,13 @@ from mmseq_plan.TaskManager import SoTCycle
 from mmseq_utils import parsing
 from mmseq_utils.logging import DataLogger, DataPlotter
 
+
 class EventHandler:
     def __init__(self, sot):
         self.sot = sot
 
     def onclick(self, event):
         self.sot.shuffle_is_triggered = True
-
-
 
 
 def main():
@@ -39,11 +38,20 @@ def main():
         const="",
         help="Record video. Optionally specify prefix for video directory.",
     )
-    parser.add_argument("--priority", type=str, default=None, help="priority, EE or base")
-    parser.add_argument("--stmpctype", type=str, default=None,
-                        help="STMPC type, SQP or lex. This overwrites the yaml settings")
-    parser.add_argument("--GUI", action="store_true",
-                        help="STMPC type, SQP or lex. This overwrites the yaml settings")
+    parser.add_argument(
+        "--priority", type=str, default=None, help="priority, EE or base"
+    )
+    parser.add_argument(
+        "--stmpctype",
+        type=str,
+        default=None,
+        help="STMPC type, SQP or lex. This overwrites the yaml settings",
+    )
+    parser.add_argument(
+        "--GUI",
+        action="store_true",
+        help="STMPC type, SQP or lex. This overwrites the yaml settings",
+    )
     args = parser.parse_args()
 
     # load configuration and overwrite with args
@@ -82,7 +90,9 @@ def main():
 
     # set py logger level
     ch = logging.StreamHandler()
-    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    formatter = logging.Formatter(
+        "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    )
     ch.setFormatter(formatter)
     planner_log = logging.getLogger("Planner")
     planner_log.setLevel(config["logging"]["log_level"])
@@ -108,25 +118,27 @@ def main():
     log = True
 
     finished = False
-    colors = [[1, 0, 0, 1],
-              [0, 1, 0, 1],
-              [0, 0, 1, 1]]
+    colors = [[1, 0, 0, 1], [0, 1, 0, 1], [0, 0, 1, 1]]
     for pid, planner in enumerate(sot.planners):
         pd = planner.target_pos
         print(planner.name)
         if planner.type == "EE":
-            sim.ghosts.append(GhostSphere(planner.tracking_err_tol, pd, color=colors[pid//2]))
+            sim.ghosts.append(
+                GhostSphere(planner.tracking_err_tol, pd, color=colors[pid // 2])
+            )
         else:
-            sim.ghosts.append(GhostCylinder(position=np.hstack((pd, 0)), color=colors[pid//2]))
+            sim.ghosts.append(
+                GhostCylinder(position=np.hstack((pd, 0)), color=colors[pid // 2])
+            )
 
     # interaction pad
     fig = plt.figure(figsize=[10, 10], dpi=300)
     ax = fig.add_subplot(111)
-    ax.set_aspect('equal')
+    ax.set_aspect("equal")
     plt.xlim(-5, 5)
     plt.ylim(-5, 5)
     handler = EventHandler(sot)
-    cid = fig.canvas.mpl_connect('button_press_event', handler.onclick)
+    cid = fig.canvas.mpl_connect("button_press_event", handler.onclick)
     plt.show(block=False)
     plt.pause(2)
     while t <= sim.duration:
@@ -139,7 +151,7 @@ def main():
         planners = sot.getPlanners(num_planners=2)
         u, acc = controller.control(t, robot_states, planners)
         t1 = time.perf_counter()
-        print(t1-t0)
+        print(t1 - t0)
         robot.command_velocity(u)
         t, _ = sim.step(t, step_robot=False)
         plt.show(block=False)
@@ -156,7 +168,6 @@ def main():
             if pd.size == 2:
                 pd = np.hstack((pd, 0))
             sim.ghosts[pid].update(position=pd)
-
 
         ee_curr_pos, _ = robot.link_pose()
         base_curr_pos, _ = robot.link_pose(-1)
@@ -196,6 +207,7 @@ def main():
     # plotter.plot_cmd_vs_real_vel()
     # plotter.plot_ee_position()
     # plotter.show()
+
 
 if __name__ == "__main__":
     main()

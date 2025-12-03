@@ -2,6 +2,7 @@ from mmseq_utils.trajectory_generation import *
 from mmseq_plan.BasePlanner import BasePoseTrajectoryLine
 import numpy as np
 
+
 def visualize_trajectory(plan):
     n = plan["p"].shape[1]
 
@@ -9,7 +10,7 @@ def visualize_trajectory(plan):
     if n == 1:
         axes_p = [axes_p]
     for i in range(n):
-        axes_p[i].plot(plan["t"], plan["p"][:, i], label="r_"+str(i))
+        axes_p[i].plot(plan["t"], plan["p"][:, i], label="r_" + str(i))
     axes_p[0].set_title("position trajectory")
 
     f, axes_v = plt.subplots(n, 1, sharex=True)
@@ -22,6 +23,7 @@ def visualize_trajectory(plan):
 
     return [axes_p, axes_v]
 
+
 def test_interpolation(plan):
     ts = np.random.randint(-1, 20, 10) + np.random.randn(10)
 
@@ -29,7 +31,7 @@ def test_interpolation(plan):
     vs = []
 
     for t in ts:
-        p,v = interpolate(t, plan)
+        p, v = interpolate(t, plan)
         ps.append(p)
         vs.append(v)
 
@@ -38,8 +40,9 @@ def test_interpolation(plan):
 
     axes_p, axes_v = visualize_trajectory(plan)
     for i in range(ps.shape[1]):
-        axes_p[i].plot(ts, ps[:, i], '.', markersize=10)
-        axes_v[i].plot(ts, vs[:, i], '.', markersize=10)
+        axes_p[i].plot(ts, ps[:, i], ".", markersize=10)
+        axes_v[i].plot(ts, vs[:, i], ".", markersize=10)
+
 
 def test_base_pose_trajectory():
     config = BasePoseTrajectoryLine.getDefaultParams()
@@ -51,6 +54,7 @@ def test_base_pose_trajectory():
     planner = BasePoseTrajectoryLine(config)
 
     visualize_trajectory(planner.plan)
+
 
 if __name__ == "__main__":
     # plan = sqaure_wave([1, 2], [-1, 0], 3, 5, 0.01)

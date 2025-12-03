@@ -30,11 +30,20 @@ def main():
         const="",
         help="Record video. Optionally specify prefix for video directory.",
     )
-    parser.add_argument("--priority", type=str, default=None, help="priority, EE or base")
-    parser.add_argument("--stmpctype", type=str, default=None,
-                        help="STMPC type, SQP or lex. This overwrites the yaml settings")
-    parser.add_argument("--GUI", action="store_true",
-                        help="STMPC type, SQP or lex. This overwrites the yaml settings")
+    parser.add_argument(
+        "--priority", type=str, default=None, help="priority, EE or base"
+    )
+    parser.add_argument(
+        "--stmpctype",
+        type=str,
+        default=None,
+        help="STMPC type, SQP or lex. This overwrites the yaml settings",
+    )
+    parser.add_argument(
+        "--GUI",
+        action="store_true",
+        help="STMPC type, SQP or lex. This overwrites the yaml settings",
+    )
     args = parser.parse_args()
 
     # load configuration and overwrite with args
@@ -79,7 +88,9 @@ def main():
 
     # set py logger level
     ch = logging.StreamHandler()
-    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    formatter = logging.Formatter(
+        "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    )
     ch.setFormatter(formatter)
     planner_log = logging.getLogger("Planner")
     planner_log.setLevel(config["logging"]["log_level"])
@@ -106,7 +117,7 @@ def main():
 
     finished = False
 
-    sim.ghosts.append(GhostSphere(0.02, [0,0,0], color=[1, 0, 0, 1]))
+    sim.ghosts.append(GhostSphere(0.02, [0, 0, 0], color=[1, 0, 0, 1]))
     sim.ghosts.append(GhostCylinder(position=np.hstack((0, 0, 0)), color=[0, 0, 1, 1]))
 
     while t <= sim.duration:
@@ -119,7 +130,7 @@ def main():
         planners = sot.getPlanners(num_planners=2)
         u, acc = controller.control(t, robot_states, planners)
         t1 = time.perf_counter()
-        print(t1-t0)
+        print(t1 - t0)
         robot.command_velocity(u)
         t, _ = sim.step(t, step_robot=False)
 
@@ -168,6 +179,7 @@ def main():
     # plotter.plot_cmd_vs_real_vel()
     # plotter.plot_ee_position()
     # plotter.show()
+
 
 if __name__ == "__main__":
     main()

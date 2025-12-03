@@ -9,28 +9,38 @@ import casadi as cs
 
 from mmseq_control.robot import MobileManipulator3D
 
-class RBFOld:
-    mu_sym = cs.MX.sym('mu')
-    zeta_sym = cs.MX.sym('zeta')
-    h_sym = cs.MX.sym('h')
-    s_sym = cs.MX.sym('s')
 
-    B_eqn_list = [-mu_sym * cs.log(h_sym),
-                  mu_sym * (0.5 * (((h_sym - 2 * zeta_sym) / zeta_sym) ** 2 - 1) - cs.log(zeta_sym))]
+class RBFOld:
+    mu_sym = cs.MX.sym("mu")
+    zeta_sym = cs.MX.sym("zeta")
+    h_sym = cs.MX.sym("h")
+    s_sym = cs.MX.sym("s")
+
+    B_eqn_list = [
+        -mu_sym * cs.log(h_sym),
+        mu_sym
+        * (0.5 * (((h_sym - 2 * zeta_sym) / zeta_sym) ** 2 - 1) - cs.log(zeta_sym)),
+    ]
     B_eqn = cs.conditional(s_sym, B_eqn_list, 0, False)
     B_fcn = cs.Function("B_fcn", [s_sym, h_sym, mu_sym, zeta_sym], [B_eqn])
 
     B_hess_eqn, B_grad_eqn = cs.hessian(B_eqn, h_sym)
-    B_hess_fcn = cs.Function("ddBddh_fcn", [s_sym, h_sym, mu_sym, zeta_sym], [B_hess_eqn])
+    B_hess_fcn = cs.Function(
+        "ddBddh_fcn", [s_sym, h_sym, mu_sym, zeta_sym], [B_hess_eqn]
+    )
     B_grad_fcn = cs.Function("dBdh_fcn", [s_sym, h_sym, mu_sym, zeta_sym], [B_grad_eqn])
 
-class RBF:
-    mu_sym = cs.MX.sym('mu')
-    zeta_sym = cs.MX.sym('zeta')
-    h_sym = cs.MX.sym('h')
 
-    B_eqn_list = [-mu_sym * cs.log(h_sym),
-                  mu_sym * (0.5 * (((h_sym - 2 * zeta_sym) / zeta_sym) ** 2 - 1) - cs.log(zeta_sym))]
+class RBF:
+    mu_sym = cs.MX.sym("mu")
+    zeta_sym = cs.MX.sym("zeta")
+    h_sym = cs.MX.sym("h")
+
+    B_eqn_list = [
+        -mu_sym * cs.log(h_sym),
+        mu_sym
+        * (0.5 * (((h_sym - 2 * zeta_sym) / zeta_sym) ** 2 - 1) - cs.log(zeta_sym)),
+    ]
     s_eqn = h_sym < zeta_sym
     B_eqn = cs.conditional(s_eqn, B_eqn_list, 0, False)
     B_fcn = cs.Function("B_fcn", [h_sym, mu_sym, zeta_sym], [B_eqn])
@@ -39,16 +49,16 @@ class RBF:
     B_hess_fcn = cs.Function("ddBddh_fcn", [h_sym, mu_sym, zeta_sym], [B_hess_eqn])
     B_grad_fcn = cs.Function("dBdh_fcn", [h_sym, mu_sym, zeta_sym], [B_grad_eqn])
 
+
 class CostFunctions(ABC):
     def __init__(self, dt, nx, nu, N, name="TBD"):
-        """ MPC cost functions base class
+        """MPC cost functions base class
 
         :param dt: discretization time step
         :param nx: state dim
         :param nu: control dim
         :param N:  prediction window
         """
-
 
         self.dt = dt
         self.nx = nx
@@ -57,19 +67,21 @@ class CostFunctions(ABC):
         self.name = name
 
         self.QPsize = self.nx * (self.N + 1) + self.nu * self.N
-        self.x_bar_sym = cs.MX.sym('x_bar', self.nx, self.N + 1)
-        self.u_bar_sym = cs.MX.sym('u_bar', self.nu, self.N)
+        self.x_bar_sym = cs.MX.sym("x_bar", self.nx, self.N + 1)
+        self.u_bar_sym = cs.MX.sym("u_bar", self.nu, self.N)
         self.z_bar_sym = cs.vertcat(cs.vec(self.x_bar_sym), cs.vec(self.u_bar_sym))
 
         rospack = rospkg.RosPack()
-        self.c_code_path = Path(rospack.get_path("mmseq_control")) / "src/mmseq_control/casadi_c"
+        self.c_code_path = (
+            Path(rospack.get_path("mmseq_control")) / "src/mmseq_control/casadi_c"
+        )
         self.c_code_path.mkdir(parents=True, exist_ok=True)
 
         super().__init__()
 
     @abstractmethod
     def evaluate(self, x_bar, u_bar, *params):
-        """ evaluate cost function over the prediction window
+        """evaluate cost function over the prediction window
 
         :param x_bar: predicted state trajectory numpy.ndarray [N+1, nx]
         :param u_bar: predicted control trajectory numpy.ndarray[N, nu]
@@ -80,7 +92,7 @@ class CostFunctions(ABC):
 
     @abstractmethod
     def quad(self, x_bar, u_bar, *params):
-        """ quadratize(second order taylor expansion) of cost function around x_bar, u_bar, r_bar
+        """quadratize(second order taylor expansion) of cost function around x_bar, u_bar, r_bar
 
         :param x_bar: linearization state trajectory numpy.ndarray [N+1, nx]
         :param u_bar: linearization control trajectory numpy.ndarray[N, nu]
@@ -94,9 +106,10 @@ class CostFunctions(ABC):
     def get_hess_fcn(self):
         pass
 
+
 class LinearLeastSquare(CostFunctions):
     def __init__(self, dt, nx, nu, N, nr, params, name):
-        """ Linear least square cost function
+        """Linear least square cost function
             J = ||A z_bar + b||^2_W
             A is a constant matrix, b is a constant vector and treated as a parameter
 
@@ -115,29 +128,38 @@ class LinearLeastSquare(CostFunctions):
         self._setupSymMdl()
 
     def _setupSymMdl(self):
-        self.c_code_file = self.c_code_path/(self.name+".c")
+        self.c_code_file = self.c_code_path / (self.name + ".c")
         if self.c_code_file.is_file():
-            C = cs.Importer(self.c_code_file.as_posix(),'shell')
+            C = cs.Importer(self.c_code_file.as_posix(), "shell")
             # C = self.c_code_path.as_posix() + "/" + self.name + ".so"
-            self.J_fcn = cs.external('J',C)
-            self.grad_fcn = cs.external('dJdz',C)
-            self.hess_fcn = cs.external('ddJddz',C)
+            self.J_fcn = cs.external("J", C)
+            self.grad_fcn = cs.external("dJdz", C)
+            self.hess_fcn = cs.external("ddJddz", C)
 
         else:
             y = self.A @ self.z_bar_sym + self.b_sym
             self.J_eqn = 0.5 * y.T @ self.W @ y
             self.hess_eqn, self.grad_eqn = cs.hessian(self.J_eqn, self.z_bar_sym)
-            self.J_fcn = cs.Function('J', [self.x_bar_sym, self.u_bar_sym, self.b_sym], [self.J_eqn],
-                                                ["x_bar", "u_bar", "b"], ["J"]).expand()
-            self.grad_fcn = cs.Function('dJdz', [self.z_bar_sym, self.b_sym], [self.grad_eqn]).expand()
-            self.hess_fcn = cs.Function('ddJddz', [self.z_bar_sym, self.b_sym], [self.hess_eqn]).expand()
+            self.J_fcn = cs.Function(
+                "J",
+                [self.x_bar_sym, self.u_bar_sym, self.b_sym],
+                [self.J_eqn],
+                ["x_bar", "u_bar", "b"],
+                ["J"],
+            ).expand()
+            self.grad_fcn = cs.Function(
+                "dJdz", [self.z_bar_sym, self.b_sym], [self.grad_eqn]
+            ).expand()
+            self.hess_fcn = cs.Function(
+                "ddJddz", [self.z_bar_sym, self.b_sym], [self.hess_eqn]
+            ).expand()
 
-            C = cs.CodeGenerator(self.name+".c")
+            C = cs.CodeGenerator(self.name + ".c")
 
             C.add(self.J_fcn)
             C.add(self.grad_fcn)
             C.add(self.hess_fcn)
-            C.generate(self.c_code_path.as_posix()+"/")
+            C.generate(self.c_code_path.as_posix() + "/")
         # y = self.A @ self.z_bar_sym + self.b_sym
         # self.J_eqn = 0.5 * y.T @ self.W @ y
         # self.hess_eqn, self.grad_eqn = cs.hessian(self.J_eqn, self.z_bar_sym)
@@ -162,7 +184,7 @@ class LinearLeastSquare(CostFunctions):
 
 class TrackingCostFunction(CostFunctions):
     def __init__(self, dt, nx, nu, N, nr, f_fcn, params, name):
-        """ Nonlinear least square cost function
+        """Nonlinear least square cost function
             J = \sum_{k=0}^N ||f_fcn(x(t_k)) - r(t_k)||^2_Qk + ||f_fcn(x(t_N)) - r(t_N)||^2_P
 
         :param dt: discretization time step
@@ -176,7 +198,7 @@ class TrackingCostFunction(CostFunctions):
         super().__init__(dt, nx, nu, N, name)
         self.nr = nr
         self.f_fcn = f_fcn.expand()
-        self.r_bar_sym = cs.MX.sym("r_bar", self.nr, self.N+1)
+        self.r_bar_sym = cs.MX.sym("r_bar", self.nr, self.N + 1)
 
         self.Qk = params["Qk"]
         self.Q = block_diag(*([self.Qk] * self.N))
@@ -185,32 +207,57 @@ class TrackingCostFunction(CostFunctions):
         self._setupSymMdl()
 
     def _setupSymMdl(self):
-        self.J_eqn, self.e_bar_eqn, self.J_bar_eqn = self._getCostSymEqn(self.f_fcn, self.x_bar_sym, self.u_bar_sym, self.r_bar_sym)
+        self.J_eqn, self.e_bar_eqn, self.J_bar_eqn = self._getCostSymEqn(
+            self.f_fcn, self.x_bar_sym, self.u_bar_sym, self.r_bar_sym
+        )
         self.hess_eqn, self.grad_eqn = cs.hessian(self.J_eqn, self.z_bar_sym)
         self.debardz_eqn = cs.jacobian(self.e_bar_eqn, self.z_bar_sym)
-        self.hess_approx_eqn = self.debardz_eqn.T @ self.W @self.debardz_eqn
+        self.hess_approx_eqn = self.debardz_eqn.T @ self.W @ self.debardz_eqn
 
-        self.c_code_file = self.c_code_path/(self.name+".c")
+        self.c_code_file = self.c_code_path / (self.name + ".c")
         if self.c_code_file.is_file():
-            C = cs.Importer(self.c_code_file.as_posix(),'shell')
+            C = cs.Importer(self.c_code_file.as_posix(), "shell")
             # C = self.c_code_path.as_posix() + "/" + self.name + ".so"
-            self.J_fcn = cs.external('J',C)
-            self.grad_fcn = cs.external('dJdz',C)
-            self.hess_fcn = cs.external('ddJddz',C)
-            self.hess_approx_fcn = cs.external('dJdzdJdzT', C)
-            self.J_bar_fcn = cs.external('J_vec', C)
-            self.e_bar_fcn = cs.external('e_bar', C)
+            self.J_fcn = cs.external("J", C)
+            self.grad_fcn = cs.external("dJdz", C)
+            self.hess_fcn = cs.external("ddJddz", C)
+            self.hess_approx_fcn = cs.external("dJdzdJdzT", C)
+            self.J_bar_fcn = cs.external("J_vec", C)
+            self.e_bar_fcn = cs.external("e_bar", C)
 
         else:
+            self.J_fcn = cs.Function(
+                "J",
+                [self.x_bar_sym, self.u_bar_sym, self.r_bar_sym],
+                [self.J_eqn],
+                ["x_bar", "u_bar", "r_bar"],
+                ["J"],
+            ).expand()
+            self.J_bar_fcn = cs.Function(
+                "J_vec",
+                [self.x_bar_sym, self.u_bar_sym, self.r_bar_sym],
+                [self.J_bar_eqn],
+                ["x_bar", "u_bar", "r_bar"],
+                ["J"],
+            ).expand()
+            self.e_bar_fcn = cs.Function(
+                "e_bar",
+                [self.x_bar_sym, self.u_bar_sym, self.r_bar_sym],
+                [self.e_bar_eqn],
+                ["x_bar", "u_bar", "r_bar"],
+                ["e_bar"],
+            ).expand()
+            self.grad_fcn = cs.Function(
+                "dJdz", [self.z_bar_sym, self.r_bar_sym], [self.grad_eqn]
+            ).expand()
+            self.hess_fcn = cs.Function(
+                "ddJddz", [self.z_bar_sym, self.r_bar_sym], [self.hess_eqn]
+            ).expand()
+            self.hess_approx_fcn = cs.Function(
+                "dJdzdJdzT", [self.z_bar_sym, self.r_bar_sym], [self.hess_approx_eqn]
+            ).expand()
 
-            self.J_fcn = cs.Function('J', [self.x_bar_sym, self.u_bar_sym, self.r_bar_sym], [self.J_eqn], ["x_bar", "u_bar", "r_bar"], ["J"]).expand()
-            self.J_bar_fcn = cs.Function('J_vec', [self.x_bar_sym, self.u_bar_sym, self.r_bar_sym], [self.J_bar_eqn], ["x_bar", "u_bar", "r_bar"], ["J"]).expand()
-            self.e_bar_fcn = cs.Function('e_bar', [self.x_bar_sym, self.u_bar_sym, self.r_bar_sym], [self.e_bar_eqn], ["x_bar", "u_bar", "r_bar"], ["e_bar"]).expand()
-            self.grad_fcn = cs.Function('dJdz', [self.z_bar_sym, self.r_bar_sym], [self.grad_eqn]).expand()
-            self.hess_fcn = cs.Function('ddJddz', [self.z_bar_sym, self.r_bar_sym], [self.hess_eqn]).expand()
-            self.hess_approx_fcn = cs.Function('dJdzdJdzT', [self.z_bar_sym, self.r_bar_sym], [self.hess_approx_eqn]).expand()
-
-            C = cs.CodeGenerator(self.name+".c")
+            C = cs.CodeGenerator(self.name + ".c")
 
             C.add(self.J_fcn)
             C.add(self.J_bar_fcn)
@@ -219,7 +266,8 @@ class TrackingCostFunction(CostFunctions):
             C.add(self.hess_fcn)
             C.add(self.hess_approx_fcn)
 
-            C.generate(self.c_code_path.as_posix()+"/")
+            C.generate(self.c_code_path.as_posix() + "/")
+
     def _getCostSymEqn(self, f_fcn, x_bar_sym, u_bar_sym, r_bar_sym):
         J_list = []
         J = cs.MX.zeros(1)
@@ -238,7 +286,6 @@ class TrackingCostFunction(CostFunctions):
             else:
                 # J += 0.5 * ek.T @ self.P @ ek
                 J_list.append(0.5 * ek.T @ self.P @ ek)
-
 
         return sum(J_list)[0], e_bar_eqn, cs.vertcat(*J_list)
 
@@ -282,9 +329,9 @@ class EEPos3BaseFrameCostFunction(TrackingCostFunction):
         cost_params["P"] = np.eye(nr) * params["P"]
         super().__init__(dt, nx, nu, N, nr, f_fcn, cost_params, "EEPos3BaseFrame")
 
+
 class ArmJointCostFunction(TrackingCostFunction):
     def __init__(self, dt, N, robot_mdl, params):
-
         ss_mdl = robot_mdl.ssSymMdl
         nx = ss_mdl["nx"]
         nu = ss_mdl["nu"]
@@ -295,6 +342,7 @@ class ArmJointCostFunction(TrackingCostFunction):
         cost_params["P"] = np.eye(nr) * params["P"]
 
         super().__init__(dt, nx, nu, N, nr, f_fcn, cost_params, "ArmJoint")
+
 
 class BasePos2CostFunction(TrackingCostFunction):
     def __init__(self, dt, N, robot_mdl, params):
@@ -310,6 +358,7 @@ class BasePos2CostFunction(TrackingCostFunction):
 
         super().__init__(dt, nx, nu, N, nr, f_fcn, cost_params, "BasePos2")
 
+
 class BasePose3CostFunction(TrackingCostFunction):
     def __init__(self, dt, N, robot_mdl, params):
         ss_mdl = robot_mdl.ssSymMdl
@@ -324,80 +373,102 @@ class BasePose3CostFunction(TrackingCostFunction):
 
         super().__init__(dt, nx, nu, N, nr, f_fcn, cost_params, "BasePos2")
 
+
 class ControlEffortCostFuncitonNew(CostFunctions):
     def __init__(self, dt, N, robot_mdl, params):
-
         ss_mdl = robot_mdl.ssSymMdl
         nx = ss_mdl["nx"]
         nu = ss_mdl["nu"]
-        nr = nx * (N+1) + nu * N
-        self.nr=nr
+        nr = nx * (N + 1) + nu * N
+        self.nr = nr
 
         # x u penalizaiton
-        Qq = [params["Qqb"]] * (robot_mdl.DoF - robot_mdl.numjoint) + [params["Qqa"]] * robot_mdl.numjoint
-        Qv = [params["Qvb"]] * (nu - robot_mdl.numjoint) + [params["Qva"]] * robot_mdl.numjoint
+        Qq = [params["Qqb"]] * (robot_mdl.DoF - robot_mdl.numjoint) + [
+            params["Qqa"]
+        ] * robot_mdl.numjoint
+        Qv = [params["Qvb"]] * (nu - robot_mdl.numjoint) + [
+            params["Qva"]
+        ] * robot_mdl.numjoint
         Qx = np.diag((Qq + Qv) * N + [0] * nx)
 
-        Qu = [params["Qub"]] * (nu - robot_mdl.numjoint) + [params["Qua"]] * robot_mdl.numjoint
+        Qu = [params["Qub"]] * (nu - robot_mdl.numjoint) + [
+            params["Qua"]
+        ] * robot_mdl.numjoint
         Qu = np.diag(Qu * N)
         ll_params = {}
         ll_params["W"] = block_diag(Qx, Qu)
         ll_params["A"] = np.eye(nr)
-        self.xu_cost = LinearLeastSquare(dt, nx, nu, N, nr, ll_params, "ControlEffortNewxu")
+        self.xu_cost = LinearLeastSquare(
+            dt, nx, nu, N, nr, ll_params, "ControlEffortNewxu"
+        )
 
         # du penalization
-        Qdu = [params["Qdub"]] * (nu - robot_mdl.numjoint) + [params["Qdua"]] * robot_mdl.numjoint
+        Qdu = [params["Qdub"]] * (nu - robot_mdl.numjoint) + [
+            params["Qdua"]
+        ] * robot_mdl.numjoint
         Qdu = np.diag(Qdu * N)
-        Lambda = np.zeros((N*nu, N*nu))
-        Lambda[nu:, :-nu] = -np.eye((N-1)*nu)
-        Lambda += np.eye(N*nu)
+        Lambda = np.zeros((N * nu, N * nu))
+        Lambda[nu:, :-nu] = -np.eye((N - 1) * nu)
+        Lambda += np.eye(N * nu)
 
         ll_params_du = {}
         ll_params_du["W"] = Qdu
-        ll_params_du["A"] = np.hstack((np.zeros((N*nu, (N+1)*nx)), Lambda))
-        self.du_cost = LinearLeastSquare(dt, nx, nu, N, nu*N, ll_params_du, "ControlEffortNewdu")
+        ll_params_du["A"] = np.hstack((np.zeros((N * nu, (N + 1) * nx)), Lambda))
+        self.du_cost = LinearLeastSquare(
+            dt, nx, nu, N, nu * N, ll_params_du, "ControlEffortNewdu"
+        )
 
         super().__init__(dt, nx, nu, N, "ControlEffortNew")
 
     def evaluate(self, x_bar, u_bar, *params):
         Jxu = self.xu_cost.evaluate(x_bar, u_bar, np.zeros(self.QPsize))
-        Jdu = self.du_cost.evaluate(x_bar, u_bar, np.hstack((*params, np.zeros((self.N-1)*self.nu))))
+        Jdu = self.du_cost.evaluate(
+            x_bar, u_bar, np.hstack((*params, np.zeros((self.N - 1) * self.nu)))
+        )
         return Jxu + Jdu
 
     def quad(self, x_bar, u_bar, *params):
         Hxu, gxu = self.xu_cost.quad(x_bar, u_bar, np.zeros(self.QPsize))
-        Hdu, gdu = self.du_cost.quad(x_bar, u_bar, np.hstack((*params, np.zeros((self.N-1)*self.nu))))
+        Hdu, gdu = self.du_cost.quad(
+            x_bar, u_bar, np.hstack((*params, np.zeros((self.N - 1) * self.nu)))
+        )
         return Hxu + Hdu, gxu + gdu
 
     def get_hess_fcn(self):
         pass
 
+
 class ControlEffortCostFunciton(LinearLeastSquare):
     def __init__(self, dt, N, robot_mdl, params):
-
         ss_mdl = robot_mdl.ssSymMdl
         nx = ss_mdl["nx"]
         nu = ss_mdl["nu"]
-        nr = nx * (N+1) + nu * N
-
+        nr = nx * (N + 1) + nu * N
 
         # x u penalizaiton
-        Qq = [params["Qqb"]] * (robot_mdl.DoF - robot_mdl.numjoint) + [params["Qqa"]] * robot_mdl.numjoint
-        Qv = [params["Qvb"]] * (nu - robot_mdl.numjoint) + [params["Qva"]] * robot_mdl.numjoint
+        Qq = [params["Qqb"]] * (robot_mdl.DoF - robot_mdl.numjoint) + [
+            params["Qqa"]
+        ] * robot_mdl.numjoint
+        Qv = [params["Qvb"]] * (nu - robot_mdl.numjoint) + [
+            params["Qva"]
+        ] * robot_mdl.numjoint
         Qx = np.diag((Qq + Qv) * N + [0] * nx)
 
-        Qu = [params["Qub"]] * (nu - robot_mdl.numjoint) + [params["Qua"]] * robot_mdl.numjoint
+        Qu = [params["Qub"]] * (nu - robot_mdl.numjoint) + [
+            params["Qua"]
+        ] * robot_mdl.numjoint
         Qu = np.diag(Qu * N)
         ll_params = {}
         ll_params["W"] = block_diag(Qx, Qu)
         ll_params["A"] = np.eye(nr)
-        super().__init__(dt, nx, nu, N, nr, ll_params,"ControlEffort")
+        super().__init__(dt, nx, nu, N, nr, ll_params, "ControlEffort")
 
     def evaluate(self, x_bar, u_bar, *params):
         return super().evaluate(x_bar, u_bar, *[np.zeros(self.QPsize)])
 
     def quad(self, x_bar, u_bar, *params):
         return super().quad(x_bar, u_bar, *[np.zeros(self.QPsize)])
+
 
 class SoftConstraintsRBFCostFunction(CostFunctions):
     def __init__(self, mu, zeta, cst_obj, name="SoftConstraint", expand=True):
@@ -413,26 +484,50 @@ class SoftConstraintsRBFCostFunction(CostFunctions):
         self.dhdz_eqn = -cst_obj.grad_fcn(self.z_bar_sym, *self.params_sym)
         self.nh = self.h_eqn.shape[0]
 
-        J_eqn_list = [RBF.B_fcn(self.h_eqn[k], self.mu, self.zeta) for k in range(self.nh)]
+        J_eqn_list = [
+            RBF.B_fcn(self.h_eqn[k], self.mu, self.zeta) for k in range(self.nh)
+        ]
         self.J_eqn = sum(J_eqn_list)
         self.J_vec_eqn = cs.vertcat(*J_eqn_list)
         self.hess_eqn, self.grad_eqn = cs.hessian(self.J_eqn, self.z_bar_sym)
-        ddBddh_eqn_list = [RBF.B_hess_fcn(self.h_eqn[k], self.mu, self.zeta) for k in range(self.nh)]
+        ddBddh_eqn_list = [
+            RBF.B_hess_fcn(self.h_eqn[k], self.mu, self.zeta) for k in range(self.nh)
+        ]
         ddBddh_eqn = cs.diag(cs.vertcat(*ddBddh_eqn_list))
         self.hess_approx_eqn = self.dhdz_eqn.T @ ddBddh_eqn @ self.dhdz_eqn
         # hess_approx_eqn_list = [self.dhdz_eqn[k,:].T @ self.dhdz_eqn[k,:] * ddBddh_eqn_list[k] for k in range(self.nh)]
         # self.hess_approx_eqn = sum(hess_approx_eqn_list)
-        self.c_code_file = self.c_code_path/(self.name+".c")
+        self.c_code_file = self.c_code_path / (self.name + ".c")
         if not self.c_code_file.is_file():
-            self.h_fcn = cs.Function("h_"+self.name, [self.x_bar_sym, self.u_bar_sym, *self.params_sym], [self.h_eqn])
-            self.J_fcn = cs.Function("J_" + self.name, [self.x_bar_sym, self.u_bar_sym, *self.params_sym], [self.J_eqn])
-            self.J_vec_fcn = cs.Function("J_vec_" + self.name, [self.x_bar_sym, self.u_bar_sym, *self.params_sym], [self.J_vec_eqn])
-            self.hess_fcn = cs.Function("ddJddz_"+self.name, [self.z_bar_sym, *self.params_sym], [self.hess_eqn])
-            self.hess_approx_fcn = cs.Function("ddJddz_approx_" + self.name, [self.z_bar_sym, *self.params_sym],
-                                        [self.hess_approx_eqn])
-            self.grad_fcn = cs.Function("dJdz_" + self.name, [self.z_bar_sym, *self.params_sym],
-                                        [self.grad_eqn])
-            
+            self.h_fcn = cs.Function(
+                "h_" + self.name,
+                [self.x_bar_sym, self.u_bar_sym, *self.params_sym],
+                [self.h_eqn],
+            )
+            self.J_fcn = cs.Function(
+                "J_" + self.name,
+                [self.x_bar_sym, self.u_bar_sym, *self.params_sym],
+                [self.J_eqn],
+            )
+            self.J_vec_fcn = cs.Function(
+                "J_vec_" + self.name,
+                [self.x_bar_sym, self.u_bar_sym, *self.params_sym],
+                [self.J_vec_eqn],
+            )
+            self.hess_fcn = cs.Function(
+                "ddJddz_" + self.name,
+                [self.z_bar_sym, *self.params_sym],
+                [self.hess_eqn],
+            )
+            self.hess_approx_fcn = cs.Function(
+                "ddJddz_approx_" + self.name,
+                [self.z_bar_sym, *self.params_sym],
+                [self.hess_approx_eqn],
+            )
+            self.grad_fcn = cs.Function(
+                "dJdz_" + self.name, [self.z_bar_sym, *self.params_sym], [self.grad_eqn]
+            )
+
             if expand:
                 self.h_fcn = self.h_fcn.expand()
                 self.J_fcn = self.J_fcn.expand()
@@ -440,8 +535,8 @@ class SoftConstraintsRBFCostFunction(CostFunctions):
                 self.hess_fcn = self.hess_fcn.expand()
                 self.hess_approx_fcn = self.hess_approx_fcn.expand()
                 self.grad_fcn = self.grad_fcn.expand()
-        
-            C = cs.CodeGenerator(self.name+".c")
+
+            C = cs.CodeGenerator(self.name + ".c")
 
             C.add(self.h_fcn)
             C.add(self.J_fcn)
@@ -449,38 +544,43 @@ class SoftConstraintsRBFCostFunction(CostFunctions):
             C.add(self.grad_fcn)
             C.add(self.hess_fcn)
             C.add(self.hess_approx_fcn, True)
-            C.generate(self.c_code_path.as_posix()+"/")
+            C.generate(self.c_code_path.as_posix() + "/")
         else:
-            self.so_code_file = self.c_code_path/(self.name+".so")
+            self.so_code_file = self.c_code_path / (self.name + ".so")
             if self.so_code_file.is_file():
                 so_code_file_path = self.so_code_file.as_posix()
-                self.h_fcn = cs.external("h_"+self.name, so_code_file_path)
-                self.J_fcn = cs.external('J_'+self.name,so_code_file_path)
-                self.J_vec_fcn = cs.external("J_vec_"+self.name, so_code_file_path)
+                self.h_fcn = cs.external("h_" + self.name, so_code_file_path)
+                self.J_fcn = cs.external("J_" + self.name, so_code_file_path)
+                self.J_vec_fcn = cs.external("J_vec_" + self.name, so_code_file_path)
 
-                self.hess_fcn = cs.external('ddJddz_'+self.name,so_code_file_path)
-                self.hess_approx_fcn = cs.external('ddJddz_approx_'+self.name,so_code_file_path)
-                self.grad_fcn = cs.external('dJdz_'+self.name,so_code_file_path)
+                self.hess_fcn = cs.external("ddJddz_" + self.name, so_code_file_path)
+                self.hess_approx_fcn = cs.external(
+                    "ddJddz_approx_" + self.name, so_code_file_path
+                )
+                self.grad_fcn = cs.external("dJdz_" + self.name, so_code_file_path)
             else:
                 # C = self.c_code_path.as_posix() + "/" + self.name + ".so"
-                jit_options = {"flags": ["-O2"], "verbose": True, "compiler": "gcc", "name":self.so_code_file.as_posix()}
+                jit_options = {
+                    "flags": ["-O2"],
+                    "verbose": True,
+                    "compiler": "gcc",
+                    "name": self.so_code_file.as_posix(),
+                }
                 options = {"compiler": "shell", "jit_options": jit_options}
                 # C = cs.Importer(self.c_code_file.as_posix(),'shell', jit_options)
-                C = cs.Importer(self.c_code_file.as_posix(),'shell')
+                C = cs.Importer(self.c_code_file.as_posix(), "shell")
 
-        
-                self.h_fcn = cs.external("h_"+self.name, C)
-                self.J_fcn = cs.external('J_'+self.name,C)
-                self.J_vec_fcn = cs.external("J_vec_"+self.name, C)
+                self.h_fcn = cs.external("h_" + self.name, C)
+                self.J_fcn = cs.external("J_" + self.name, C)
+                self.J_vec_fcn = cs.external("J_vec_" + self.name, C)
 
-                self.hess_fcn = cs.external('ddJddz_'+self.name,C)
-                self.hess_approx_fcn = cs.external('ddJddz_approx_'+self.name,C)
-                self.grad_fcn = cs.external('dJdz_'+self.name,C)
-
+                self.hess_fcn = cs.external("ddJddz_" + self.name, C)
+                self.hess_approx_fcn = cs.external("ddJddz_approx_" + self.name, C)
+                self.grad_fcn = cs.external("dJdz_" + self.name, C)
 
     def evaluate(self, x_bar, u_bar, *params):
         return self.J_fcn(x_bar.T, u_bar.T, *params)
-    
+
     def evaluate_vec(self, x_bar, u_bar, *params):
         return self.J_vec_fcn(x_bar.T, u_bar.T, *params).toarray().flatten()
 
@@ -498,12 +598,18 @@ class SoftConstraintsRBFCostFunction(CostFunctions):
     def get_hess_fcn(self):
         return self.hess_approx_fcn
 
-class SumOfCostFunctions(CostFunctions):
 
+class SumOfCostFunctions(CostFunctions):
     def __init__(self, cost_fcn_obj):
         name = "Sum" + "_".join([c.name for c in cost_fcn_obj])
         self.cost_fcn_obj = cost_fcn_obj
-        super().__init__(cost_fcn_obj[0].dt, cost_fcn_obj[0].nx, cost_fcn_obj[0].nu, cost_fcn_obj[0].N, name)
+        super().__init__(
+            cost_fcn_obj[0].dt,
+            cost_fcn_obj[0].nx,
+            cost_fcn_obj[0].nu,
+            cost_fcn_obj[0].N,
+            name,
+        )
 
         # self.c_code_file = self.c_code_path/(self.name+".c")
         # if self.c_code_file.is_file():
@@ -524,12 +630,15 @@ class SumOfCostFunctions(CostFunctions):
         #     C.add(self.grad_fcn)
         #     C.add(self.hess_fcn)
         #     C.generate(self.c_code_path.as_posix()+"/")
-    
+
         J_fcns = [c.J_fcn for c in cost_fcn_obj]
         self.J_fcn = self._sum_cs_fcns(J_fcns, name="J")
-        self.hess_fcn = self._sum_cs_fcns([c.get_hess_fcn() for c in cost_fcn_obj], n_comm_in=1, name="ddJddz")
-        self.grad_fcn = self._sum_cs_fcns([c.grad_fcn for c in cost_fcn_obj], n_comm_in=1, name="dJdz")
-
+        self.hess_fcn = self._sum_cs_fcns(
+            [c.get_hess_fcn() for c in cost_fcn_obj], n_comm_in=1, name="ddJddz"
+        )
+        self.grad_fcn = self._sum_cs_fcns(
+            [c.grad_fcn for c in cost_fcn_obj], n_comm_in=1, name="dJdz"
+        )
 
     def evaluate(self, x_bar, u_bar, *params):
         params = [p.T for p in params]
@@ -561,6 +670,7 @@ class SumOfCostFunctions(CostFunctions):
 
     def get_hess_fcn(self):
         return self.hess_fcn
+
 
 def time_quad():
     setup = """
@@ -597,8 +707,12 @@ r_bar = np.array([1] * cost_fcn.nr)
 r_bar = np.tile(r_bar, (N + 1, 1))
     """
 
-    print("Normal call {}".format(timeit.timeit(
-        "cost_fcn.quad(x_bar, u_bar, r_bar)", setup=setup, number=2)))
+    print(
+        "Normal call {}".format(
+            timeit.timeit("cost_fcn.quad(x_bar, u_bar, r_bar)", setup=setup, number=2)
+        )
+    )
+
 
 if __name__ == "__main__":
     dt = 0.1
@@ -607,22 +721,29 @@ if __name__ == "__main__":
     from mmseq_utils import parsing
 
     config = parsing.load_config(
-        "/home/tracy/Projects/mm_catkin_ws/src/mm_sequential_tasks/mmseq_run/config/simple_experiment.yaml")
+        "/home/tracy/Projects/mm_catkin_ws/src/mm_sequential_tasks/mmseq_run/config/simple_experiment.yaml"
+    )
     robot = MobileManipulator3D(config["controller"])
 
-    cost_base = BasePos2CostFunction(dt, N, robot, config["controller"]["cost_params"]["BasePos2"])
-    cost_ee = EEPos3CostFunction(dt, N, robot, config["controller"]["cost_params"]["EEPos3"])
-    cost_eff = ControlEffortCostFunciton(dt, N, robot, config["controller"]["cost_params"]["Effort"])
+    cost_base = BasePos2CostFunction(
+        dt, N, robot, config["controller"]["cost_params"]["BasePos2"]
+    )
+    cost_ee = EEPos3CostFunction(
+        dt, N, robot, config["controller"]["cost_params"]["EEPos3"]
+    )
+    cost_eff = ControlEffortCostFunciton(
+        dt, N, robot, config["controller"]["cost_params"]["Effort"]
+    )
     cost_fcn = cost_ee
 
     q = [0.0, 0.0, 0.0] + [0.0, -2.3562, -1.5708, -2.3562, -1.5708, 1.5708]
     v = np.zeros(9)
     x = np.hstack((np.array(q), v))
-    QPsize = 18 * (N+1) + 9 * N
-    x_bar = np.tile(x, (N+1, 1))
+    QPsize = 18 * (N + 1) + 9 * N
+    x_bar = np.tile(x, (N + 1, 1))
     u_bar = np.zeros((N, 9))
     r_bar = np.array([1] * cost_fcn.nr)
-    r_bar = np.tile(r_bar, (N+1, 1))
+    r_bar = np.tile(r_bar, (N + 1, 1))
     # r_bar = np.ones(9)
 
     J_sym = cost_fcn.evaluate(x_bar, u_bar, r_bar)
@@ -636,14 +757,14 @@ if __name__ == "__main__":
             x_bar_p = x_bar.copy()
             x_bar_p[i][j] += eps
             J_p = cost_fcn.evaluate(x_bar_p, u_bar, r_bar)
-            g_num[i*x_bar.shape[1] + j] = (J_p - J_sym) / eps
+            g_num[i * x_bar.shape[1] + j] = (J_p - J_sym) / eps
 
     for i in range(u_bar.shape[0]):
         for j in range(u_bar.shape[1]):
             u_bar_p = u_bar.copy()
             u_bar_p[i][j] += eps
             J_p = cost_fcn.evaluate(x_bar, u_bar_p, r_bar)
-            indx = (N+1) * 18 + i*u_bar.shape[1] + j
+            indx = (N + 1) * 18 + i * u_bar.shape[1] + j
             g_num[indx] = (J_p - J_sym) / eps
 
     print("Difference in gradient:{}".format(np.linalg.norm(g_num - g_sym)))
@@ -663,14 +784,20 @@ if __name__ == "__main__":
     J_sum_baseline = [cost_fcns[k].evaluate(x_bar, u_bar, params[k]) for k in range(3)]
     print("J diff:{}".format(J_sum - sum(J_sum_baseline)))
 
-    H_sum, g_sum = sum_cost_functions.quad(x_bar, u_bar, *[ree_bar, rbase_bar, np.zeros(QPsize)])
+    H_sum, g_sum = sum_cost_functions.quad(
+        x_bar, u_bar, *[ree_bar, rbase_bar, np.zeros(QPsize)]
+    )
     H_sum_baseline = np.zeros((QPsize, QPsize))
     g_sum_baseline = np.zeros(QPsize)
     for k in range(3):
-        H,g = cost_fcns[k].quad(x_bar, u_bar, params[k])
+        H, g = cost_fcns[k].quad(x_bar, u_bar, params[k])
         H_sum_baseline += H
         g_sum_baseline += g
 
-    print("H diff: {}, g_diff {}".format(np.linalg.norm(H_sum - H_sum_baseline), np.linalg.norm(g_sum - g_sum_baseline)))
+    print(
+        "H diff: {}, g_diff {}".format(
+            np.linalg.norm(H_sum - H_sum_baseline),
+            np.linalg.norm(g_sum - g_sum_baseline),
+        )
+    )
     # time_quad()
-
