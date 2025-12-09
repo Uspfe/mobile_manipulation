@@ -223,41 +223,6 @@ class SDF3D:
 
         return ax
 
-    def vis3d(self, x_lim, y_lim, z_lim, block=True):
-        Nx = int(1.0 / 0.01 * (x_lim[1] - x_lim[0])) + 1
-        Ny = int(1.0 / 0.01 * (y_lim[1] - y_lim[0])) + 1
-        Nz = int(1.0 / 0.01 * (z_lim[1] - z_lim[0])) + 1
-
-        lims = np.vstack((x_lim, y_lim, z_lim))
-        grid_1d = []
-        for i, N in enumerate([Nx, Ny, Nz]):
-            grid_1d.append(np.linspace(lims[i][0], lims[i][1], N))
-
-        X, Y, Z = np.meshgrid(*grid_1d)
-        V = self.query_val(X.flatten(), Y.flatten(), Z.flatten())
-        V = V.reshape(X.shape)
-        dVdx = self.query_grad(X.flatten(), Y.flatten(), Z.flatten())
-        dVdx = dVdx.reshape((3, X.shape[0], X.shape[1], X.shape[2]))
-        fig1 = plt.figure()
-        ax1 = fig1.add_subplot(111, projection="3d")
-        ax1.quiver(
-            X,
-            Y,
-            Z,
-            dVdx[0, :, :, :],
-            dVdx[1, :, :, :],
-            dVdx[2, :, :, :],
-            length=0.2,
-            arrow_length_ratio=0.2,
-            normalize=True,
-        )
-        print(np.arange(X.flatten().shape[0]).reshape(X.shape))
-        ax1.set_xlabel("x")
-        ax1.set_ylabel("y")
-        ax1.set_zlabel("z")
-        ax1.set_aspect("equal")
-        plt.show(block=block)
-
     def query_val(self, x, y, z):
         input = np.vstack((x, y, z))
         val = self.sdf_fcn(input, self.xg, self.yg, self.zg, self.v).toarray()

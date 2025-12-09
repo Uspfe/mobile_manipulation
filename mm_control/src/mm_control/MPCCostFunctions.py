@@ -193,7 +193,7 @@ class PoseSE3CostFunction(CostFunctions):
         r_pos = self.r[:3]
         r_rot_euler = self.r[3:]
 
-        # position: 3d vector, rot: rotational matrix
+        # position: 3D vector, rot: rotational matrix
         pos, rot = f_fcn(self.x_sym)
 
         e_pos = pos - r_pos

@@ -3,7 +3,7 @@ from abc import ABC, abstractmethod
 
 import numpy as np
 
-from mm_utils.trajectory_generation import interpolate
+from mm_utils.math import interpolate
 
 
 class Planner(ABC):

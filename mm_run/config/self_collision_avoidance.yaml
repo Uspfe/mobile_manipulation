@@ -25,6 +25,7 @@ controller:
   ee_pose_tracking_enabled: False
   type: "MPC"
   acados:
+    name: "SelfCollisionAvoidance"
     ocp_solver_options:
       qp_solver: "FULL_CONDENSING_HPIPM"
       # FULL_CONDENSING_QPOASES

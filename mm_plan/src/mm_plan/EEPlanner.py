@@ -3,8 +3,8 @@ from spatialmath.base import rotz, rpy2r, tr2rpy
 
 from mm_plan.BasePlanner import ROSTrajectoryPlannerOnDemand
 from mm_plan.PlanBaseClass import Planner, TrajectoryPlanner
+from mm_utils.math import make_trans_from_vec
 from mm_utils.parsing import parse_number
-from mm_utils.transformation import make_trans_from_vec
 
 
 class EESimplePlanner(Planner):

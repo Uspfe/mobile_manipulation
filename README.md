@@ -70,7 +70,7 @@ Results are saved to `mm_run/results/[EXPERIMENT_NAME]/[TIMESTAMP]/` with `sim/`
 
 ```bash
 roscd mm_utils/scripts
-python3 plot_logger_pybullet.py --folder ../../mm_run/results/[EXPERIMENT_NAME]/[TIMESTAMP]/ --tracking
+python3 plot_logs.py --folder ../../mm_run/results/[EXPERIMENT_NAME]/[TIMESTAMP]/ --tracking
 ```
 
 ### Isaac Sim (Optional)

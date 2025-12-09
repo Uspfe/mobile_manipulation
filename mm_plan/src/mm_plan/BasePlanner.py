@@ -10,7 +10,6 @@ from tf.transformations import quaternion_from_euler
 from mm_plan.PlanBaseClass import Planner, TrajectoryPlanner
 from mm_utils.math import wrap_pi_scalar
 from mm_utils.parsing import parse_number
-from mm_utils.trajectory_generation import sqaure_wave
 
 
 class BaseSingleWaypoint(Planner):
@@ -382,68 +381,6 @@ class BasePoseTrajectoryLine(TrajectoryPlanner):
         config["target_pose"] = [0, 0, 0]
         config["cruise_speed"] = 0.5
         config["yaw_speed"] = 0.5
-        config["tracking_err_tol"] = 0.02
-
-        return config
-
-
-class BasePosTrajectorySqaureWave(TrajectoryPlanner):
-    def __init__(self, config):
-        super().__init__(
-            name=config["name"],
-            type="base",
-            ref_type="trajectory",
-            ref_data_type="Vec2",
-            frame_id=config["frame_id"],
-        )
-        self.tracking_err_tol = config["tracking_err_tol"]
-
-        self.finished = False
-        self.started = False
-        self.start_time = 0
-
-        self.dt = 0.01
-        self.plan = sqaure_wave(
-            config["peak_pos"],
-            config["valley_pos"],
-            config["period"],
-            config["round"],
-            self.dt,
-        )
-
-    def getTrackingPoint(self, t, robot_states=None):
-        if self.started and self.start_time == 0:
-            self.start_time = t
-
-        te = t - self.start_time
-
-        p, v = self._interpolate(te, self.plan)
-
-        return p, v
-
-    def checkFinished(self, t, states):
-        base_curr_pos = states[0][:2]
-
-        if np.linalg.norm(base_curr_pos - self.plan["p"][-1]) < self.tracking_err_tol:
-            self.finished = True
-            self.py_logger.info(self.name + " Planner Finished")
-        return self.finished
-
-    def reset(self):
-        self.finished = False
-        self.started = False
-        self.start_time = 0
-
-    @staticmethod
-    def getDefaultParams():
-        config = {}
-        config["name"] = "Base Position"
-        config["planner_type"] = "BasePosTrajectorySqaureWave"
-        config["frame_id"] = "base"
-        config["peak_pos"] = [0, 0]
-        config["valley_pos"] = [0, 0]
-        config["period"] = 10
-        config["round"] = 1
         config["tracking_err_tol"] = 0.02
 
         return config

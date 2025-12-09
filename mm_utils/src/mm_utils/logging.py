@@ -1,6 +1,3 @@
-# Minor modification based on original implementation by Adam Heins
-# ref: https://github.com/utiasDSL/dsl__projects__tray_balance/blob/master/upright_core/src/upright_core/logging.py
-
 from datetime import datetime
 from pathlib import Path
 
@@ -8,27 +5,6 @@ import numpy as np
 import yaml
 
 from mm_utils.parsing import parse_path, parse_ros_path
-
-
-def get_session_timestamp():
-    """Get or create a shared session timestamp via ROS parameter.
-
-    This ensures sim and control nodes save to the same timestamped folder.
-    """
-    try:
-        import rospy
-
-        param_name = "/logging_session_timestamp"
-        if rospy.has_param(param_name):
-            return rospy.get_param(param_name)
-        else:
-            # First node to call this creates the timestamp
-            timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-            rospy.set_param(param_name, timestamp)
-            return timestamp
-    except Exception:
-        # Fallback if ROS not available
-        return datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 
 
 class DataLogger:
@@ -40,39 +16,41 @@ class DataLogger:
         :param config: Configuration dictionary with logging settings
         :param name:   Subdirectory name for this logger (e.g., 'sim' or 'control')
         """
+        if not isinstance(config, dict) or "logging" not in config:
+            raise ValueError("Config must be a dict with 'logging' key")
+
         log_dir = config["logging"]["log_dir"]
 
-        # If log_dir is a simple name (not an absolute path or ROS path),
-        # save to mm_run/results/<log_dir>
+        # If log_dir is a simple name, save to mm_run/results/<log_dir>
         if not log_dir.startswith("/") and not log_dir.startswith("$"):
             results_base = parse_ros_path({"package": "mm_run", "path": "results"})
             self.base_directory = Path(results_base) / log_dir
         else:
             self.base_directory = Path(parse_path(log_dir))
 
-        self.name = name
+        self.name = str(name)
         self.config = config
         self.data = {}
 
     def add(self, key, value):
-        """Add a single value named `key`."""
+        """Add a single value for the given key."""
         if key in self.data:
-            raise ValueError(f"Key {key} already in the data log.")
+            raise ValueError(f"Key '{key}' already exists in the data log.")
         self.data[key] = value
 
     def append(self, key, value):
-        """Append a values to the list named `key`."""
-        # copy to an array (also copies if value is already an array, which is
-        # what we want)
+        """Append a value to the list for the given key."""
         a = np.array(value)
 
-        # append to list or start a new list if this is the first value under
-        # `key`
         if key in self.data:
+            # Check shape consistency
             if a.shape != self.data[key][-1].shape:
-                raise ValueError("Data must all be the same shape.")
+                raise ValueError(
+                    f"Shape mismatch for key '{key}': expected {self.data[key][-1].shape}, got {a.shape}"
+                )
             self.data[key].append(a)
         else:
+            # Start new list
             self.data[key] = [a]
 
     def save(self):
@@ -83,13 +61,12 @@ class DataLogger:
                 data.npz
                 config.yaml
         """
-        # Get shared session timestamp (coordinated across sim/control nodes)
-        session_timestamp = get_session_timestamp()
-
-        # Create directory: <base>/<session_timestamp>/<name>/
+        # Create timestamped directory for this logging session
+        session_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         dir_path = self.base_directory / session_timestamp / self.name
         dir_path.mkdir(parents=True, exist_ok=True)
 
+        # Save data as compressed numpy archive
         data_path = dir_path / "data.npz"
         config_path = dir_path / "config.yaml"
 
@@ -98,7 +75,7 @@ class DataLogger:
         # save the recorded data
         np.savez_compressed(data_path, **self.data)
 
-        # save the configuration used for this run
+        # Save configuration as YAML
         with open(config_path, "w") as f:
             yaml.safe_dump(self.config, stream=f, default_flow_style=False)
 

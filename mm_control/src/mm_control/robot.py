@@ -597,7 +597,7 @@ class CasadiModelInterface:
 
 class Scene:
     def __init__(self, config):
-        """Casadi symbolic model of a 3d Scene
+        """Casadi symbolic model of a 3D Scene
 
         :param config:
         """

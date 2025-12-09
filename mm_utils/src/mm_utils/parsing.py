@@ -5,14 +5,12 @@ import re
 import subprocess
 from pathlib import Path
 
-import numpy
 import numpy as np
 import rospkg
 import xacro
 import yaml
 
 
-# This is from <https://github.com/Maples7/dict-recursive-update/blob/07204cdab891ac4123b19fe3fa148c3dd1c93992/dict_recursive_update/__init__.py>
 def recursive_dict_update(default, custom):
     """Return a dict merged from default and custom"""
     if not isinstance(default, dict) or not isinstance(custom, dict):
@@ -68,11 +66,12 @@ def parse_number(x, dtype=float):
     multiple of pi.
     """
     try:
-        # this also handles strings like '1e-2'
         return dtype(x)
     except ValueError:
-        # TODO not robust
-        return float(x[:-2]) * np.pi
+        if isinstance(x, str) and x.endswith("pi"):
+            return float(x[:-2]) * np.pi
+        else:
+            raise ValueError(f"Could not parse {x} as a number.")
 
 
 def parse_array_element(x):
@@ -93,21 +92,6 @@ def parse_array(a):
     for x in a:
         subarrays.append(parse_array_element(x))
     return np.concatenate(subarrays)
-
-
-def parse_diag_matrix_dict(d):
-    """Parse a dict containing a diagonal matrix.
-
-    Key-values are:
-      scale: float
-      diag:  iterable
-
-    Returns a diagonal numpy array.
-    """
-    scale = parse_number(d["scale"])
-    diag = parse_array(d["diag"])
-    base = np.diag(diag)
-    return scale * base
 
 
 def parse_path(path):
@@ -139,11 +123,6 @@ def parse_path(path):
             return None
     else:
         return os.path.expandvars(path)
-
-
-def millis_to_secs(ms):
-    """Convert milliseconds to seconds."""
-    return 0.001 * ms
 
 
 def parse_ros_path(d, as_string=True):
@@ -217,61 +196,3 @@ def parse_and_compile_urdf(d, max_runs=10, compare_existing=True):
         f.write(text)
 
     return output_path.as_posix()
-
-
-def parse_support_offset(d):
-    """Parse the x-y offset of an object relative to its support plane.
-
-    The dict d defining the offset can consist of up to four optional
-    key-values: x and y define a Cartesian offset, and r and θ define a radial
-    offset. If both are included, then the Cartesian offset is applied first
-    and the radial offset is added to it.
-
-    Returns: the numpy array [x, y] defining the offset.
-    """
-    x = d["x"] if "x" in d else 0
-    y = d["y"] if "y" in d else 0
-    if "r" in d and "θ" in d:
-        r = d["r"]
-        θ = parse_number(d["θ"])
-        x += r * np.cos(θ)
-        y += r * np.sin(θ)
-    return np.array([x, y])
-
-
-class _BalancedObjectWrapper:
-    def __init__(self, body, box, parent_name, fixture):
-        self.body = body
-        self.box = box
-        self.parent_name = parent_name
-        self.fixture = fixture
-
-
-def parse_local_half_extents(shape_config):
-    type_ = shape_config["type"].lower()
-    if type_ == "cuboid" or type_ == "right_triangular_prism":
-        return 0.5 * np.array(shape_config["side_lengths"])
-    elif type_ == "cylinder":
-        r = shape_config["radius"]
-        h = shape_config["height"]
-        w = np.sqrt(2) * r
-        return 0.5 * np.array([w, w, h])
-    raise ValueError(f"Unsupported shape type: {type_}")
-
-
-def parse_to_yaml_dict(d):
-    for key in d:
-        if isinstance(d[key], dict):
-            d[key] = parse_to_yaml_dict(d[key])
-        elif isinstance(d[key], numpy.ndarray):
-            d[key] = d[key].tolist()
-
-    return d
-
-
-def parse_single_camera_yaml(dict_cam):
-    path_to_cam_params = parse_ros_path(dict_cam["params"])
-    dict_params = load_config(path_to_cam_params)
-    dict_cam = recursive_dict_update(dict_cam, dict_params)
-
-    return dict_cam

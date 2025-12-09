@@ -16,6 +16,10 @@ planner:
     hold_period: 1.0
     tracking_err_tol: 0.05
 
+controller:
+  acados:
+    name: "SimpleExperiment"
+
 include:
   - package: "mm_run"
     path: "config/robot/thing.yaml"

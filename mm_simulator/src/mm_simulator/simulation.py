@@ -6,7 +6,8 @@ from spatialmath.base import rotz
 
 from mm_simulator.camera import VideoManager
 from mm_simulator.robot import SimulatedRobot
-from mm_utils import geometry, math, parsing
+from mm_utils import math, parsing
+from mm_utils.geometry import Box3D
 
 
 # TODO rename to something like BulletObject
@@ -122,7 +123,7 @@ class BulletBody:
 
         w = np.sqrt(2) * radius
         half_extents = 0.5 * np.array([w, w, height])
-        box = geometry.Box3d(half_extents)
+        box = Box3D(half_extents)
 
         collision_uid = pyb.createCollisionShape(
             shapeType=pyb.GEOM_CYLINDER, radius=radius, height=height
@@ -146,7 +147,7 @@ class BulletBody:
     ):
         """Construct a cuboid object."""
         half_extents = 0.5 * np.array(side_lengths)
-        box = geometry.Box3d(half_extents)
+        box = Box3D(half_extents)
 
         collision_uid = pyb.createCollisionShape(
             shapeType=pyb.GEOM_BOX, halfExtents=tuple(half_extents)
@@ -168,7 +169,7 @@ class BulletBody:
     def sphere(mass, mu, radius, orientation=None, com_offset=None, color=(0, 0, 1, 1)):
         """Construct a cylinder object."""
         half_extents = np.ones(3) * radius / 2
-        box = geometry.Box3d(half_extents)
+        box = Box3D(half_extents)
 
         collision_uid = pyb.createCollisionShape(
             shapeType=pyb.GEOM_SPHERE, radius=radius
@@ -389,7 +390,7 @@ class BulletSimulation:
         debug_frame_world(0.2, list(r_ew_w), orientation=Q_we, line_width=3)
 
         # video recording
-        if cli_args is not None and "video" in cli_args:
+        if cli_args is not None and "video" in cli_args and cli_args.video is not None:
             video_name = cli_args.video
             self.video_manager = VideoManager.from_config(
                 video_name=video_name, config=config, timestamp=timestamp, r_ew_w=r_ew_w
