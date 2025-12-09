@@ -37,9 +37,8 @@ class DataLogger:
     def __init__(self, config, name="data"):
         """Initialize the data logger.
 
-        Args:
-            config: Configuration dictionary with logging settings
-            name: Subdirectory name for this logger (e.g., 'sim' or 'control')
+        :param config: Configuration dictionary with logging settings
+        :param name:   Subdirectory name for this logger (e.g., 'sim' or 'control')
         """
         log_dir = config["logging"]["log_dir"]
 

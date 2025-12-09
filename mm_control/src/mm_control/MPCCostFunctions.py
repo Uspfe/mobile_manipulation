@@ -559,7 +559,7 @@ class ManipulabilityCostFunction(CostFunctions):
         nu = ss_mdl["nu"]
         super().__init__(nx, nu, name)
 
-        self.p_dict = {"w": cs.Mx.sym("w", 1)}
+        self.p_dict = {"w": cs.MX.sym("w", 1)}
         self.p_struct = casadi_sym_struct(self.p_dict)
         self.p_sym = self.p_struct.cat
 
