@@ -1,14 +1,13 @@
 from abc import ABC, abstractmethod
 
 import casadi as cs
-import numpy as np
 
 from mm_utils.casadi_struct import casadi_sym_struct
 
 
 class Constraint(ABC):
     def __init__(self, nx, nu, name):
-        """MPC cost functions base class
+        """MPC constraints base class
 
         :param dt: discretization time step
         :param nx: state dim
@@ -19,17 +18,14 @@ class Constraint(ABC):
 
         self.nx = nx
         self.nu = nu
-        self.np = np
         self.name = name
 
         self.x_sym = cs.MX.sym("x", nx)
         self.u_sym = cs.MX.sym("u", nu)
 
         self.p_dict = None
-        self.p_stuct = None
         self.p_sym = None
 
-        self.name = name
         self.slack_enabled = False
 
         super().__init__()
@@ -52,7 +48,7 @@ class Constraint(ABC):
                     for (key, val) in self.p_dict.items()
                 }
 
-    def get_p_dict_default(self, stage_e=False):
+    def get_p_dict_default(self):
         p_dict = self.get_p_dict(False)
         return p_dict
 
@@ -198,7 +194,6 @@ class StateBoxConstraints(NonlinearConstraint):
         """
         nx = robot_mdl.ssSymMdl["nx"]
         nu = robot_mdl.ssSymMdl["nu"]
-        robot_mdl.q_sym.size()[0]
         ng = nx * 2
         p_dict = {}
         super().__init__(nx, nu, ng, None, p_dict, name)

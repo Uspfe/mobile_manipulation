@@ -21,7 +21,9 @@ def main():
     argv = rospy.myargv(argv=sys.argv)
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--config", required=True, help="Path to configuration file.")
+    parser.add_argument(
+        "-c", "--config", required=True, help="Path to configuration file."
+    )
     parser.add_argument(
         "--video",
         nargs="?",

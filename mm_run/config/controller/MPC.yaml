@@ -18,7 +18,6 @@ controller:
   ee_upward_constraint_enabled: False
   cst_tol_schedule_enabled: False
   ee_pose_tracking_enabled: True
-  base_pose_tracking_enabled: True
 
   self_collision_emergency_stop: True
 
@@ -29,7 +28,7 @@ controller:
     sdf: "SignedDistanceConstraintCBF"
     static_obstacles: "SignedDistanceConstraint"
 
-  collision_constraints_softend:
+  collision_constraints_softened:
     self: False
     sdf: False
     static_obstacles: False
@@ -63,38 +62,28 @@ controller:
     mu: 0.001
     zeta: 0.01
 
-  # weights for each cost function
+  # Simplified cost function parameters (6 core cost types)
+  # The system automatically maps these to specific cost instances based on planner types
   cost_params:
-    EEPos3:
-      Qk: [3, 3, 3]
-      P: [1, 1, 1]
+    # End-effector pose cost (used for both Vec3 position and SE3 pose, world and base frames)
     EEPose:
-      Qk: [3, 3, 3, 3, 3, 3]
-      P: [1, 1, 1, 1, 1, 1]
-    EEPos3BaseFrame:
-      Qk: [1, 1, 1]
-      P: [1, 1, 1]
-    EEPoseBaseFrame:
-      Qk: [3, 3, 3, 3, 3, 3]
-      P: [1, 1, 1, 1, 1, 1]
-    BasePos2:
-      Qk: [3, 3]
-      P: [1, 1]
-    BasePos3:
-      Qk: [3, 3, 3]
-      P: [1, 1, 1]
-    BasePoseSE2:
-      Qk: [3, 3, 3]
-      P: [1, 1, 1]
-    EEVel3:
-      Qk: [1, 1, 1]
-      P: [1, 1, 1]
-    BaseVel2:
-      Qk: [1, 1]
-      P: [1, 1]
-    BaseVel3:
-      Qk: [1, 1, 1]
-      P: [1, 1, 1]
+      Qk: [3, 3, 3, 3, 3, 3]  # For SE3: [x, y, z, roll, pitch, yaw]. For Vec3: first 3 used
+      P: [1, 1, 1, 1, 1, 1]    # Terminal weights (same structure)
+    # End-effector velocity cost (6D: 3D linear + 3D angular for SE3 compatibility)
+    EEVel:
+      Qk: [1, 1, 1, 1, 1, 1]  # [vx, vy, vz, ωx, ωy, ωz]
+      P: [1, 1, 1, 1, 1, 1]    # Terminal weights [vx, vy, vz, ωx, ωy, ωz]
+    # Base pose cost (always SE2: [x, y, yaw])
+    # Set yaw weight (3rd element) to 0 to disable yaw tracking
+    BasePose:
+      Qk: [3, 3, 3]  # [x, y, yaw] - set yaw weight to 0 to disable yaw tracking
+      P: [1, 1, 1]    # Terminal weights [x, y, yaw]
+    # Base velocity cost (always 3D: [vx, vy, vyaw])
+    # Set vyaw weight (3rd element) to 0 to disable yaw velocity tracking
+    BaseVel:
+      Qk: [1, 1, 1]  # [vx, vy, vyaw] - set vyaw weight to 0 to disable yaw velocity tracking
+      P: [1, 1, 1]    # Terminal weights [vx, vy, vyaw]
+    # Control effort cost (always included)
     Effort:
       Qqa: [0, 0, 0, 0, 0, 0]
       Qqb: [0, 0, 0]
@@ -104,6 +93,7 @@ controller:
       Qub: [0.01, 0.01, 0.01]
       Qdua: [0, 0, 0, 0, 0, 0]
       Qdub: [0.1, 0.1, 0.1]
+    # Regularization cost (optional)
     Regularization:
       eps: 1.0e-06
     slack:

@@ -24,7 +24,9 @@ def main():
     parser = argparse.ArgumentParser()
     argv = rospy.myargv(argv=sys.argv)
 
-    parser.add_argument("--config", required=True, help="Path to configuration file.")
+    parser.add_argument(
+        "-c", "--config", required=True, help="Path to configuration file."
+    )
     parser.add_argument(
         "--logging_sub_folder",
         type=str,

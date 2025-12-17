@@ -73,37 +73,25 @@ class CostFunctions(ABC):
         return self.H_approx_fcn
 
 
-class NonlinearLeastSquare(CostFunctions):
-    def __init__(self, nx: int, nu: int, nr: int, f_fcn: cs.Function, name):
-        """Nonlinear least square cost function
-            J = 1/2 ||f_fcn(x) - r||^2_W
-
-        :param dt: discretization time step
-        :param nx: state dim
-        :param nu: control dim
-        :param N:  prediction window
-        :param nr: ref dim
-        :param f_fcn: output/observation function, casadi.Function
-        :param params: cost function params
-        """
+# Base class for trajectory tracking costs (shared by position and velocity)
+class TrajectoryTrackingCostFunction(CostFunctions):
+    def __init__(self, nx: int, nu: int, nr: int, f_fcn: cs.Function, name: str):
         super().__init__(nx, nu, name)
         self.nr = nr
         self.f_fcn = f_fcn.expand()
-
         self.p_dict = {
             "r": cs.MX.sym("r_" + self.name, self.nr),
             "W": cs.MX.sym("W_" + self.name, self.nr, self.nr),
         }
         self.p_struct = casadi_sym_struct(self.p_dict)
         self.p_sym = self.p_struct.cat
-
         self.W = self.p_struct["W"]
         self.r = self.p_struct["r"]
-        self._setupSymMdl()
 
-    def _setupSymMdl(self):
+        # Setup cost function: J = 1/2 ||f(x) - r||^2_W
         y = self.f_fcn(self.x_sym)
         e = y - self.r
+        self.e_eqn = e
         self.J_eqn = 0.5 * e.T @ self.W @ e
         self.J_fcn = cs.Function(
             "J_" + self.name,
@@ -111,6 +99,13 @@ class NonlinearLeastSquare(CostFunctions):
             [self.J_eqn],
             ["x", "u", "r"],
             ["J"],
+        ).expand()
+        self.e_fcn = cs.Function(
+            "e_" + self.name,
+            [self.x_sym, self.u_sym, self.r],
+            [self.e_eqn],
+            ["x", "u", "r"],
+            ["e"],
         ).expand()
         dedx = cs.jacobian(e, self.x_sym)
         self.H_approx_eqn = cs.diagcat(
@@ -124,62 +119,66 @@ class NonlinearLeastSquare(CostFunctions):
             ["H_approx"],
         ).expand()
 
-
-class TrajectoryTrackingCostFunction(NonlinearLeastSquare):
-    def __init__(self, nx: int, nu: int, nr: int, f_fcn: cs.Function, name):
-        super().__init__(nx, nu, nr, f_fcn, name)
-        self.e_eqn = self.f_fcn(self.x_sym) - self.r
-        self.e_fcn = cs.Function(
-            "e_" + self.name,
-            [self.x_sym, self.u_sym, self.r],
-            [self.e_eqn],
-            ["x", "u", "r"],
-            ["e"],
-        ).expand()
-
     def get_e(self, x, u, r):
         return self.e_fcn(x, u, r).toarray().flatten()
 
 
-class EEPos3CostFunction(TrajectoryTrackingCostFunction):
-    def __init__(self, robot_mdl, params):
+class VelocityCostFunction(TrajectoryTrackingCostFunction):
+    def __init__(self, robot_mdl, params, target="EE", dimension=3, name=None):
         ss_mdl = robot_mdl.ssSymMdl
-        nx = ss_mdl["nx"]
-        nu = ss_mdl["nu"]
-        nr = 3
-        fk_ee = robot_mdl.kinSymMdls[robot_mdl.tool_link_name]
-        f_fcn = cs.Function("fee", [robot_mdl.x_sym], [fk_ee(robot_mdl.q_sym)[0]])
-        super().__init__(nx, nu, nr, f_fcn, "EEPos3")
+        nx, nu, nr = ss_mdl["nx"], ss_mdl["nu"], dimension
 
+        if target == "EE":
+            if dimension == 6:
+                # Use 6D spatial Jacobian (linear + angular velocity)
+                jac_key = robot_mdl.tool_link_name + "_spatial"
+                if jac_key in robot_mdl.jacSymMdls:
+                    jac = robot_mdl.jacSymMdls[jac_key]
+                else:
+                    # Fallback to 3D if spatial Jacobian not available
+                    jac = robot_mdl.jacSymMdls[robot_mdl.tool_link_name]
+                    # Pad with zeros for angular velocity (not ideal but works)
+                    jac_3d = jac(robot_mdl.q_sym)
+                    jac_6d = cs.vertcat(jac_3d, cs.MX.zeros(3, jac_3d.shape[1]))
+                    jac = cs.Function("jac_6d", [robot_mdl.q_sym], [jac_6d])
+                f_fcn = cs.Function(
+                    "vee", [robot_mdl.x_sym], [jac(robot_mdl.q_sym) @ robot_mdl.v_sym]
+                )
+            else:
+                # Use 3D position Jacobian (linear velocity only)
+                jac = robot_mdl.jacSymMdls[robot_mdl.tool_link_name]
+                f_fcn = cs.Function(
+                    "vee", [robot_mdl.x_sym], [jac(robot_mdl.q_sym) @ robot_mdl.v_sym]
+                )
+        else:  # base
+            if dimension == 3:
+                f_fcn = cs.Function("vb", [robot_mdl.x_sym], [robot_mdl.vb_sym])
+            else:
+                jac = robot_mdl.jacSymMdls["base"]
+                f_fcn = cs.Function(
+                    "vb", [robot_mdl.x_sym], [jac(robot_mdl.q_sym) @ robot_mdl.v_sym]
+                )
 
-class EEVel3CostFunction(TrajectoryTrackingCostFunction):
-    def __init__(self, robot_mdl, params):
-        ss_mdl = robot_mdl.ssSymMdl
-        nx = ss_mdl["nx"]
-        nu = ss_mdl["nu"]
-        nr = 3
-        jac_ee = robot_mdl.jacSymMdls[robot_mdl.tool_link_name]
-        f_fcn = cs.Function(
-            "vee", [robot_mdl.x_sym], [jac_ee(robot_mdl.q_sym) @ robot_mdl.v_sym]
-        )
-        super().__init__(nx, nu, nr, f_fcn, "EEVel3")
+        if name is None:
+            name = f"{target}Vel{dimension}"
 
-
-class EEPos3BaseFrameCostFunction(TrajectoryTrackingCostFunction):
-    def __init__(self, robot_mdl, params):
-        ss_mdl = robot_mdl.ssSymMdl
-        nx = ss_mdl["nx"]
-        nu = ss_mdl["nu"]
-        nr = 3
-        fk_ee = robot_mdl._getFk(robot_mdl.tool_link_name, base_frame=True)
-        f_fcn = cs.Function("fee", [robot_mdl.x_sym], [fk_ee(robot_mdl.q_sym)[0]])
-        super().__init__(nx, nu, nr, f_fcn, "EEPos3BaseFrame")
+        super().__init__(nx, nu, nr, f_fcn, name)
 
 
 class PoseSE3CostFunction(CostFunctions):
-    def __init__(self, nx, nu, f_fcn, name="PoseSE3"):
-        super().__init__(nx, nu, name)
+    def __init__(self, robot_mdl, params, base_frame=False, name=None):
+        ss_mdl = robot_mdl.ssSymMdl
+        nx, nu = ss_mdl["nx"], ss_mdl["nu"]
 
+        fk = robot_mdl._getFk(robot_mdl.tool_link_name, base_frame=base_frame)
+        p_ee, rot_ee = fk(robot_mdl.q_sym)
+        f_fcn = cs.Function("fee", [robot_mdl.x_sym], [p_ee, rot_ee])
+
+        if name is None:
+            frame_str = "BaseFrame" if base_frame else ""
+            name = f"EEPoseSE3{frame_str}"
+
+        super().__init__(nx, nu, name)
         self.nr = 6
         self.p_dict = {
             "r": cs.MX.sym("r_" + self.name, self.nr),
@@ -187,27 +186,21 @@ class PoseSE3CostFunction(CostFunctions):
         }
         self.p_struct = casadi_sym_struct(self.p_dict)
         self.p_sym = self.p_struct.cat
-
         self.W = self.p_struct["W"]
         self.r = self.p_struct["r"]
+
+        # Setup SE3 pose cost
         r_pos = self.r[:3]
         r_rot_euler = self.r[3:]
-
-        # position: 3D vector, rot: rotational matrix
         pos, rot = f_fcn(self.x_sym)
-
         e_pos = pos - r_pos
-        orn = SO3.from_matrix(rot)  # conversion from rotation matrix to quaternion
+        orn = SO3.from_matrix(rot)
         rot_inv = SO3(cs.vertcat(-orn.xyzw[:3], orn.xyzw[3])).as_matrix()
         r_rot = SO3.from_euler(r_rot_euler).as_matrix()
-
         e_rot = casadi_SO3_log(rot_inv @ r_rot)
 
         self.e_eqn = cs.vertcat(e_pos, e_rot)
         self.J_eqn = 0.5 * self.e_eqn.T @ self.W @ self.e_eqn
-        # sigma = 2
-        # self.J_eqn = 0.5 * cs.log(1 + (self.J_eqn**2) / (sigma**2)) * 20
-
         self.J_fcn = cs.Function(
             "J_" + self.name,
             [self.x_sym, self.u_sym, self.p_sym],
@@ -215,7 +208,6 @@ class PoseSE3CostFunction(CostFunctions):
             ["x", "u", "r"],
             ["J"],
         ).expand()
-
         self.e_fcn = cs.Function(
             "e_" + self.name,
             [self.x_sym, self.u_sym, self.r],
@@ -235,112 +227,8 @@ class PoseSE3CostFunction(CostFunctions):
             ["H_approx"],
         ).expand()
 
-        self.orn_fcn = cs.Function(
-            "e_" + self.name,
-            [self.x_sym, self.u_sym, self.p_sym],
-            [orn.xyzw],
-            ["x", "u", "r"],
-            ["e"],
-        ).expand()
-        self.rot_inv_fcn = cs.Function(
-            "e_" + self.name,
-            [self.x_sym, self.u_sym, self.p_sym],
-            [rot_inv],
-            ["x", "u", "r"],
-            ["e"],
-        ).expand()
-        self.r_rot_fcn = cs.Function(
-            "e_" + self.name,
-            [self.x_sym, self.u_sym, self.p_sym],
-            [r_rot],
-            ["x", "u", "r"],
-            ["e"],
-        ).expand()
-        self.rot_err_fcn = cs.Function(
-            "e_" + self.name,
-            [self.x_sym, self.u_sym, self.p_sym],
-            [rot_inv @ r_rot],
-            ["x", "u", "r"],
-            ["e"],
-        ).expand()
-
     def get_e(self, x, u, r):
         return self.e_fcn(x, u, r).toarray().flatten()
-
-
-class EEPoseSE3CostFunction(PoseSE3CostFunction):
-    def __init__(self, robot_mdl, params):
-        ss_mdl = robot_mdl.ssSymMdl
-        nx = ss_mdl["nx"]
-        nu = ss_mdl["nu"]
-
-        fk_ee = robot_mdl._getFk(robot_mdl.tool_link_name)
-        p_ee, rot_ee = fk_ee(robot_mdl.q_sym)
-        f_fcn = cs.Function("fee", [robot_mdl.x_sym], [p_ee, rot_ee])
-        super().__init__(nx, nu, f_fcn, "EEPose")
-
-
-class EEPoseSE3BaseFrameCostFunction(PoseSE3CostFunction):
-    def __init__(self, robot_mdl, params):
-        ss_mdl = robot_mdl.ssSymMdl
-        nx = ss_mdl["nx"]
-        nu = ss_mdl["nu"]
-
-        fk_ee = robot_mdl._getFk(robot_mdl.tool_link_name, True)
-        p_ee, rot_ee = fk_ee(robot_mdl.q_sym)
-        f_fcn = cs.Function("fee", [robot_mdl.x_sym], [p_ee, rot_ee])
-        super().__init__(nx, nu, f_fcn, "EEPoseBaseFrame")
-
-
-class ArmJointCostFunction(TrajectoryTrackingCostFunction):
-    def __init__(self, robot_mdl, params):
-        ss_mdl = robot_mdl.ssSymMdl
-        nx = ss_mdl["nx"]
-        nu = ss_mdl["nu"]
-        nr = 6
-        f_fcn = cs.Function("f_qa", [robot_mdl.x_sym], [robot_mdl.qa_sym])
-
-        super().__init__(nx, nu, nr, f_fcn, "ArmJoint")
-
-
-class BasePos2CostFunction(TrajectoryTrackingCostFunction):
-    def __init__(self, robot_mdl, params):
-        ss_mdl = robot_mdl.ssSymMdl
-        nx = ss_mdl["nx"]
-        nu = ss_mdl["nu"]
-        nr = 2
-        fk_b = robot_mdl.kinSymMdls["base"]
-        f_fcn = cs.Function("fb", [robot_mdl.x_sym], [fk_b(robot_mdl.q_sym)[0]])
-
-        super().__init__(nx, nu, nr, f_fcn, "BasePos2")
-
-
-class BaseVel2CostFunction(TrajectoryTrackingCostFunction):
-    def __init__(self, robot_mdl, params):
-        ss_mdl = robot_mdl.ssSymMdl
-        nx = ss_mdl["nx"]
-        nu = ss_mdl["nu"]
-        nr = 2
-        jac_b = robot_mdl.jacSymMdls["base"]
-
-        f_fcn = cs.Function(
-            "fb", [robot_mdl.x_sym], [jac_b(robot_mdl.q_sym) @ robot_mdl.v_sym]
-        )
-
-        super().__init__(nx, nu, nr, f_fcn, "BaseVel2")
-
-
-class BasePos3CostFunction(TrajectoryTrackingCostFunction):
-    def __init__(self, robot_mdl, params):
-        ss_mdl = robot_mdl.ssSymMdl
-        nx = ss_mdl["nx"]
-        nu = ss_mdl["nu"]
-        nr = 3
-        fk_b = robot_mdl.kinSymMdls["base"]
-        xy, h = fk_b(robot_mdl.q_sym)
-        f_fcn = cs.Function("fb", [robot_mdl.x_sym], [cs.vertcat(xy, h)])
-
-        super().__init__(nx, nu, nr, f_fcn, "BasePos3")
 
 
 class BasePoseSE2CostFunction(CostFunctions):
@@ -361,8 +249,6 @@ class BasePoseSE2CostFunction(CostFunctions):
         self.W = self.p_struct["W"]
         self.r = self.p_struct["r"]
 
-        robot_mdl.kinSymMdls["base"]
-        # Bug warning
         xy, h = self.x_sym[:2], self.x_sym[2]
 
         # position
@@ -390,7 +276,7 @@ class BasePoseSE2CostFunction(CostFunctions):
             [self.x_sym, self.u_sym, self.r],
             [self.e_eqn],
             ["x", "u", "r"],
-            ["J"],
+            ["e"],
         ).expand()
 
         dedx = cs.jacobian(self.e_eqn, self.x_sym)
@@ -407,18 +293,6 @@ class BasePoseSE2CostFunction(CostFunctions):
 
     def get_e(self, x, u, r):
         return self.e_fcn(x, u, r).toarray().flatten()
-
-
-class BaseVel3CostFunction(TrajectoryTrackingCostFunction):
-    def __init__(self, robot_mdl, params):
-        ss_mdl = robot_mdl.ssSymMdl
-        nx = ss_mdl["nx"]
-        nu = ss_mdl["nu"]
-        nr = 3
-
-        f_fcn = cs.Function("fb", [robot_mdl.x_sym], [robot_mdl.vb_sym])
-
-        super().__init__(nx, nu, nr, f_fcn, "BaseVel3")
 
 
 class ControlEffortCostFunction(CostFunctions):
@@ -569,3 +443,73 @@ class ManipulabilityCostFunction(CostFunctions):
             * 0.5
         )
         self.J_fcn = cs.Function("fee", [robot_mdl.x_sym], [self.J_eqn])
+
+
+# Cost Function Registry
+class CostFunctionRegistry:
+    _registry = {}
+
+    @classmethod
+    def register(cls, name: str, factory):
+        cls._registry[name] = factory
+
+    @classmethod
+    def create(cls, name: str, robot_model, params: dict, **kwargs):
+        if name not in cls._registry:
+            available = ", ".join(cls._registry.keys())
+            raise ValueError(f"Unknown cost function: '{name}'. Available: {available}")
+        factory = cls._registry[name]
+        return factory(robot_model, params, **kwargs)
+
+    @classmethod
+    def list_available(cls):
+        return list(cls._registry.keys())
+
+
+# Helper functions to create parameterized cost functions
+def create_base_pose_cost(robot_mdl, params, dimension="SE2"):
+    """Create base pose cost: dimension must be SE2 (x,y,yaw)."""
+    if dimension != "SE2":
+        raise ValueError(
+            f"Base pose cost only supports SE2. Got dimension='{dimension}'. "
+            "Use SE2 for base pose tracking with proper yaw handling."
+        )
+    return BasePoseSE2CostFunction(robot_mdl, params)
+
+
+def create_base_vel_cost(robot_mdl, params, dimension=3):
+    """Create base velocity cost: dimension can be 2 (vx,vy) or 3 (vx,vy,vyaw)"""
+    dim_int = int(dimension)
+    return VelocityCostFunction(robot_mdl, params, "base", dim_int, f"BaseVel{dim_int}")
+
+
+def create_ee_pose_cost(robot_mdl, params, pose_type="SE3", frame="world"):
+    """Create EE pose cost: pose_type must be SE3 (position+orientation), frame can be world or base"""
+    base_frame = frame == "base"
+    if pose_type != "SE3":
+        raise ValueError(
+            f"EE pose cost only supports SE3. Got pose_type='{pose_type}'. "
+            "Use SE3 for EE pose tracking (set orientation weights to 0 for position-only tracking)."
+        )
+    name = f"EEPoseSE3{'BaseFrame' if base_frame else ''}"
+    return PoseSE3CostFunction(robot_mdl, params, base_frame, name)
+
+
+def create_ee_vel_cost(robot_mdl, params):
+    """Create EE velocity cost: 6D (3D linear + 3D angular) for SE3 compatibility"""
+    return VelocityCostFunction(robot_mdl, params, "EE", 6, "EEVel6")
+
+
+def create_regularization_cost(robot_mdl, params):
+    """Create regularization cost"""
+    ss_mdl = robot_mdl.ssSymMdl
+    return RegularizationCostFunction(ss_mdl["nx"], ss_mdl["nu"])
+
+
+# Register core cost functions (simplified to 6 parameterized functions)
+CostFunctionRegistry.register("BasePose", create_base_pose_cost)
+CostFunctionRegistry.register("BaseVel", create_base_vel_cost)
+CostFunctionRegistry.register("EEPose", create_ee_pose_cost)
+CostFunctionRegistry.register("EEVel", create_ee_vel_cost)
+CostFunctionRegistry.register("ControlEffort", ControlEffortCostFunction)
+CostFunctionRegistry.register("Regularization", create_regularization_cost)

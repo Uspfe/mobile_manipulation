@@ -1,15 +1,9 @@
 import argparse
-import sys
-
-import rospy
 
 import mm_control.MPC as MPC
 from mm_utils import parsing
 
 if __name__ == "__main__":
-    rospy.init_node("test_mpc")
-
-    argv = rospy.myargv(argv=sys.argv)
     parser = argparse.ArgumentParser()
     parser.add_argument("-c", "--config", required=True, help="Path to config file.")
     parser.add_argument(
@@ -20,9 +14,14 @@ if __name__ == "__main__":
         help="Name Identifier for acados ocp. This will overwrite the name in the config file if provided.",
     )
 
-    args = parser.parse_args(argv[1:])
+    args = parser.parse_args()
 
     config = parsing.load_config(args.config)
+    if args.name != "":
+        config["controller"]["acados"]["name"] = args.name
+
+    config["controller"]["acados"]["cython"]["enabled"] = True
+    config["controller"]["acados"]["cython"]["recompile"] = True
 
     ctrl_config = config["controller"]
     control_class = getattr(MPC, ctrl_config["type"], None)

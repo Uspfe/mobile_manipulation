@@ -31,7 +31,7 @@ class SDF2D:
             ["sd(x)"],
         )
 
-        self.hess_eqn, self.grad_eqn = cs.hessian(self.sdf_eqn, self.x_sym)
+        _, self.grad_eqn = cs.hessian(self.sdf_eqn, self.x_sym)
         grad_eqn_normalized_list = [
             self.grad_eqn,
             self.grad_eqn / cs.norm_2(self.grad_eqn),
@@ -44,7 +44,7 @@ class SDF2D:
             [self.x_sym, self.xg_sym, self.yg_sym, self.v_sym],
             [self.grad_eqn],
         )
-        self.grad_fcn_normalzied = cs.Function(
+        self.grad_fcn_normalized = cs.Function(
             "map_grad_normalized",
             [self.x_sym, self.xg_sym, self.yg_sym, self.v_sym],
             [self.grad_eqn_normalized],
@@ -54,10 +54,12 @@ class SDF2D:
         self.v = np.ones(self.map_size[0] * self.map_size[1]) * self.default_val
 
     def update_map(self, xg, yg, v):
-        self.xg, self.yg, self.v = xg, yg, v
+        self.xg = xg.copy()
+        self.yg = yg.copy()
+        self.v = v.copy()
 
     def get_params(self):
-        return [self.xg, self.yg, self.v]
+        return [self.xg.copy(), self.yg.copy(), self.v.copy()]
 
     def vis(self, x_lim, y_lim, block=True):
         Nx = int(1.0 / 0.1 * (x_lim[1] - x_lim[0])) + 1
@@ -80,8 +82,8 @@ class SDF2D:
             -0.5, self.default_val, int((self.default_val + 0.5) / 0.25) + 1
         )
 
-        cs = ax.contour(X, Y, Z, levels)
-        ax.clabel(cs, levels)
+        contour_set = ax.contour(X, Y, Z, levels)
+        ax.clabel(contour_set, levels)
         ax.grid()
         ax.quiver(
             X, Y, dZdX[0] / 10, dZdX[1] / 10, scale_units="xy", scale=1, color="gray"
@@ -123,7 +125,6 @@ class SDF3D:
         self.voxel_size = config["map"]["voxel_size"]
 
         self.map_size = np.ceil(self.map_coverage / self.voxel_size).astype(int)
-        self.mul = 10
 
         self.xg_sym = MX.sym("xg", self.map_size[0])
         self.yg_sym = MX.sym("yg", self.map_size[1])
@@ -207,8 +208,8 @@ class SDF3D:
         fig, ax = plt.subplots()
         levels = np.linspace(-1.0, 2.5, int(3.5 / 0.1) + 1)
 
-        cs = ax.contour(X, Y, V, levels)
-        ax.clabel(cs, levels)
+        contour_set = ax.contour(X, Y, V, levels)
+        ax.clabel(contour_set, levels)
         ax.quiver(
             X, Y, G[x_idx] / 10, G[y_idx] / 10, scale_units="xy", scale=1, color="gray"
         )
@@ -224,8 +225,8 @@ class SDF3D:
         return ax
 
     def query_val(self, x, y, z):
-        input = np.vstack((x, y, z))
-        val = self.sdf_fcn(input, self.xg, self.yg, self.zg, self.v).toarray()
+        query_point = np.vstack((x, y, z))
+        val = self.sdf_fcn(query_point, self.xg, self.yg, self.zg, self.v).toarray()
 
         return val
 

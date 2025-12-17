@@ -1,0 +1,22 @@
+{
+    "include": [
+        "**/*.py"
+    ],
+    "exclude": [
+        "**/__pycache__",
+        "**/node_modules",
+        "**/.*"
+    ],
+    "extraPaths": [
+        "mm_plan/src",
+        "mm_control/src",
+        "mm_utils/src",
+        "mm_simulator/src",
+        "mm_run",
+        "../mobile_manipulation_central/src",
+    ],
+    "pythonVersion": "3.8",
+    "typeCheckingMode": "basic",
+    "reportMissingImports": true,
+    "reportMissingTypeStubs": false
+}

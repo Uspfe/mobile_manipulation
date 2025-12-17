@@ -2,13 +2,11 @@ planner:
   sot_type: "SoTStatic"
   tasks:
   - name: "EE Pos 1"
-    planner_type: "EESimplePlanner"
+    planner_type: "WaypointPlanner"
     frame_id: "EE"
-    initial_pos: [0.0, -0.0, 0.0]
-    target_pos: [0.0, 1.0, 0.0]
+    target_pose: [0.0, 1.0, 0.0, 0.0, 0.0, 0.0]  # [x, y, z, roll, pitch, yaw]
     hold_period: 3.
     tracking_err_tol: 0.02
-    cruise_speed: 0.5
 
 simulation:
   robot:
@@ -22,7 +20,7 @@ controller:
   self_collision_avoidance_enabled: False
   static_obstacles_collision_avoidance_enabled: True
 
-  collision_constraints_softend:
+  collision_constraints_softened:
     self: False
     sdf: False
     static_obstacles: False

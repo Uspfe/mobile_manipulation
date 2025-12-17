@@ -188,7 +188,9 @@ def test_collision_model(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Test robot model against simulation")
-    parser.add_argument("--config", required=False, help="Path to configuration file.")
+    parser.add_argument(
+        "-c", "--config", required=False, help="Path to configuration file."
+    )
     parser.add_argument(
         "--video",
         nargs="?",

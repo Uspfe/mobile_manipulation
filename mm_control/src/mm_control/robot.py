@@ -174,7 +174,7 @@ class PinocchioInterface:
         ground_placement = pin.SE3.Identity()
         ground_shape = fcl.Halfspace(np.array([0, 0, 1]), 0)
         ground_geom_obj = pin.GeometryObject(
-            "ground_0", self.model.frames[0].parent, ground_shape, ground_placement
+            "ground_0", self.model.frames[0].parentJoint, ground_shape, ground_placement
         )
         ground_geom_obj.meshColor = np.ones((4))
 
@@ -538,7 +538,7 @@ class CasadiModelInterface:
         print(name + " signed distance function does not exist")
         return None
 
-    def evaluteSignedDistance(
+    def evaluateSignedDistance(
         self, names: List[str], qs: ndarray, params: Dict[str, List[ndarray]] = {}
     ):
         sd = {}
@@ -562,7 +562,7 @@ class CasadiModelInterface:
 
         return sd
 
-    def evaluteSignedDistancePerPair(
+    def evaluateSignedDistancePerPair(
         self, names: List[str], qs: ndarray, params: Dict[str, List[ndarray]] = {}
     ):
         sd = {}
@@ -734,15 +734,55 @@ class MobileManipulator3D:
     def _setupJacobianSymMdl(self):
         """Create jacobian symbolic model for MM links keyed by link name
         Jacobian in the reference frame of the world frame
+        For tool link, creates both 3D position Jacobian and 6D spatial Jacobian
         """
         self.jacSymMdls = {}
         for name in self.link_names:
             fk_fcn = self.kinSymMdls[name]
-            fk_pos_eqn, _ = fk_fcn(self.q_sym)
-            Jk_eqn = cs.jacobian(fk_pos_eqn, self.q_sym)
+            fk_pos_eqn, fk_rot_eqn = fk_fcn(self.q_sym)
+            # Position Jacobian (3D)
+            Jk_pos_eqn = cs.jacobian(fk_pos_eqn, self.q_sym)
             self.jacSymMdls[name] = cs.Function(
-                name + "_jac_fcn", [self.q_sym], [Jk_eqn], ["q"], ["J(q)"]
+                name + "_jac_fcn", [self.q_sym], [Jk_pos_eqn], ["q"], ["J(q)"]
             )
+
+            # For tool link, also create 6D spatial Jacobian (linear + angular)
+            if name == self.tool_link_name:
+                # Compute angular velocity Jacobian from rotation matrix
+                # Angular velocity: ω = 0.5 * [R^T * dR/dq_i]_vee for each q_i
+                # The vee map extracts the vector from a skew-symmetric matrix
+                # For a rotation matrix R, dR/dq gives us the derivative
+                # We compute: ω = [R^T * dR/dq]_vee
+                # Simplified: compute the skew-symmetric part of R^T * dR/dq
+                dR_dq = cs.jacobian(fk_rot_eqn, self.q_sym)
+                # dR_dq is 9 x DoF (each column is flattened 3x3 matrix)
+                # Reshape each column to 3x3, compute R^T * dR/dq_i, then extract skew part
+                Jw_list = []
+                for i in range(self.DoF):
+                    dR_i = cs.reshape(dR_dq[:, i], 3, 3)
+                    # Compute R^T * dR/dq_i
+                    R_T_dR = cs.mtimes(fk_rot_eqn.T, dR_i)
+                    # Extract skew-symmetric part: ω = [R^T * dR]_vee
+                    # For skew-symmetric matrix S, [S]_vee = [S[2,1], S[0,2], S[1,0]]
+                    omega_i = (
+                        cs.vertcat(
+                            R_T_dR[2, 1] - R_T_dR[1, 2],
+                            R_T_dR[0, 2] - R_T_dR[2, 0],
+                            R_T_dR[1, 0] - R_T_dR[0, 1],
+                        )
+                        * 0.5
+                    )
+                    Jw_list.append(omega_i)
+                Jw_eqn = cs.horzcat(*Jw_list)
+                # Stack linear and angular Jacobians
+                J_spatial = cs.vertcat(Jk_pos_eqn, Jw_eqn)
+                self.jacSymMdls[name + "_spatial"] = cs.Function(
+                    name + "_jac_spatial_fcn",
+                    [self.q_sym],
+                    [J_spatial],
+                    ["q"],
+                    ["J_spatial(q)"],
+                )
 
     def _setupManipulabilitySymMdl(self):
         Jee_fcn = self.jacSymMdls[self.tool_link_name]
@@ -800,7 +840,6 @@ class MobileManipulator3D:
         if "linear" in ss_mdl["mdl_type"]:
             x_sym = ss_mdl["x"]
             u_sym = ss_mdl["u"]
-            cs.MX.sym("dt")
             A = ss_mdl["A"]
             B = ss_mdl["B"]
             nx = x_sym.size()[0]

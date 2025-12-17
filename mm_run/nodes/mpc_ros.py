@@ -19,14 +19,16 @@ from mobile_manipulation_central.ros_interface import (
 )
 from nav_msgs.msg import Path
 from scipy.interpolate import interp1d
-from spatialmath.base import r2q, rotz, rpy2r
+from scipy.spatial.transform import Rotation as Rot
+from spatialmath.base import r2q, rpy2r
 from trajectory_msgs.msg import MultiDOFJointTrajectory, MultiDOFJointTrajectoryPoint
 from visualization_msgs.msg import Marker, MarkerArray
 
 import mm_control.MPC as MPC
-import mm_plan.TaskManager as TaskManager
 from mm_control.robot import CasadiModelInterface, MobileManipulator3D
+from mm_plan.TaskManager import TaskManager
 from mm_utils import parsing
+from mm_utils.enums import PlannerType, RefDataType, RefType
 from mm_utils.logging import DataLogger
 from mm_utils.math import wrap_pi_scalar
 
@@ -37,7 +39,7 @@ class ControllerROSNode:
         argv = rospy.myargv(argv=sys.argv)
         parser = argparse.ArgumentParser()
         parser.add_argument(
-            "--config", required=True, help="Path to configuration file."
+            "-c", "--config", required=True, help="Path to configuration file."
         )
         parser.add_argument(
             "--ctrl_config",
@@ -304,13 +306,8 @@ class ControllerROSNode:
             color = [0] * 3
             color[pid % 3] = 1
             marker_plan = None
-            if planner.ref_type == "waypoint":
-                if planner.ref_data_type == "Vec3":
-                    marker_plan = self._make_marker(
-                        Marker.SPHERE, pid, rgba=color + [1], scale=[0.1, 0.1, 0.1]
-                    )
-                    marker_plan.pose.position = Point(*planner.target_pos)
-                elif planner.ref_data_type == "SE2":
+            if planner.ref_type == RefType.WAYPOINT:
+                if planner.ref_data_type == RefDataType.SE2:
                     quat = tf.quaternion_from_euler(0, 0, planner.target_pose[2])
                     pose_msg = PoseStamped()
                     pose_msg.header.stamp = rospy.Time()
@@ -318,13 +315,7 @@ class ControllerROSNode:
                     pose_msg.pose.orientation = Quaternion(*list(quat))
 
                     self.pose_plan_visualization_pub.publish(pose_msg)
-
-                elif planner.ref_data_type == "Vec2":
-                    marker_plan = self._make_marker(
-                        Marker.CYLINDER, pid, rgba=color + [1], scale=[0.1, 0.1, 0.5]
-                    )
-                    marker_plan.pose.position = Point(*planner.target_pos, 0.25)
-                elif planner.ref_data_type == "SE3":
+                elif planner.ref_data_type == RefDataType.SE3:
                     quat = tf.quaternion_from_euler(*planner.target_pose[3:])
                     pose_msg = PoseStamped()
                     pose_msg.header.stamp = rospy.Time()
@@ -334,14 +325,14 @@ class ControllerROSNode:
                     pose_msg.pose.orientation = Quaternion(*list(quat))
                     self.pose_plan_visualization_pub.publish(pose_msg)
 
-            elif planner.ref_type == "trajectory" or planner.ref_type == "path":
+            elif planner.ref_type == RefType.PATH:
                 marker_plan = self._make_marker(
                     Marker.POINTS, pid, rgba=color + [1], scale=[0.1, 0.1, 0.1]
                 )
 
-                if planner.ref_data_type == "Vec3":
-                    marker_plan.points = [Point(*pt) for pt in planner.plan["p"]]
-                elif planner.ref_data_type == "Vec2" or planner.ref_data_type == "SE2":
+                if planner.ref_data_type == RefDataType.SE3:
+                    marker_plan.points = [Point(*pt[:3]) for pt in planner.plan["p"]]
+                elif planner.ref_data_type == RefDataType.SE2:
                     marker_plan.points = [Point(*pt[:2], 0) for pt in planner.plan["p"]]
 
             if marker_plan is not None:
@@ -353,16 +344,8 @@ class ControllerROSNode:
         for pid, planner in enumerate(curr_planners):
             marker_plan = None
 
-            if planner.ref_type == "waypoint":
-                if planner.ref_data_type == "Vec3":
-                    marker_plan = self._make_marker(
-                        Marker.SPHERE,
-                        pid,
-                        rgba=colors[pid] + [1],
-                        scale=[0.1, 0.1, 0.1],
-                    )
-                    marker_plan.pose.position = Point(*planner.target_pos)
-                elif planner.ref_data_type == "SE2":
+            if planner.ref_type == RefType.WAYPOINT:
+                if planner.ref_data_type == RefDataType.SE2:
                     quat = tf.quaternion_from_euler(0, 0, planner.target_pose[2])
                     pose_msg = PoseStamped()
                     pose_msg.header.stamp = rospy.Time()
@@ -370,15 +353,7 @@ class ControllerROSNode:
                     pose_msg.pose.orientation = Quaternion(*list(quat))
 
                     self.pose_plan_visualization_pub.publish(pose_msg)
-                elif planner.ref_data_type == "Vec2":
-                    marker_plan = self._make_marker(
-                        Marker.CYLINDER,
-                        pid,
-                        rgba=colors[pid] + [1],
-                        scale=[0.1, 0.1, 0.5],
-                    )
-                    marker_plan.pose.position = Point(*planner.target_pos, 0.25)
-                elif planner.ref_data_type == "SE3":
+                elif planner.ref_data_type == RefDataType.SE3:
                     quat = tf.quaternion_from_euler(*planner.target_pose[3:])
                     pose_msg = PoseStamped()
                     pose_msg.header.frame_id = "world"
@@ -388,15 +363,15 @@ class ControllerROSNode:
                     pose_msg.pose.orientation = Quaternion(*list(quat))
                     self.pose_plan_visualization_pub.publish(pose_msg)
 
-            elif planner.ref_type == "trajectory" or planner.ref_type == "path":
+            elif planner.ref_type == RefType.PATH:
                 marker_plan = self._make_marker(
                     Marker.POINTS, pid, rgba=colors[pid] + [1], scale=[0.1, 0.1, 0.1]
                 )
 
-                if planner.ref_data_type == "Vec3":
-                    marker_plan.points = [Point(*pt) for pt in planner.plan["p"]]
-                elif planner.ref_data_type == "Vec2":
-                    marker_plan.points = [Point(*pt, 0) for pt in planner.plan["p"]]
+                if planner.ref_data_type == RefDataType.SE3:
+                    marker_plan.points = [Point(*pt[:3]) for pt in planner.plan["p"]]
+                elif planner.ref_data_type == RefDataType.SE2:
+                    marker_plan.points = [Point(*pt[:2], 0) for pt in planner.plan["p"]]
 
             if marker_plan is not None:
                 marker_plan.lifetime = rospy.Duration.from_sec(0.1)
@@ -486,8 +461,7 @@ class ControllerROSNode:
 
         states = (self.robot_interface.q, self.robot_interface.v)
         print("robot coord: {}".format(self.robot_interface.q))
-        task_manager_class = getattr(TaskManager, self.planner_config["sot_type"])
-        self.sot = task_manager_class(self.planner_config.copy())
+        self.sot = TaskManager(self.planner_config.copy())
 
         if self.ctrl_config["sdf_collision_avoidance_enabled"]:
             print("-----Checking Map Interface----- ")
@@ -539,18 +513,6 @@ class ControllerROSNode:
             else:
                 self.use_joy = False
                 print("Did not receive joystick msg.")
-
-        if use_vicon_tool_data:
-            self.planner_coord_transform(
-                self.robot_interface.q,
-                self.vicon_tool_interface.position,
-                self.sot.planners,
-            )
-        else:
-            ee_pos, _ = self.robot.getEE(self.robot_interface.q)
-            self.planner_coord_transform(
-                self.robot_interface.q, ee_pos, self.sot.planners
-            )
 
         rospy.Timer(rospy.Duration(0, int(1e8)), self._publish_planner_data)
 
@@ -654,16 +616,35 @@ class ControllerROSNode:
             self._publish_trajectory_tracking_pt(t - t0, robot_states, planners)
 
             # Update Task Manager
+            # Convert to pose arrays in world frame
             if use_vicon_tool_data:
-                ee_states = (
-                    self.vicon_tool_interface.position,
-                    self.vicon_tool_interface.orientation,
-                )
+                ee_pos = self.vicon_tool_interface.position
+                ee_quat = self.vicon_tool_interface.orientation
+                # For Vicon data, velocity is not directly available, set to zeros
+                ee_vel = np.zeros(6)
             else:
-                ee_states = self.robot.getEE(robot_states[0])
+                ee_pos, ee_quat = self.robot.getEE(robot_states[0])
+                # Compute EE velocity using spatial Jacobian if available
+                tool_name = self.robot.tool_link_name
+                spatial_jac_key = tool_name + "_spatial"
+                if spatial_jac_key in self.robot.jacSymMdls:
+                    J_spatial = self.robot.jacSymMdls[spatial_jac_key](robot_states[0])
+                    ee_vel = (J_spatial @ robot_states[1]).toarray().flatten()
+                else:
+                    # Fallback: use position Jacobian and pad with zeros for angular velocity
+                    J_pos = self.robot.jacSymMdls[tool_name](robot_states[0])
+                    ee_lin_vel = (J_pos @ robot_states[1]).toarray().flatten()
+                    ee_vel = np.hstack([ee_lin_vel, np.zeros(3)])
+
+            ee_euler = Rot.from_quat(ee_quat).as_euler("xyz")
+            ee_pose = np.hstack([ee_pos, ee_euler])
+
+            base_pose = robot_states[0][:3]  # [x, y, yaw] already in world frame
+            base_vel = robot_states[1][:3]  # [vx, vy, vyaw]
+
             states = {
-                "base": (robot_states[0][:3], robot_states[1][:3]),
-                "EE": ee_states,
+                "base": {"pose": base_pose, "velocity": base_vel},
+                "EE": {"pose": ee_pose, "velocity": ee_vel},
             }
             if self.use_joy:
                 self.joystick_interface.button_lock.acquire()
@@ -689,19 +670,15 @@ class ControllerROSNode:
             Q_we_d = None
             ω_ew_wd = None
             for planner in planners:
-                if planner.type == "EE":
-                    if planner.ref_data_type == "Vec3":
-                        r_ew_wd, v_ew_wd = planner.getTrackingPoint(
-                            t - t0, robot_states
-                        )
-                    elif planner.ref_data_type == "SE3":
+                if planner.type == PlannerType.EE:
+                    if planner.ref_data_type == RefDataType.SE3:
                         r, v = planner.getTrackingPoint(t - t0, robot_states)
                         r_ew_wd = r[:3]
                         Q_we_d = r2q(rpy2r(r[3:]), order="xyzs")
                         if v is not None:
                             v_ew_wd = v[:3]
                             ω_ew_wd = v[3:]
-                elif planner.type == "base":
+                elif planner.type == PlannerType.BASE:
                     r_bw_wd, v_bw_wd = planner.getTrackingPoint(t - t0, robot_states)
 
                     if planner.name == "PartialPlanner":
@@ -788,37 +765,6 @@ class ControllerROSNode:
     def log_mpc_info(self, logger, controller):
         for key, val in controller.log.items():
             logger.append("_".join(["mpc", key]) + "s", val)
-
-    def planner_coord_transform(self, q, ree, planners):
-        R_wb = rotz(q[2])
-        for planner in planners:
-            P = np.zeros(3)
-            if planner.frame_id == "base":
-                P = np.hstack((q[:2], 0))
-            elif planner.frame_id == "EE":
-                P = ree
-
-            if planner.__class__.__name__ == "EESimplePlanner":
-                planner.target_pos = R_wb @ planner.target_pos + P
-                print(planner.target_pos)
-            elif planner.__class__.__name__ == "EEPosTrajectoryCircle":
-                planner.c = R_wb @ planner.c + P
-                planner.plan["p"] = planner.plan["p"] @ R_wb.T + P
-            elif planner.__class__.__name__ == "EEPosTrajectoryLine":
-                planner.plan["p"] = planner.plan["p"] @ R_wb.T + P
-
-            elif planner.__class__.__name__ == "BaseSingleWaypoint":
-                planner.target_pos = (R_wb @ np.hstack((planner.target_pos, 0)))[
-                    :2
-                ] + P[:2]
-            elif planner.__class__.__name__ == "BasePosTrajectoryCircle":
-                planner.c = R_wb[:2, :2] @ planner.c + P[:2]
-                planner.plan["p"] = planner.plan["p"] @ R_wb[:2, :2].T + P[:2]
-            elif (
-                planner.__class__.__name__ == "BasePosTrajectoryLine"
-                or planner.__class__.__name__ == "BasePosTrajectorySqaureWave"
-            ):
-                planner.plan["p"] = planner.plan["p"] @ R_wb[:2, :2].T + P[:2]
 
 
 if __name__ == "__main__":

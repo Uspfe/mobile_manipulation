@@ -238,7 +238,7 @@ class DataPlotter(TrajectoryPlotterMixin, MPCPlotterMixin):
             ]
             sdf_param = [self.data[name] for name in sdf_param_names]
             params["sdf"] = sdf_param
-        sds_dict = self.model_interface.evaluteSignedDistance(
+        sds_dict = self.model_interface.evaluateSignedDistance(
             names, qs, copy.deepcopy(params)
         )
         sds = np.array([sd for sd in sds_dict.values()])
@@ -265,7 +265,7 @@ class DataPlotter(TrajectoryPlotterMixin, MPCPlotterMixin):
         if self.config["controller"]["static_obstacles_collision_avoidance_enabled"]:
             params["static_obstacles"] = []
             names += ["static_obstacles"]
-        sds_dict_detailed = self.model_interface.evaluteSignedDistancePerPair(
+        sds_dict_detailed = self.model_interface.evaluateSignedDistancePerPair(
             names, qs, params
         )
         self.data["signed_distance_detailed"] = {}

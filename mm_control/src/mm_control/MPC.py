@@ -12,17 +12,22 @@ from numpy.typing import NDArray
 from scipy.interpolate import interp1d
 
 import mm_control.MPCConstraints as MPCConstraints
-from mm_control.cost_registry import CostFunctionRegistry
 from mm_control.MPCConstraints import ControlBoxConstraints, StateBoxConstraints
-from mm_control.MPCCostFunctions import CostFunctions, SoftConstraintsRBFCostFunction
+from mm_control.MPCCostFunctions import (
+    CostFunctionRegistry,
+    CostFunctions,
+    SoftConstraintsRBFCostFunction,
+)
 from mm_control.robot import CasadiModelInterface as ModelInterface
 from mm_control.robot import MobileManipulator3D as MM
-from mm_plan.PlanBaseClass import Planner, TrajectoryPlanner
+from mm_plan.Planners import Planner, TrajectoryPlanner
 from mm_utils.casadi_struct import casadi_sym_struct
+from mm_utils.enums import PlannerType, RefType
 from mm_utils.math import wrap_pi_array
 from mm_utils.parsing import parse_ros_path
 
 INF = 1e5
+BASE_Z_HEIGHT_FOR_SDF = 0.2  # Base z height for SDF queries (meters)
 
 
 class MPCBase:
@@ -58,56 +63,13 @@ class MPCBase:
 
         self.collisionCsts = {}
         for name in self.collision_link_names:
-            sd_fcn = self.model_interface.getSignedDistanceSymMdls(name)
-            if (
-                name
-                in self.model_interface.scene.collision_link_names["static_obstacles"]
-            ):
-                collision_cst_type = getattr(
-                    MPCConstraints,
-                    self.params["collision_constraint_type"]["static_obstacles"],
-                )
-                sd_cst = collision_cst_type(
-                    self.robot,
-                    sd_fcn,
-                    self.params["collision_safety_margin"]["static_obstacles"],
-                    name,
-                )
-            else:
-                collision_cst_type = getattr(
-                    MPCConstraints, self.params["collision_constraint_type"][name]
-                )
-
-                sd_cst = collision_cst_type(
-                    self.robot,
-                    sd_fcn,
-                    self.params["collision_safety_margin"][name],
-                    name,
-                )
-            self.collisionCsts[name] = sd_cst
+            self.collisionCsts[name] = self._create_collision_constraint(name)
 
         self.collisionSoftCsts = {}
         for name, sd_cst in self.collisionCsts.items():
-            expand = True if name != "sdf" else False
-            if (
-                name
-                in self.model_interface.scene.collision_link_names["static_obstacles"]
-            ):
-                self.collisionSoftCsts[name] = SoftConstraintsRBFCostFunction(
-                    self.params["collision_soft"]["static_obstacles"]["mu"],
-                    self.params["collision_soft"]["static_obstacles"]["zeta"],
-                    sd_cst,
-                    name + "CollisionSoftCst",
-                    expand=expand,
-                )
-            else:
-                self.collisionSoftCsts[name] = SoftConstraintsRBFCostFunction(
-                    self.params["collision_soft"][name]["mu"],
-                    self.params["collision_soft"][name]["zeta"],
-                    sd_cst,
-                    name + "CollisionSoftCst",
-                    expand=expand,
-                )
+            self.collisionSoftCsts[name] = self._create_collision_soft_cost(
+                name, sd_cst
+            )
 
         self.stateCst = StateBoxConstraints(self.robot)
         self.controlCst = ControlBoxConstraints(self.robot)
@@ -119,10 +81,8 @@ class MPCBase:
         self.x_bar[:, : self.DoF] = self.home
         self.u_bar = np.zeros((self.N, self.nu))  # current best guess u0,...,uN-1
         self.t_bar = None
-        self.lam_bar = None  # inequality mulitipliers
-        self.zopt = np.zeros(self.QPsize)  # current lineaization point
+        self.lam_bar = None  # inequality multipliers
         self.u_prev = np.zeros(self.nu)
-        self.xu_bar_init = False
 
         self.v_cmd = np.zeros(self.nx - self.DoF)
 
@@ -177,8 +137,6 @@ class MPCBase:
         self.u_bar = np.zeros((self.N, self.nu))  # current best guess u0,...,uN-1
         self.t_bar = None
         self.lam_bar = None
-        self.zopt = np.zeros(self.QPsize)  # current lineaization point
-        self.xu_bar_init = False
 
         self.v_cmd = np.zeros(self.nx - self.DoF)
 
@@ -225,7 +183,23 @@ class MPCBase:
         return vals
 
     def _construct(self, costs, constraints, num_terminal_cost, name="MM"):
-        # Construct AcadosModel
+        model, p_struct, p_map = self._setup_acados_model(costs, constraints, name)
+        ocp = self._setup_acados_ocp(model, name)
+        self._setup_costs(ocp, model, costs, num_terminal_cost)
+        nsx, nsu, nsx_e, nsh, nsh_e, nsh_0 = self._setup_constraints(
+            ocp, model, constraints
+        )
+        self._setup_slack_variables(ocp, nsx, nsu, nsh, nsx_e, nsh_e, nsh_0)
+
+        ocp.constraints.x0 = self.x_bar[0]
+        ocp.parameter_values = p_map.cat.full().flatten()
+        self._configure_solver_options(ocp)
+        ocp_solver = self._create_solver(ocp, name)
+
+        return ocp, ocp_solver, p_struct
+
+    def _setup_acados_model(self, costs, constraints, name):
+        """Setup AcadosModel with dynamics and parameters."""
         model = AcadosModel()
         model.x = cs.MX.sym("x", self.nx)
         model.u = cs.MX.sym("u", self.nu)
@@ -235,25 +209,30 @@ class MPCBase:
         model.f_expl_expr = self.ssSymMdl["fmdl"](model.x, model.u)
         model.name = name
 
-        # get params from constraints
+        # Get params from costs and constraints
         p_dict = {}
         for cost in costs:
             p_dict.update(cost.get_p_dict())
         for cst in constraints:
             p_dict.update(cst.get_p_dict())
         p_struct = casadi_sym_struct(p_dict)
-        print(p_struct)
         p_map = p_struct(0)
         model.p = p_struct.cat
 
-        # Construct AcadosOCP
+        return model, p_struct, p_map
+
+    def _setup_acados_ocp(self, model, name):
+        """Setup AcadosOCP basic structure."""
         ocp = AcadosOcp()
         ocp.model = model
-        ocp.dims.N = self.N
+        ocp.solver_options.N_horizon = self.N
         ocp.solver_options.tf = self.tf
         ocp.code_export_directory = str(self.output_dir / "c_generated_code")
         ocp.solver_options.ext_fun_compile_flags = "-O3"
+        return ocp
 
+    def _setup_costs(self, ocp, model, costs, num_terminal_cost):
+        """Setup cost expressions for the OCP."""
         ocp.cost.cost_type = "EXTERNAL"
         cost_expr = []
         for cost in costs:
@@ -261,9 +240,8 @@ class MPCBase:
             cost_expr.append(Ji)
         ocp.model.cost_expr_ext_cost = sum(cost_expr)
 
+        custom_hess_expr = []
         if self.params["acados"]["use_custom_hess"]:
-            custom_hess_expr = []
-
             for cost in costs:
                 H_fcn = cost.get_custom_H_fcn()
                 H_expr_i = H_fcn(model.x, model.u, cost.p_sym)
@@ -280,7 +258,9 @@ class MPCBase:
                 cost_hess_expr_e = cs.substitute(cost_hess_expr_e, model.u, [])
                 model.cost_expr_ext_cost_custom_hess_e = cost_hess_expr_e
 
-        # control input constraints
+    def _setup_constraints(self, ocp, model, constraints):
+        """Setup all constraints (control, state, nonlinear) and return slack variable counts."""
+        # Control input constraints
         ocp.constraints.lbu = np.array(self.ssSymMdl["lb_u"])
         ocp.constraints.ubu = np.array(self.ssSymMdl["ub_u"])
         ocp.constraints.idxbu = np.arange(self.nu)
@@ -293,7 +273,7 @@ class MPCBase:
         else:
             nsu = 0
 
-        # state constraints
+        # State constraints
         ocp.constraints.lbx = np.array(self.ssSymMdl["lb_x"])
         ocp.constraints.ubx = np.array(self.ssSymMdl["ub_x"])
         ocp.constraints.idxbx = np.arange(self.nx)
@@ -318,11 +298,11 @@ class MPCBase:
         else:
             nsx_e = 0
 
-        # nonlinear constraints
+        # Nonlinear constraints
         h_expr_list = []
         idxsh = []
         h_idx = 0
-        for i, cst in enumerate(constraints):
+        for cst in constraints:
             h_expr_list.append(cst.g_fcn(model.x, model.u, cst.p_sym))
             if cst.slack_enabled and (
                 self.params["acados"]["slack_enabled"]["h"]
@@ -335,10 +315,10 @@ class MPCBase:
         nsh = len(idxsh) if self.params["acados"]["slack_enabled"]["h"] else 0
         nsh_e = len(idxsh) if self.params["acados"]["slack_enabled"]["h_e"] else 0
         nsh_0 = len(idxsh) if self.params["acados"]["slack_enabled"]["h_0"] else 0
+
         if len(h_expr_list) > 0:
             h_expr = cs.vertcat(*h_expr_list)
             h_expr_num = h_expr.shape[0]
-            print(h_expr)
 
             model.con_h_expr_0 = h_expr
             ocp.constraints.uh_0 = np.zeros(h_expr_num)
@@ -351,10 +331,7 @@ class MPCBase:
             model.con_h_expr_e = cs.substitute(h_expr, model.u, [])
             ocp.constraints.uh_e = np.zeros(h_expr_num)
             ocp.constraints.lh_e = -INF * np.ones(h_expr_num)
-        else:
-            h_expr_num = 0
 
-        if h_expr_num > 0:
             if nsh_0 > 0:
                 ocp.constraints.idxsh_0 = np.array(idxsh)
                 ocp.constraints.lsh_0 = np.zeros(nsh_0)
@@ -368,11 +345,77 @@ class MPCBase:
                 ocp.constraints.lsh_e = np.zeros(nsh_e)
                 ocp.constraints.ush_e = np.zeros(nsh_e)
 
-        # slack variables
-        ns = nsx + nsu + nsh
+        return nsx, nsu, nsx_e, nsh, nsh_e, nsh_0
+
+    def _configure_solver_options(self, ocp):
+        """Configure solver options from config."""
+        for key, val in self.params["acados"]["ocp_solver_options"].items():
+            attr = getattr(ocp.solver_options, key, None)
+            if attr is not None:
+                setattr(ocp.solver_options, key, val)
+            else:
+                self.py_logger.warning(
+                    f"{key} not found in Acados solver options. Parameter is ignored."
+                )
+
+    def _create_solver(self, ocp, name):
+        """Create and return AcadosOCPSolver."""
+        json_file_name = str(self.output_dir / f"acados_ocp_{name}.json")
+        if self.params["acados"]["cython"]["enabled"]:
+            if self.params["acados"]["cython"]["recompile"]:
+                AcadosOcpSolver.generate(ocp, json_file=json_file_name)
+                AcadosOcpSolver.build(ocp.code_export_directory, with_cython=True)
+                return AcadosOcpSolver.create_cython_solver(json_file_name)
+            else:
+                return AcadosOcpSolver(
+                    ocp, json_file=json_file_name, build=False, generate=False
+                )
+        else:
+            return AcadosOcpSolver(ocp, json_file=json_file_name, build=True)
+
+    def _create_collision_constraint(self, name):
+        """Create a collision constraint for the given link name."""
+        sd_fcn = self.model_interface.getSignedDistanceSymMdls(name)
+        is_static = (
+            name in self.model_interface.scene.collision_link_names["static_obstacles"]
+        )
+
+        if is_static:
+            constraint_type_name = self.params["collision_constraint_type"][
+                "static_obstacles"
+            ]
+            safety_margin = self.params["collision_safety_margin"]["static_obstacles"]
+        else:
+            constraint_type_name = self.params["collision_constraint_type"][name]
+            safety_margin = self.params["collision_safety_margin"][name]
+
+        collision_cst_type = getattr(MPCConstraints, constraint_type_name)
+        return collision_cst_type(self.robot, sd_fcn, safety_margin, name)
+
+    def _create_collision_soft_cost(self, name, sd_cst):
+        """Create a soft collision cost for the given constraint."""
+        expand = name != "sdf"
+        is_static = (
+            name in self.model_interface.scene.collision_link_names["static_obstacles"]
+        )
+
+        if is_static:
+            mu = self.params["collision_soft"]["static_obstacles"]["mu"]
+            zeta = self.params["collision_soft"]["static_obstacles"]["zeta"]
+        else:
+            mu = self.params["collision_soft"][name]["mu"]
+            zeta = self.params["collision_soft"][name]["zeta"]
+
+        return SoftConstraintsRBFCostFunction(
+            mu, zeta, sd_cst, name + "CollisionSoftCst", expand=expand
+        )
+
+    def _setup_slack_variables(self, ocp, nsx, nsu, nsh, nsx_e, nsh_e, nsh_0):
+        """Setup slack variables for the OCP."""
         z = self.params["cost_params"]["slack"]["z"]
         Z = self.params["cost_params"]["slack"]["Z"]
 
+        ns = nsx + nsu + nsh
         if ns > 0:
             ocp.cost.Zl = np.ones(ns) * Z
             ocp.cost.Zu = np.ones(ns) * Z
@@ -392,36 +435,6 @@ class MPCBase:
             ocp.cost.Zu_0 = np.ones(ns_0) * Z
             ocp.cost.zl_0 = np.ones(ns_0) * z
             ocp.cost.zu_0 = np.ones(ns_0) * z
-        # initial condition
-        ocp.constraints.x0 = self.x_bar[0]
-
-        ocp.parameter_values = p_map.cat.full().flatten()
-
-        # set options from config
-        for key, val in self.params["acados"]["ocp_solver_options"].items():
-            property = getattr(ocp.solver_options, key, None)
-            if property is not None:
-                setattr(ocp.solver_options, key, val)
-            else:
-                self.py_logger.warning(
-                    f"{key} not found in Acados solver options. Parameter is ignored."
-                )
-
-        # Construct AcadosOCPSolver
-        json_file_name = str(self.output_dir / f"acados_ocp_{name}.json")
-        if self.params["acados"]["cython"]["enabled"]:
-            if self.params["acados"]["cython"]["recompile"]:
-                AcadosOcpSolver.generate(ocp, json_file=json_file_name)
-                AcadosOcpSolver.build(ocp.code_export_directory, with_cython=True)
-                ocp_solver = AcadosOcpSolver.create_cython_solver(json_file_name)
-            else:
-                ocp_solver = AcadosOcpSolver(
-                    ocp, json_file=json_file_name, build=False, generate=False
-                )
-        else:
-            ocp_solver = AcadosOcpSolver(ocp, json_file=json_file_name, build=True)
-
-        return ocp, ocp_solver, p_struct
 
     def _get_log(self):
         return {}
@@ -435,31 +448,59 @@ class MPC(MPCBase):
         num_terminal_cost = 2
         cost_params = config["cost_params"]
 
-        # Select base tracking costs based on configuration
+        # Create cost functions using simplified parameterized registry
         costs = []
-        # fmt: off
-        if config.get("base_pose_tracking_enabled", False):
-            costs.append(CostFunctionRegistry.create("BasePoseSE2", self.robot, cost_params["BasePoseSE2"]))
-            costs.append(CostFunctionRegistry.create("BaseVel3", self.robot, cost_params["BaseVel3"]))
-            costs.append(CostFunctionRegistry.create("EEPoseSE3", self.robot, cost_params["EEPose"]))
-            costs.append(CostFunctionRegistry.create("EEVel3", self.robot, cost_params["EEVel3"]))
-            costs.append(CostFunctionRegistry.create("EEPoseSE3BaseFrame", self.robot, cost_params["EEPose"]))
-        else:
-            costs.append(CostFunctionRegistry.create("BasePos2", self.robot, cost_params["BasePos2"]))
-            costs.append(CostFunctionRegistry.create("BaseVel2", self.robot, cost_params["BaseVel2"]))
-            costs.append(CostFunctionRegistry.create("EEPos3", self.robot, cost_params["EEPos3"]))
-            costs.append(CostFunctionRegistry.create("EEVel3", self.robot, cost_params["EEVel3"]))
+
+        # Base costs - always use SE2 (yaw tracking controlled via weights, set yaw weight to 0 to disable)
+        costs.append(
+            CostFunctionRegistry.create(
+                "BasePose", self.robot, cost_params.get("BasePose", {}), dimension="SE2"
+            )
+        )
+        costs.append(
+            CostFunctionRegistry.create(
+                "BaseVel", self.robot, cost_params.get("BaseVel", {}), dimension=3
+            )
+        )
+
+        # EE costs - always use SE3 (orientation weights can be set to 0 if not needed)
+        costs.append(
+            CostFunctionRegistry.create(
+                "EEPose",
+                self.robot,
+                cost_params.get("EEPose", {}),
+                pose_type="SE3",
+                frame="world",
+            )
+        )
+        costs.append(
+            CostFunctionRegistry.create(
+                "EEPose",
+                self.robot,
+                cost_params.get("EEPose", {}),
+                pose_type="SE3",
+                frame="base",
+            )
+        )
+        costs.append(
+            CostFunctionRegistry.create(
+                "EEVel", self.robot, cost_params.get("EEVel", {})
+            )
+        )
 
         # Control effort (always included)
-        costs.append(CostFunctionRegistry.create("ControlEffort", self.robot, cost_params["Effort"]))
-        # fmt: on
+        costs.append(
+            CostFunctionRegistry.create(
+                "ControlEffort", self.robot, cost_params.get("Effort", {})
+            )
+        )
 
         # Add collision costs/constraints
         constraints = []
         for name in self.collision_link_names:
             # fmt: off
             is_static = name in self.model_interface.scene.collision_link_names["static_obstacles"]
-            softened = self.params["collision_constraints_softend"]["static_obstacles" if is_static else name]
+            softened = self.params["collision_constraints_softened"]["static_obstacles" if is_static else name]
             # fmt: on
             if softened:
                 costs.append(self.collisionSoftCsts[name])
@@ -474,6 +515,35 @@ class MPC(MPCBase):
         self.cost = costs
         self.constraints = constraints + [self.controlCst, self.stateCst]
 
+    def _get_cost_name_for_planner(self, planner_type, ref_data_type):
+        """Get the cost function name for a given planner configuration.
+        Returns the name that matches the cost instance created in __init__.
+        """
+        if planner_type == PlannerType.EE:
+            # Always use SE3 (orientation weights can be set to 0 if not needed)
+            return "EEPoseSE3"
+        elif planner_type == PlannerType.BASE:
+            # Always use SE2 (yaw weight can be set to 0 if not needed)
+            return "BasePoseSE2"
+        return None
+
+    def _get_config_key_for_cost_name(self, cost_name):
+        """Map cost function name to simplified config parameter key."""
+        name_mapping = {
+            "EEPoseSE3": "EEPose",
+            "EEPoseSE3BaseFrame": "EEPose",
+            "EEVel6": "EEVel",
+            "BasePoseSE2": "BasePose",
+            "BaseVel3": "BaseVel",
+        }
+        return name_mapping.get(cost_name, cost_name)
+
+    def _set_control_effort_params(self, curr_p_map):
+        """Set ControlEffort cost function parameters in the parameter map."""
+        effort_params = self.params["cost_params"]["Effort"]
+        for param_name in ["Qqa", "Qqb", "Qva", "Qvb", "Qua", "Qub"]:
+            curr_p_map[f"{param_name}_ControlEffort"] = effort_params[param_name]
+
     def control(
         self,
         t: float,
@@ -487,7 +557,24 @@ class MPC(MPCBase):
         q[2:9] = wrap_pi_array(q[2:9])
         xo = np.hstack((q, v))
 
-        # Get warm start point
+        x_bar_initial, u_bar_initial = self._prepare_warm_start(t, xo)
+        r_bar_map = self._process_planners(t, xo, planners)
+        self._update_sdf_map(map)
+        curr_p_map_bar = self._setup_horizon_parameters(
+            r_bar_map, x_bar_initial, u_bar_initial
+        )
+        self._solve_and_extract(xo, t, curr_p_map_bar, x_bar_initial, u_bar_initial)
+        self._update_logging(curr_p_map_bar)
+
+        return (
+            self.v_cmd,
+            self.u_prev,
+            self.u_bar.copy(),
+            self.x_bar[:, self.DoF :].copy(),
+        )
+
+    def _prepare_warm_start(self, t, xo):
+        """Prepare warm start trajectories from previous solution or zeros."""
         if self.t_bar is not None:
             self.u_t = interp1d(
                 self.t_bar,
@@ -503,15 +590,16 @@ class MPC(MPCBase):
             self.u_bar = np.zeros_like(self.u_bar)
             self.x_bar = self._predictTrajectories(xo, self.u_bar)
 
-        x_bar_initial = self.x_bar.copy()
-        u_bar_initial = self.u_bar.copy()
+        return self.x_bar.copy(), self.u_bar.copy()
 
-        # Get ref, sdf map
+    def _process_planners(self, t, xo, planners):
+        """Process planners to extract reference trajectories."""
         r_bar_map = {}
         self.ree_bar = []
         self.rbase_bar = []
+
         for planner in planners:
-            if planner.ref_type == "path":
+            if planner.ref_type == RefType.PATH:
                 p_bar, v_bar = planner.getTrackingPointArray(
                     (xo[: self.DoF], xo[self.DoF :]), self.N + 1, self.dt
                 )
@@ -525,59 +613,58 @@ class MPC(MPCBase):
                 ]
                 p_bar = [r[0] for r in r_bar]
                 v_bar = [r[1] for r in r_bar]
-            contains_none = any(item is None for item in v_bar)
-            velocity_ref_available = not contains_none
 
-            acceptable_ref = True
-            if planner.type == "EE":
-                if planner.ref_data_type == "Vec3":
-                    if planner.frame_id == "base_link":
-                        r_bar_map["EEPos3BaseFrame"] = p_bar
-                    else:
-                        r_bar_map["EEPos3"] = p_bar
-                        if velocity_ref_available:
-                            r_bar_map["EEVel3"] = v_bar
-                elif planner.ref_data_type == "SE3":
-                    if planner.frame_id == "base_link":
-                        r_bar_map["EEPoseBaseFrame"] = p_bar
-                    else:
-                        r_bar_map["EEPose"] = p_bar
-                else:
-                    acceptable_ref = False
-            elif planner.type == "base":
-                if planner.ref_data_type == "Vec2":
-                    r_bar_map["BasePos2"] = p_bar
-                    if velocity_ref_available:
-                        r_bar_map["BaseVel2"] = v_bar
-                elif planner.ref_data_type == "Vec3":
-                    r_bar_map["BasePos3"] = p_bar
-                    if velocity_ref_available:
-                        r_bar_map["BaseVel3"] = v_bar
-                elif planner.ref_data_type == "SE2":
-                    r_bar_map["BasePoseSE2"] = p_bar
-                    if velocity_ref_available:
-                        r_bar_map["BaseVel3"] = v_bar
-                else:
-                    acceptable_ref = False
+            velocity_ref_available = not any(item is None for item in v_bar)
+            cost_name = self._get_cost_name_for_planner(
+                planner.type, planner.ref_data_type
+            )
 
-            if not acceptable_ref:
+            if cost_name is None:
                 self.py_logger.warning(
                     f"unknown cost type {planner.ref_data_type}, planner {planner.name}"
                 )
+            else:
+                r_bar_map[cost_name] = p_bar
+                if velocity_ref_available:
+                    if planner.type == PlannerType.EE:
+                        # EEVel6 expects 6D velocity (3D linear + 3D angular)
+                        # If planner returns 6D, use it; if 3D, pad with zeros for angular
+                        v_bar_6d = []
+                        for v in v_bar:
+                            if len(v) == 6:
+                                v_bar_6d.append(v)
+                            elif len(v) == 3:
+                                # Pad with zeros for angular velocity
+                                v_bar_6d.append(np.concatenate([v, np.zeros(3)]))
+                            else:
+                                raise ValueError(
+                                    f"Unexpected velocity reference dimension: {len(v)} (expected 3 or 6). Value: {v}"
+                                )
+                        r_bar_map["EEVel6"] = v_bar_6d
+                    elif planner.type == PlannerType.BASE:
+                        r_bar_map["BaseVel3"] = v_bar
 
-            if planner.type == "EE":
+            if planner.type == PlannerType.EE:
                 self.ree_bar = p_bar
-            elif planner.type == "base":
+            elif planner.type == PlannerType.BASE:
                 self.rbase_bar = p_bar
 
+        return r_bar_map
+
+    def _update_sdf_map(self, map):
+        """Update SDF map if provided and enabled."""
         t1 = time.perf_counter()
         if map is not None and self.params["sdf_collision_avoidance_enabled"]:
             self.model_interface.sdf_map.update_map(*map)
         t2 = time.perf_counter()
         self.log["time_map_update"] = t2 - t1
 
+    def _setup_horizon_parameters(self, r_bar_map, x_bar_initial, u_bar_initial):
+        """Setup OCP parameters for each horizon step."""
         tp1 = time.perf_counter()
         curr_p_map_bar = []
+
+        # Reset time logging
         for key in self.log.keys():
             if "time" in key:
                 self.log[key] = 0
@@ -585,105 +672,90 @@ class MPC(MPCBase):
         map_params = self.model_interface.sdf_map.get_params()
         for i in range(self.N + 1):
             curr_p_map = self.p_struct(0)
-
-            t1 = time.perf_counter()
-            if self.params["sdf_collision_avoidance_enabled"]:
-                curr_p_map["x_grid_sdf"] = map_params[0]
-                curr_p_map["y_grid_sdf"] = map_params[1]
-                if self.model_interface.sdf_map.dim == 3:
-                    curr_p_map["z_grid_sdf"] = map_params[2]
-                    curr_p_map["value_sdf"] = map_params[3]
-                else:
-                    curr_p_map["value_sdf"] = map_params[2]
-            t2 = time.perf_counter()
-            self.log["time_ocp_set_params_map"] += t2 - t1
-
-            for name in self.collision_link_names:
-                cbf_cst_type = False
-                if (
-                    name
-                    in self.model_interface.scene.collision_link_names[
-                        "static_obstacles"
-                    ]
-                ):
-                    if (
-                        self.params["collision_constraint_type"]["static_obstacles"]
-                        == "SignedDistanceConstraintCBF"
-                    ):
-                        cbf_cst_type = True
-                else:
-                    if (
-                        self.params["collision_constraint_type"][name]
-                        == "SignedDistanceConstraintCBF"
-                    ):
-                        cbf_cst_type = True
-
-                if cbf_cst_type:
-                    p_name = "_".join(["gamma", name])
-                    curr_p_map[p_name] = self.params["collision_cbf_gamma"][name]
-
-            # set initial guess
-            t1 = time.perf_counter()
-            self.ocp_solver.set(i, "x", x_bar_initial[i])
-            if i < self.N:
-                self.ocp_solver.set(i, "u", u_bar_initial[i])
-            if self.lam_bar is not None:
-                self.ocp_solver.set(i, "lam", self.lam_bar[i])
-
-            t2 = time.perf_counter()
-            self.log["time_ocp_set_params_set_x"] += t2 - t1
-
-            # set parameters for tracking cost functions
-            t1 = time.perf_counter()
-            p_keys = self.p_struct.keys()
-            for name, r_bar in r_bar_map.items():
-                p_name_r = "_".join(["r", name])
-                p_name_W = "_".join(["W", name])
-
-                if p_name_r in p_keys:
-                    curr_p_map[p_name_r] = r_bar[i]
-                    if i == self.N:
-                        curr_p_map[p_name_W] = np.diag(
-                            self.params["cost_params"][name]["P"]
-                        )
-                    else:
-                        curr_p_map[p_name_W] = np.diag(
-                            self.params["cost_params"][name]["Qk"]
-                        )
-                else:
-                    self.py_logger.warning(f"unknown p name {p_name_r}")
-
-            curr_p_map["Qqa_ControlEffort"] = self.params["cost_params"]["Effort"][
-                "Qqa"
-            ]
-            curr_p_map["Qqb_ControlEffort"] = self.params["cost_params"]["Effort"][
-                "Qqb"
-            ]
-            curr_p_map["Qva_ControlEffort"] = self.params["cost_params"]["Effort"][
-                "Qva"
-            ]
-            curr_p_map["Qvb_ControlEffort"] = self.params["cost_params"]["Effort"][
-                "Qvb"
-            ]
-            curr_p_map["Qua_ControlEffort"] = self.params["cost_params"]["Effort"][
-                "Qua"
-            ]
-            curr_p_map["Qub_ControlEffort"] = self.params["cost_params"]["Effort"][
-                "Qub"
-            ]
-
-            t2 = time.perf_counter()
-            self.log["time_ocp_set_params_tracking"] += t2 - t1
-
-            t1 = time.perf_counter()
-            self.ocp_solver.set(i, "p", curr_p_map.cat.full().flatten())
-            t2 = time.perf_counter()
-            self.log["time_ocp_set_params_setp"] += t2 - t1
+            self._set_sdf_params(curr_p_map, map_params)
+            self._set_cbf_gamma_params(curr_p_map)
+            self._set_initial_guess(curr_p_map, i, x_bar_initial, u_bar_initial)
+            self._set_tracking_params(curr_p_map, r_bar_map, i)
+            self._set_control_effort_params(curr_p_map)
+            self._set_ocp_params(curr_p_map, i)
             curr_p_map_bar.append(curr_p_map)
 
         tp2 = time.perf_counter()
         self.log["time_ocp_set_params"] = tp2 - tp1
+        return curr_p_map_bar
 
+    def _set_sdf_params(self, curr_p_map, map_params):
+        """Set SDF map parameters in the parameter map."""
+        t1 = time.perf_counter()
+        if self.params["sdf_collision_avoidance_enabled"]:
+            curr_p_map["x_grid_sdf"] = map_params[0]
+            curr_p_map["y_grid_sdf"] = map_params[1]
+            if self.model_interface.sdf_map.dim == 3:
+                curr_p_map["z_grid_sdf"] = map_params[2]
+                curr_p_map["value_sdf"] = map_params[3]
+            else:
+                curr_p_map["value_sdf"] = map_params[2]
+        t2 = time.perf_counter()
+        self.log["time_ocp_set_params_map"] += t2 - t1
+
+    def _set_cbf_gamma_params(self, curr_p_map):
+        """Set CBF gamma parameters for collision constraints."""
+        for name in self.collision_link_names:
+            is_static = (
+                name
+                in self.model_interface.scene.collision_link_names["static_obstacles"]
+            )
+            constraint_type = (
+                self.params["collision_constraint_type"]["static_obstacles"]
+                if is_static
+                else self.params["collision_constraint_type"][name]
+            )
+
+            if constraint_type == "SignedDistanceConstraintCBF":
+                p_name = "_".join(["gamma", name])
+                curr_p_map[p_name] = self.params["collision_cbf_gamma"][name]
+
+    def _set_initial_guess(self, curr_p_map, i, x_bar_initial, u_bar_initial):
+        """Set initial guess for state, control, and multipliers."""
+        t1 = time.perf_counter()
+        self.ocp_solver.set(i, "x", x_bar_initial[i])
+        if i < self.N:
+            self.ocp_solver.set(i, "u", u_bar_initial[i])
+        if self.lam_bar is not None:
+            self.ocp_solver.set(i, "lam", self.lam_bar[i])
+        t2 = time.perf_counter()
+        self.log["time_ocp_set_params_set_x"] += t2 - t1
+
+    def _set_tracking_params(self, curr_p_map, r_bar_map, i):
+        """Set tracking cost function parameters."""
+        t1 = time.perf_counter()
+        p_keys = self.p_struct.keys()
+        for name, r_bar in r_bar_map.items():
+            p_name_r = "_".join(["r", name])
+            p_name_W = "_".join(["W", name])
+
+            if p_name_r in p_keys:
+                curr_p_map[p_name_r] = r_bar[i]
+                config_key = self._get_config_key_for_cost_name(name)
+                cost_params = self.params["cost_params"].get(config_key, {})
+                weight_key = "P" if i == self.N else "Qk"
+                curr_p_map[p_name_W] = np.diag(
+                    cost_params.get(weight_key, [1.0] * len(r_bar[i]))
+                )
+            else:
+                self.py_logger.warning(f"unknown p name {p_name_r}")
+        t2 = time.perf_counter()
+        self.log["time_ocp_set_params_tracking"] += t2 - t1
+
+    def _set_ocp_params(self, curr_p_map, i):
+        """Set OCP parameters for the current horizon step."""
+        t1 = time.perf_counter()
+        self.ocp_solver.set(i, "p", curr_p_map.cat.full().flatten())
+        t2 = time.perf_counter()
+        self.log["time_ocp_set_params_setp"] += t2 - t1
+
+    def _solve_and_extract(self, xo, t, curr_p_map_bar, x_bar_initial, u_bar_initial):
+        """Solve the OCP and extract solution."""
         t1 = time.perf_counter()
         self.ocp_solver.solve_for_x0(xo, fail_on_nonzero_status=False)
         t2 = time.perf_counter()
@@ -700,15 +772,8 @@ class MPC(MPCBase):
         self.log["cost_final"] = self.ocp_solver.get_cost()
 
         if self.ocp_solver.status != 0:
-            x_bar = []
-            u_bar = []
-            print(f"xo: {xo}")
-            for i in range(self.N):
-                print(f"stage {i}: x: {self.ocp_solver.get(i, 'x')}")
-                x_bar.append(self.ocp_solver.get(i, "x"))
-                print(f"stage {i}: u: {self.ocp_solver.get(i, 'u')}")
-                u_bar.append(self.ocp_solver.get(i, "u"))
-
+            x_bar = [self.ocp_solver.get(i, "x") for i in range(self.N)]
+            u_bar = [self.ocp_solver.get(i, "u") for i in range(self.N)]
             x_bar.append(self.ocp_solver.get(self.N, "x"))
 
             self.log["iter_snapshot"] = {
@@ -728,7 +793,7 @@ class MPC(MPCBase):
         else:
             self.log["iter_snapshot"] = None
 
-        # get solution
+        # Extract solution
         self.u_prev = self.u_bar[0].copy()
         self.lam_bar = []
         for i in range(self.N):
@@ -739,10 +804,10 @@ class MPC(MPCBase):
         self.x_bar[self.N, :] = self.ocp_solver.get(self.N, "x")
         self.lam_bar.append(self.ocp_solver.get(self.N, "lam"))
         self.t_bar = t + np.arange(self.N) * self.dt
-
         self.v_cmd = self.x_bar[0][self.robot.DoF :].copy()
 
-        # For rviz visualization
+    def _update_logging(self, curr_p_map_bar):
+        """Update logging and visualization data."""
         t1 = time.perf_counter()
 
         self.ee_bar, self.base_bar = self._getEEBaseTrajectories(self.x_bar)
@@ -753,11 +818,12 @@ class MPC(MPCBase):
             self.ee_bar[:, 0], self.ee_bar[:, 1], self.ee_bar[:, 2]
         ).reshape((3, -1))
 
+        base_z = np.ones(self.N + 1) * BASE_Z_HEIGHT_FOR_SDF
         self.sdf_bar["base"] = self.model_interface.sdf_map.query_val(
-            self.base_bar[:, 0], self.base_bar[:, 1], np.ones(self.N + 1) * 0.2
+            self.base_bar[:, 0], self.base_bar[:, 1], base_z
         )
         self.sdf_grad_bar["base"] = self.model_interface.sdf_map.query_grad(
-            self.base_bar[:, 0], self.base_bar[:, 1], np.ones(self.N + 1) * 0.2
+            self.base_bar[:, 0], self.base_bar[:, 1], base_z
         ).reshape((3, -1))
 
         for name in self.collision_link_names:
@@ -775,7 +841,6 @@ class MPC(MPCBase):
             self.log["_".join(["sdf", "param", str(i)])] = param
         t2 = time.perf_counter()
         self.log["time_ocp_overhead"] = t2 - t1
-        return self.v_cmd, self.u_prev, self.u_bar.copy(), self.x_bar[:, 9:].copy()
 
     def _get_log(self):
         log = {

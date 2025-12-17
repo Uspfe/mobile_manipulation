@@ -53,7 +53,7 @@ python3 -m pip install -r requirements.txt
 ## Usage
 ### Compile MPC Controller
 ```bash
-rosrun mm_control mpc_generate_c_code.py --config $(rospack find mm_run)/config/simple_experiment.yaml
+python3 mm_control/scripts/generate_acados_code.py --config $(rospack find mm_run)/config/simple_experiment.yaml
 ```
 
 ### Run Controller with PyBullet Simulation (Synchronous)
@@ -88,10 +88,3 @@ Configuration files are located in `mm_run/config/`. Key configuration options i
 - **Scene**: Environment and obstacle definitions (`config/scene/`)
 - **Controller**: MPC parameters (`config/controller/`)
 - **Simulation**: Simulation settings (`config/sim/`)
-
-## Development
-This repository provides a foundation for mobile manipulation research. Key extension points:
-
-- **Custom planners**: Extend `Planner` or `TrajectoryPlanner` in `mm_plan/PlanBaseClass.py`
-- **Custom cost functions**: Add to `mm_control/MPCCostFunctions.py`
-- **Custom constraints**: Add to `mm_control/MPCConstraints.py`

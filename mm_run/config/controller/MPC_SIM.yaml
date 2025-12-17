@@ -18,7 +18,7 @@ controller:
   collision_constraint_type: "SignedDistanceConstraint"
 
   # Enable soft constraints for SDF and static obstacles in simulation
-  collision_constraints_softend:
+  collision_constraints_softened:
     sdf: True
     static_obstacles: True
 

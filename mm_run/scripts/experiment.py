@@ -5,44 +5,23 @@ import os
 import time
 
 import numpy as np
-from spatialmath.base import rotz
+from scipy.spatial.transform import Rotation as Rot
 
 import mm_control.MPC as MPC
-import mm_plan.TaskManager as TaskManager
+from mm_plan.TaskManager import TaskManager
 from mm_simulator import simulation
 from mm_utils import parsing
+from mm_utils.enums import PlannerType
 from mm_utils.logging import DataLogger
-
-
-def planner_coord_transform(q, ree, planners):
-    R_wb = rotz(q[2])
-    for planner in planners:
-        P = np.zeros(3)
-        if planner.frame_id == "base":
-            P = np.hstack((q[:2], 0))
-        elif planner.frame_id == "EE":
-            P = ree
-
-        if planner.__class__.__name__ == "EESimplePlanner":
-            planner.target_pos = R_wb @ planner.target_pos + P
-        elif planner.__class__.__name__ == "EEPosTrajectoryCircle":
-            planner.c = R_wb @ planner.c + P
-            planner.plan["p"] = planner.plan["p"] @ R_wb.T + P
-
-        elif planner.__class__.__name__ == "BaseSingleWaypoint":
-            planner.target_pos = (R_wb @ np.hstack((planner.target_pos, 0)))[:2] + P[:2]
-        elif planner.__class__.__name__ == "BasePosTrajectoryCircle":
-            planner.c = R_wb[:2, :2] @ planner.c + P[:2]
-            planner.plan["p"] = planner.plan["p"] @ R_wb[:2, :2].T + P[:2]
-        elif planner.__class__.__name__ == "BasePosTrajectoryLine":
-            planner.plan["p"] = planner.plan["p"] @ R_wb[:2, :2].T + P[:2]
 
 
 def main():
     np.set_printoptions(precision=3, suppress=True)
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--config", required=True, help="Path to configuration file.")
+    parser.add_argument(
+        "-c", "--config", required=True, help="Path to configuration file."
+    )
     parser.add_argument(
         "--video",
         nargs="?",
@@ -110,10 +89,8 @@ def main():
 
     controller = control_class(ctrl_config)
 
-    # Stack of Tasks
-    sot_class = getattr(TaskManager, planner_config["sot_type"])
-    sot = sot_class(planner_config)
-    planner_coord_transform(robot.joint_states()[0], robot.link_pose()[0], sot.planners)
+    # Task Manager (simplified - only sequential execution)
+    sot = TaskManager(planner_config)
 
     # set py logger level
     ch = logging.StreamHandler()
@@ -166,29 +143,39 @@ def main():
 
         robot.command_velocity(u)
         t, _ = sim.step(t)
+
+        # Convert to pose arrays in world frame
         ee_curr_pos, ee_cur_orn = robot.link_pose()
-        ee_states = (ee_curr_pos, ee_cur_orn)
-        states = {"base": (robot_states[0][:3], robot_states[1][:3]), "EE": ee_states}
+        ee_euler = Rot.from_quat(ee_cur_orn).as_euler("xyz")
+        ee_pose = np.hstack([ee_curr_pos, ee_euler])
+
+        ee_lin_vel, ee_ang_vel = robot.link_velocity()
+        ee_vel = np.hstack([ee_lin_vel, ee_ang_vel])  # [vx, vy, vz, wx, wy, wz]
+
+        base_pose = robot_states[0][:3]  # [x, y, yaw] already in world frame
+        base_vel = robot_states[1][:3]  # [vx, vy, vyaw]
+
+        states = {
+            "base": {"pose": base_pose, "velocity": base_vel},
+            "EE": {"pose": ee_pose, "velocity": ee_vel},
+        }
 
         sot.update(t, states)
 
         # log
         v_ew_w, ω_ew_w = robot.link_velocity()
-        r_ew_wd = []
-        r_bw_wd = []
-        v_bw_wd = []
-        v_ew_wd = []
+
+        # Get tracking points from planners (only log first of each type)
+        r_ew_wd = None
+        r_bw_wd = None
+        v_ew_wd = None
+        v_bw_wd = None
         for planner in planners:
-            if planner.type == "EE":
+            if planner.type == PlannerType.EE and r_ew_wd is None:
                 r_ew_wd, v_ew_wd = planner.getTrackingPoint(t, robot_states)
-            elif planner.type == "base":
-                if planner.name == "PartialPlanner":
-                    r_bw_wd, v_bw_wd = planner.getTrackingPoint(t, robot_states)
-                    ref_q_dot, ref_u = planner.getRefVelandAcc(t)
-                    logger.append("ref_vels", ref_q_dot)
-                    logger.append("ref_accs", ref_u)
-                else:
-                    r_bw_wd, v_bw_wd = planner.getTrackingPoint(t, robot_states)
+            elif planner.type == PlannerType.BASE and r_bw_wd is None:
+                r_bw_wd, v_bw_wd = planner.getTrackingPoint(t, robot_states)
+
         logger.append("ts", t)
         logger.append("xs", np.hstack(robot_states))
         logger.append("controller_run_time", t1 - t0)
@@ -200,22 +187,22 @@ def main():
         logger.append("ω_ew_ws", ω_ew_w)
         logger.append("r_bw_ws", robot_states[0][:2])
 
-        if len(r_bw_wd) > 0:
+        if r_bw_wd is not None:
             if r_bw_wd.shape[0] == 2:
                 logger.append("r_bw_w_ds", r_bw_wd)
             elif r_bw_wd.shape[0] == 3:
                 logger.append("r_bw_w_ds", r_bw_wd[:2])
                 logger.append("yaw_bw_w_ds", r_bw_wd[2])
                 logger.append("yaw_bw_ws", robot_states[0][2])
-        if len(v_bw_wd) > 0:
+        if v_bw_wd is not None:
             if v_bw_wd.shape[0] == 2:
                 logger.append("v_bw_w_ds", v_bw_wd)
             elif v_bw_wd.shape[0] == 3:
                 logger.append("v_bw_w_ds", v_bw_wd[:2])
                 logger.append("ω_bw_w_ds", v_bw_wd[2])
-        if len(r_ew_wd) > 0:
+        if r_ew_wd is not None:
             logger.append("r_ew_w_ds", r_ew_wd)
-        if len(v_ew_wd) > 0:
+        if v_ew_wd is not None:
             logger.append("v_ew_w_ds", v_ew_wd)
         if "MPC" in ctrl_config["type"]:
             for key, val in controller.log.items():
