@@ -58,8 +58,7 @@ python3 mm_control/scripts/generate_acados_code.py --config $(rospack find mm_ru
 
 ### Run Controller with PyBullet Simulation (Synchronous)
 ```bash
-roscd mm_run/scripts
-python3 experiment.py --config $(rospack find mm_run)/config/simple_experiment.yaml --GUI
+python3 mm_run/scripts/experiment.py --config $(rospack find mm_run)/config/simple_experiment.yaml --GUI
 ```
 
 ### Run Controller and Simulation Asynchronously (ROS Nodes)

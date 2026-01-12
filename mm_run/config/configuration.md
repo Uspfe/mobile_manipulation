@@ -27,7 +27,9 @@ map        # SDF map (typically included from config/map/)
 The planner section defines tasks executed sequentially by the TaskManager.
 
 ### Tasks
-Each task in the `tasks` list defines a planning objective for the mobile base or end-effector.
+Each task in the `tasks` list can specify base and/or end-effector targets. This allows:
+- **Simultaneous execution**: Specify both `base_pose` and `ee_pose` in one task
+- **Sequential execution**: Specify only `base_pose` or only `ee_pose` in separate tasks
 
 **Common Parameters:**
 ```yaml
@@ -35,48 +37,61 @@ planner:
   tasks:
     - name: str                    # Task identifier
       planner_type: "WaypointPlanner" | "PathPlanner"
-      frame_id: "base" | "EE"      # "base" for mobile base, "EE" for end-effector
       tracking_err_tol: float      # Position error tolerance [m]
       tracking_ori_err_tol: float  # Optional: orientation error tolerance [rad] (default: 0.1)
 ```
 
-**WaypointPlanner**: Move to a single target pose
+**WaypointPlanner**: Move to target pose(s)
 ```yaml
-- frame_id: "base"
-  name: "Base Waypoint"
+# Simultaneous: Move base and EE together
+- name: "Approach Target"
   planner_type: "WaypointPlanner"
-  target_pose: [x, y, yaw]        # SE2: [m, m, rad] in world frame
-  tracking_err_tol: 0.2
-  hold_period: 0.0                # Optional: hold time at target [s]
+  base_pose: [x, y, yaw]                    # Optional: SE2 [m, m, rad] in world frame
+  ee_pose: [x, y, z, roll, pitch, yaw]      # Optional: SE3 [m, m, m, rad, rad, rad] in world frame
+  tracking_err_tol: 0.1
+  hold_period: 1.0                          # Optional: hold time at target [s]
 
-- frame_id: "EE"
-  name: "EE Waypoint"
+# Sequential: Only base moves
+- name: "Move Base"
   planner_type: "WaypointPlanner"
-  target_pose: [x, y, z, roll, pitch, yaw]  # SE3: [m, m, m, rad, rad, rad] in world frame
+  base_pose: [2.0, 1.0, 0.0]
+  tracking_err_tol: 0.2
+
+# Sequential: Only EE moves
+- name: "Reach Down"
+  planner_type: "WaypointPlanner"
+  ee_pose: [2.2, 1.2, 0.5, 1.57, 0, 0]
   tracking_err_tol: 0.05
-  hold_period: 1.0                # Optional: hold time at target [s]
+  hold_period: 1.0
 ```
 
 **PathPlanner**: Follow a pre-computed path
 ```yaml
-- frame_id: "base"
-  name: "Base Path"
+# Simultaneous: Follow base and EE paths together
+- name: "Coordinated Motion"
   planner_type: "PathPlanner"
-  path: [[x1, y1, yaw1], [x2, y2, yaw2], ...]  # Array of SE2 poses
+  base_path: [[x1, y1, yaw1], [x2, y2, yaw2], ...]  # Optional: Array of SE2 poses
+  ee_path: [[x1, y1, z1, r1, p1, y1], [x2, y2, z2, r2, p2, y2], ...]  # Optional: Array of SE3 poses
   dt: 0.1                         # Time step between path points [s]
-  tracking_err_tol: 0.2
+  tracking_err_tol: 0.1
   end_stop: false                 # Optional: require zero velocity at end (default: false)
 
-- frame_id: "EE"
-  name: "EE Path"
+# Sequential: Only base path
+- name: "Base Path"
   planner_type: "PathPlanner"
-  path: [[x1, y1, z1, r1, p1, y1], [x2, y2, z2, r2, p2, y2], ...]  # Array of SE3 poses
+  base_path: [[0, 0, 0], [1, 0, 0], [2, 1, 1.57]]
+  dt: 0.1
+  tracking_err_tol: 0.2
+
+# Sequential: Only EE path
+- name: "EE Path"
+  planner_type: "PathPlanner"
+  ee_path: [[1, 0, 1, 0, 0, 0], [1.5, 0.2, 0.8, 0, 0, 0]]
   dt: 0.1
   tracking_err_tol: 0.02
-  end_stop: false
 ```
 
-**Note**: `sot_type` is optional and currently unused (TaskManager executes tasks sequentially).
+**Note**: At least one of `base_pose`/`base_path` or `ee_pose`/`ee_path` must be specified. Tasks execute sequentially, but each task can coordinate base and EE simultaneously.
 
 ## Controller
 

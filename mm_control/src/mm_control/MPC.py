@@ -2,7 +2,7 @@ import logging
 import time
 from abc import abstractmethod
 from pathlib import Path
-from typing import List, Tuple, Union
+from typing import Tuple
 
 import casadi as cs
 import mobile_manipulation_central as mm
@@ -20,9 +20,7 @@ from mm_control.MPCCostFunctions import (
 )
 from mm_control.robot import CasadiModelInterface as ModelInterface
 from mm_control.robot import MobileManipulator3D as MM
-from mm_plan.Planners import Planner, TrajectoryPlanner
 from mm_utils.casadi_struct import casadi_sym_struct
-from mm_utils.enums import PlannerType, RefType
 from mm_utils.math import wrap_pi_array
 from mm_utils.parsing import parse_ros_path
 
@@ -107,13 +105,20 @@ class MPCBase:
         self,
         t: float,
         robot_states: Tuple[NDArray[np.float64], NDArray[np.float64]],
-        planners: List[Union[Planner, TrajectoryPlanner]],
+        references: dict,
         map=None,
     ):
         """
         :param t: current control time
         :param robot_states: (q, v) generalized coordinates and velocities
-        :param planners: a list of planner instances
+        :param references: Dictionary with reference trajectories from TaskManager:
+            {
+                "base_pose": array of shape (N+1, 3) or None,
+                "base_velocity": array of shape (N+1, 3) or None,
+                "ee_pose": array of shape (N+1, 6) or None,
+                "ee_velocity": array of shape (N+1, 6) or None,
+            }
+        :param map: SDF map data (optional)
         :return: u, currently the best control inputs, aka, u_bar[0]
         """
         pass
@@ -475,15 +480,6 @@ class MPC(MPCBase):
         )
         costs.append(
             CostFunctionRegistry.create(
-                "EEPose",
-                self.robot,
-                cost_params.get("EEPose", {}),
-                pose_type="SE3",
-                frame="base",
-            )
-        )
-        costs.append(
-            CostFunctionRegistry.create(
                 "EEVel", self.robot, cost_params.get("EEVel", {})
             )
         )
@@ -515,23 +511,10 @@ class MPC(MPCBase):
         self.cost = costs
         self.constraints = constraints + [self.controlCst, self.stateCst]
 
-    def _get_cost_name_for_planner(self, planner_type, ref_data_type):
-        """Get the cost function name for a given planner configuration.
-        Returns the name that matches the cost instance created in __init__.
-        """
-        if planner_type == PlannerType.EE:
-            # Always use SE3 (orientation weights can be set to 0 if not needed)
-            return "EEPoseSE3"
-        elif planner_type == PlannerType.BASE:
-            # Always use SE2 (yaw weight can be set to 0 if not needed)
-            return "BasePoseSE2"
-        return None
-
     def _get_config_key_for_cost_name(self, cost_name):
         """Map cost function name to simplified config parameter key."""
         name_mapping = {
             "EEPoseSE3": "EEPose",
-            "EEPoseSE3BaseFrame": "EEPose",
             "EEVel6": "EEVel",
             "BasePoseSE2": "BasePose",
             "BaseVel3": "BaseVel",
@@ -548,7 +531,7 @@ class MPC(MPCBase):
         self,
         t: float,
         robot_states: Tuple[NDArray[np.float64], NDArray[np.float64]],
-        planners: List[Union[Planner, TrajectoryPlanner]],
+        references: dict,
         map=None,
     ):
         self.py_logger.debug("control time {}".format(t))
@@ -558,7 +541,7 @@ class MPC(MPCBase):
         xo = np.hstack((q, v))
 
         x_bar_initial, u_bar_initial = self._prepare_warm_start(t, xo)
-        r_bar_map = self._process_planners(t, xo, planners)
+        r_bar_map = self._convert_references_to_r_bar_map(references, xo)
         self._update_sdf_map(map)
         curr_p_map_bar = self._setup_horizon_parameters(
             r_bar_map, x_bar_initial, u_bar_initial
@@ -592,64 +575,73 @@ class MPC(MPCBase):
 
         return self.x_bar.copy(), self.u_bar.copy()
 
-    def _process_planners(self, t, xo, planners):
-        """Process planners to extract reference trajectories."""
+    def _convert_references_to_r_bar_map(self, references, xo):
+        """Convert references from TaskManager format to MPC cost function format.
+
+        Args:
+            references: Dictionary from TaskManager with keys:
+                - "base_pose": array of shape (N+1, 3) or None
+                - "base_velocity": array of shape (N+1, 3) or None
+                - "ee_pose": array of shape (N+1, 6) or None
+                - "ee_velocity": array of shape (N+1, 6) or None
+            xo: Current state vector [q, v] to compute current EE pose if needed
+
+        Returns:
+            Dictionary with cost function names as keys:
+                - "BasePoseSE2": list of arrays (N+1, 3)
+                - "BaseVel3": list of arrays (N+1, 3)
+                - "EEPoseSE3": list of arrays (N+1, 6)
+                - "EEVel6": list of arrays (N+1, 6)
+        """
         r_bar_map = {}
-        self.ree_bar = []
-        self.rbase_bar = []
 
-        for planner in planners:
-            if planner.ref_type == RefType.PATH:
-                p_bar, v_bar = planner.getTrackingPointArray(
-                    (xo[: self.DoF], xo[self.DoF :]), self.N + 1, self.dt
-                )
-            else:
-                r_bar = [
-                    planner.getTrackingPoint(
-                        t + k * self.dt,
-                        (self.x_bar[k, : self.DoF], self.x_bar[k, self.DoF :]),
-                    )
-                    for k in range(self.N + 1)
-                ]
-                p_bar = [r[0] for r in r_bar]
-                v_bar = [r[1] for r in r_bar]
-
-            velocity_ref_available = not any(item is None for item in v_bar)
-            cost_name = self._get_cost_name_for_planner(
-                planner.type, planner.ref_data_type
+        # Convert base pose reference - only if provided
+        if references.get("base_pose") is not None:
+            base_pose = references["base_pose"]
+            r_bar_map["BasePoseSE2"] = [base_pose[i] for i in range(self.N + 1)]
+            self.rbase_bar = (
+                base_pose.tolist() if hasattr(base_pose, "tolist") else base_pose
             )
+        else:
+            # No base reference: set empty list for visualization
+            self.rbase_bar = []
 
-            if cost_name is None:
-                self.py_logger.warning(
-                    f"unknown cost type {planner.ref_data_type}, planner {planner.name}"
-                )
-            else:
-                r_bar_map[cost_name] = p_bar
-                if velocity_ref_available:
-                    if planner.type == PlannerType.EE:
-                        # EEVel6 expects 6D velocity (3D linear + 3D angular)
-                        # If planner returns 6D, use it; if 3D, pad with zeros for angular
-                        v_bar_6d = []
-                        for v in v_bar:
-                            if len(v) == 6:
-                                v_bar_6d.append(v)
-                            elif len(v) == 3:
-                                # Pad with zeros for angular velocity
-                                v_bar_6d.append(np.concatenate([v, np.zeros(3)]))
-                            else:
-                                raise ValueError(
-                                    f"Unexpected velocity reference dimension: {len(v)} (expected 3 or 6). Value: {v}"
-                                )
-                        r_bar_map["EEVel6"] = v_bar_6d
-                    elif planner.type == PlannerType.BASE:
-                        r_bar_map["BaseVel3"] = v_bar
+        # Convert base velocity reference - only if provided
+        if references.get("base_velocity") is not None:
+            base_vel = references["base_velocity"]
+            r_bar_map["BaseVel3"] = [base_vel[i] for i in range(self.N + 1)]
 
-            if planner.type == PlannerType.EE:
-                self.ree_bar = p_bar
-            elif planner.type == PlannerType.BASE:
-                self.rbase_bar = p_bar
+        # Convert EE pose reference - only if provided
+        if references.get("ee_pose") is not None:
+            ee_pose = references["ee_pose"]
+            # EE reference is in world frame
+            r_bar_map["EEPoseSE3"] = [ee_pose[i] for i in range(self.N + 1)]
+            self.ree_bar = ee_pose.tolist() if hasattr(ee_pose, "tolist") else ee_pose
+        else:
+            # No EE reference: set empty list for visualization
+            self.ree_bar = []
+
+        # Convert EE velocity reference - only if provided
+        if references.get("ee_velocity") is not None:
+            ee_vel = references["ee_velocity"]
+            r_bar_map["EEVel6"] = [ee_vel[i] for i in range(self.N + 1)]
 
         return r_bar_map
+
+    def _quat_to_rpy(self, quat):
+        """Convert quaternion to Euler angles [roll, pitch, yaw] (xyz order).
+
+        Args:
+            quat: Quaternion in [x, y, z, w] format (from spatialmath)
+
+        Returns:
+            Euler angles [roll, pitch, yaw] in xyz order
+        """
+        from scipy.spatial.transform import Rotation as Rot
+
+        # spatialmath returns [x, y, z, w], scipy expects [x, y, z, w]
+        r = Rot.from_quat(quat)
+        return r.as_euler("xyz")
 
     def _update_sdf_map(self, map):
         """Update SDF map if provided and enabled."""
@@ -730,20 +722,52 @@ class MPC(MPCBase):
         """Set tracking cost function parameters."""
         t1 = time.perf_counter()
         p_keys = self.p_struct.keys()
-        for name, r_bar in r_bar_map.items():
-            p_name_r = "_".join(["r", name])
-            p_name_W = "_".join(["W", name])
+
+        # List of all possible tracking cost functions (world frame only)
+        all_tracking_costs = ["BasePoseSE2", "BaseVel3", "EEPoseSE3", "EEVel6"]
+
+        for name in all_tracking_costs:
+            p_name_r = f"r_{name}"  # Reference parameter for the tracking cost (e.g., r_EEPoseSE3)
+            p_name_W = f"W_{name}"  # Weight matrix parameter for the tracking cost (e.g., W_EEPoseSE3)
 
             if p_name_r in p_keys:
-                curr_p_map[p_name_r] = r_bar[i]
-                config_key = self._get_config_key_for_cost_name(name)
-                cost_params = self.params["cost_params"].get(config_key, {})
-                weight_key = "P" if i == self.N else "Qk"
-                curr_p_map[p_name_W] = np.diag(
-                    cost_params.get(weight_key, [1.0] * len(r_bar[i]))
-                )
+                if name in r_bar_map:
+                    # Reference provided: set reference and use configured weights
+                    curr_p_map[p_name_r] = r_bar_map[name][i]
+                    config_key = self._get_config_key_for_cost_name(name)
+                    cost_params = self.params["cost_params"].get(config_key, {})
+                    weight_key = "P" if i == self.N else "Qk"
+                    weights = cost_params.get(
+                        weight_key, [1.0] * len(r_bar_map[name][i])
+                    )
+                    curr_p_map[p_name_W] = np.diag(weights)
+                else:
+                    # No reference provided: set weights to zero (minimize control effort only)
+                    config_key = self._get_config_key_for_cost_name(name)
+                    cost_params = self.params["cost_params"].get(config_key, {})
+                    weight_key = "P" if i == self.N else "Qk"
+                    # Get dimension from default weights
+                    default_weights = cost_params.get(weight_key, [1.0])
+                    if isinstance(default_weights, (list, np.ndarray)):
+                        dim = len(default_weights)
+                    else:
+                        # Scalar weight - determine dimension from cost function name
+                        if name == "EEPoseSE3":
+                            dim = 6
+                        elif name == "BasePoseSE2":
+                            dim = 3
+                        elif name == "EEVel6":
+                            dim = 6
+                        elif name == "BaseVel3":
+                            dim = 3
+                        else:
+                            raise ValueError(f"Unknown cost function name: {name}")
+                    # Set zero reference and zero weights
+                    curr_p_map[p_name_r] = np.zeros(dim)
+                    curr_p_map[p_name_W] = np.diag(np.zeros(dim))
             else:
-                self.py_logger.warning(f"unknown p name {p_name_r}")
+                raise RuntimeError(f"Parameter {p_name_r} not found in p_struct keys")
+
         t2 = time.perf_counter()
         self.log["time_ocp_set_params_tracking"] += t2 - t1
 

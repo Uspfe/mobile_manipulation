@@ -28,7 +28,7 @@ import mm_control.MPC as MPC
 from mm_control.robot import CasadiModelInterface, MobileManipulator3D
 from mm_plan.TaskManager import TaskManager
 from mm_utils import parsing
-from mm_utils.enums import PlannerType, RefDataType, RefType
+from mm_utils.enums import RefType
 from mm_utils.logging import DataLogger
 from mm_utils.math import wrap_pi_scalar
 
@@ -226,38 +226,59 @@ class ControllerROSNode:
         msg.header.stamp = rospy.Time.now()
 
         for planner in planners:
-            p, v = planner.getTrackingPoint(t, robot_states)
+            # Get base reference if available
+            if planner.has_base_ref:
+                p, v = planner.getBaseTrackingPoint(t, robot_states)
+                if p is not None:
+                    msg.joint_names.append("base")
+                    pt_msg = MultiDOFJointTrajectoryPoint()
+                    transform = Transform()
+                    transform.translation.x = p[0]
+                    transform.translation.y = p[1]
+                    transform.translation.z = 0.25  # Display height
+                    quat = tf.quaternion_from_euler(0, 0, p[2])
+                    transform.rotation.x = quat[0]
+                    transform.rotation.y = quat[1]
+                    transform.rotation.z = quat[2]
+                    transform.rotation.w = quat[3]
+                    pt_msg.transforms.append(transform)
+                    if v is not None:
+                        velocity = Twist()
+                        velocity.linear.x = v[0]
+                        velocity.linear.y = v[1]
+                        velocity.angular.z = v[2]
+                        pt_msg.velocities.append(velocity)
+                    msg.points.append(pt_msg)
 
-            msg.joint_names.append(planner.type)
-            pt_msg = MultiDOFJointTrajectoryPoint()
+            # Get EE reference if available
+            if planner.has_ee_ref:
+                p, v = planner.getEETrackingPoint(t, robot_states)
+                if p is not None:
+                    msg.joint_names.append("EE")
+                    pt_msg = MultiDOFJointTrajectoryPoint()
+                    transform = Transform()
+                    transform.translation.x = p[0]
+                    transform.translation.y = p[1]
+                    transform.translation.z = p[2]
+                    quat = tf.quaternion_from_euler(*p[3:])
+                    transform.rotation.x = quat[0]
+                    transform.rotation.y = quat[1]
+                    transform.rotation.z = quat[2]
+                    transform.rotation.w = quat[3]
+                    pt_msg.transforms.append(transform)
+                    if v is not None:
+                        velocity = Twist()
+                        velocity.linear.x = v[0]
+                        velocity.linear.y = v[1]
+                        velocity.linear.z = v[2]
+                        velocity.angular.x = v[3] if len(v) > 3 else 0
+                        velocity.angular.y = v[4] if len(v) > 4 else 0
+                        velocity.angular.z = v[5] if len(v) > 5 else 0
+                        pt_msg.velocities.append(velocity)
+                    msg.points.append(pt_msg)
 
-            if planner.ref_data_type == "Vec3":
-                transform = Transform()
-                transform.translation.x = p[0]
-                transform.translation.y = p[1]
-                transform.translation.z = p[2]
-                pt_msg.transforms.append(transform)
-
-                if v is not None:
-                    velocity = Twist()
-                    velocity.linear.x = v[0]
-                    velocity.linear.y = v[1]
-                    velocity.linear.z = v[2]
-                    pt_msg.velocities.append(velocity)
-            elif planner.ref_data_type == "Vec2":
-                transform = Transform()
-                transform.translation.x = p[0]
-                transform.translation.y = p[1]
-                pt_msg.transforms.append(transform)
-                if v is not None:
-                    velocity = Twist()
-                    velocity.linear.x = v[0]
-                    velocity.linear.y = v[1]
-                    pt_msg.velocities.append(velocity)
-
-            msg.points.append(pt_msg)
-
-        self.tracking_point_pub.publish(msg)
+        if len(msg.points) > 0:
+            self.tracking_point_pub.publish(msg)
 
     def _publish_controller_reference(self, ref_pose, ref_velocity):
         # send reference poses as a path
@@ -305,77 +326,92 @@ class ControllerROSNode:
         for pid, planner in enumerate(self.sot.planners):
             color = [0] * 3
             color[pid % 3] = 1
-            marker_plan = None
-            if planner.ref_type == RefType.WAYPOINT:
-                if planner.ref_data_type == RefDataType.SE2:
-                    quat = tf.quaternion_from_euler(0, 0, planner.target_pose[2])
+
+            # Visualize base waypoint/path if available
+            if planner.has_base_ref:
+                if planner.ref_type == RefType.WAYPOINT:
+                    quat = tf.quaternion_from_euler(0, 0, planner.base_target[2])
                     pose_msg = PoseStamped()
                     pose_msg.header.stamp = rospy.Time()
-                    pose_msg.pose.position = Point(*planner.target_pose[:2], 0.25)
+                    pose_msg.pose.position = Point(*planner.base_target[:2], 0.25)
                     pose_msg.pose.orientation = Quaternion(*list(quat))
-
                     self.pose_plan_visualization_pub.publish(pose_msg)
-                elif planner.ref_data_type == RefDataType.SE3:
-                    quat = tf.quaternion_from_euler(*planner.target_pose[3:])
+                elif planner.ref_type == RefType.PATH:
+                    marker_plan = self._make_marker(
+                        Marker.POINTS, pid, rgba=color + [1], scale=[0.1, 0.1, 0.1]
+                    )
+                    marker_plan.points = [
+                        Point(*pt[:2], 0) for pt in planner.base_plan["p"]
+                    ]
+                    marker_plan.lifetime = rospy.Duration.from_sec(0.1)
+                    self.plan_visualization_pub.publish(marker_plan)
+
+            # Visualize EE waypoint/path if available
+            if planner.has_ee_ref:
+                if planner.ref_type == RefType.WAYPOINT:
+                    quat = tf.quaternion_from_euler(*planner.ee_target[3:])
                     pose_msg = PoseStamped()
                     pose_msg.header.stamp = rospy.Time()
                     pose_msg.header.frame_id = "world"
-
-                    pose_msg.pose.position = Point(*planner.target_pose[:3])
+                    pose_msg.pose.position = Point(*planner.ee_target[:3])
                     pose_msg.pose.orientation = Quaternion(*list(quat))
                     self.pose_plan_visualization_pub.publish(pose_msg)
-
-            elif planner.ref_type == RefType.PATH:
-                marker_plan = self._make_marker(
-                    Marker.POINTS, pid, rgba=color + [1], scale=[0.1, 0.1, 0.1]
-                )
-
-                if planner.ref_data_type == RefDataType.SE3:
-                    marker_plan.points = [Point(*pt[:3]) for pt in planner.plan["p"]]
-                elif planner.ref_data_type == RefDataType.SE2:
-                    marker_plan.points = [Point(*pt[:2], 0) for pt in planner.plan["p"]]
-
-            if marker_plan is not None:
-                marker_plan.lifetime = rospy.Duration.from_sec(0.1)
-                self.plan_visualization_pub.publish(marker_plan)
+                elif planner.ref_type == RefType.PATH:
+                    marker_plan = self._make_marker(
+                        Marker.POINTS,
+                        pid + 100,
+                        rgba=color + [1],
+                        scale=[0.1, 0.1, 0.1],
+                    )
+                    marker_plan.points = [Point(*pt[:3]) for pt in planner.ee_plan["p"]]
+                    marker_plan.lifetime = rospy.Duration.from_sec(0.1)
+                    self.plan_visualization_pub.publish(marker_plan)
 
         curr_planners = self.sot.getPlanners(2)
         colors = [[1, 0, 0], [0, 1, 0]]
         for pid, planner in enumerate(curr_planners):
-            marker_plan = None
-
-            if planner.ref_type == RefType.WAYPOINT:
-                if planner.ref_data_type == RefDataType.SE2:
-                    quat = tf.quaternion_from_euler(0, 0, planner.target_pose[2])
+            # Visualize current base waypoint/path if available
+            if planner.has_base_ref:
+                if planner.ref_type == RefType.WAYPOINT:
+                    quat = tf.quaternion_from_euler(0, 0, planner.base_target[2])
                     pose_msg = PoseStamped()
                     pose_msg.header.stamp = rospy.Time()
-                    pose_msg.pose.position = Point(*planner.target_pose[:2], 0.25)
+                    pose_msg.pose.position = Point(*planner.base_target[:2], 0.25)
                     pose_msg.pose.orientation = Quaternion(*list(quat))
-
                     self.pose_plan_visualization_pub.publish(pose_msg)
-                elif planner.ref_data_type == RefDataType.SE3:
-                    quat = tf.quaternion_from_euler(*planner.target_pose[3:])
+                elif planner.ref_type == RefType.PATH:
+                    marker_plan = self._make_marker(
+                        Marker.POINTS,
+                        pid,
+                        rgba=colors[pid] + [1],
+                        scale=[0.1, 0.1, 0.1],
+                    )
+                    marker_plan.points = [
+                        Point(*pt[:2], 0) for pt in planner.base_plan["p"]
+                    ]
+                    marker_plan.lifetime = rospy.Duration.from_sec(0.1)
+                    self.current_plan_visualization_pub.publish(marker_plan)
+
+            # Visualize current EE waypoint/path if available
+            if planner.has_ee_ref:
+                if planner.ref_type == RefType.WAYPOINT:
+                    quat = tf.quaternion_from_euler(*planner.ee_target[3:])
                     pose_msg = PoseStamped()
                     pose_msg.header.frame_id = "world"
-
                     pose_msg.header.stamp = rospy.Time()
-                    pose_msg.pose.position = Point(*planner.target_pose[:3])
+                    pose_msg.pose.position = Point(*planner.ee_target[:3])
                     pose_msg.pose.orientation = Quaternion(*list(quat))
                     self.pose_plan_visualization_pub.publish(pose_msg)
-
-            elif planner.ref_type == RefType.PATH:
-                marker_plan = self._make_marker(
-                    Marker.POINTS, pid, rgba=colors[pid] + [1], scale=[0.1, 0.1, 0.1]
-                )
-
-                if planner.ref_data_type == RefDataType.SE3:
-                    marker_plan.points = [Point(*pt[:3]) for pt in planner.plan["p"]]
-                elif planner.ref_data_type == RefDataType.SE2:
-                    marker_plan.points = [Point(*pt[:2], 0) for pt in planner.plan["p"]]
-
-            if marker_plan is not None:
-                marker_plan.lifetime = rospy.Duration.from_sec(0.1)
-                self.current_plan_visualization_pub.publish(marker_plan)
+                elif planner.ref_type == RefType.PATH:
+                    marker_plan = self._make_marker(
+                        Marker.POINTS,
+                        pid + 100,
+                        rgba=colors[pid] + [1],
+                        scale=[0.1, 0.1, 0.1],
+                    )
+                    marker_plan.points = [Point(*pt[:3]) for pt in planner.ee_plan["p"]]
+                    marker_plan.lifetime = rospy.Duration.from_sec(0.1)
+                    self.current_plan_visualization_pub.publish(marker_plan)
 
         self.sot_lock.release()
 
@@ -484,11 +520,21 @@ class ControllerROSNode:
 
                 if rospy.is_shutdown():
                     return
-            print(
-                "planner {} target:{}".format(
-                    planner.name, planner.getTrackingPoint(0, states)
-                )
-            )
+            # Print planner targets
+            targets = []
+            if planner.has_base_ref:
+                if planner.ref_type == RefType.WAYPOINT:
+                    targets.append(f"base: {planner.base_target}")
+                else:
+                    targets.append(
+                        f"base: path with {len(planner.base_plan['p'])} points"
+                    )
+            if planner.has_ee_ref:
+                if planner.ref_type == RefType.WAYPOINT:
+                    targets.append(f"EE: {planner.ee_target}")
+                else:
+                    targets.append(f"EE: path with {len(planner.ee_plan['p'])} points")
+            print(f"planner {planner.name} targets: {', '.join(targets)}")
 
         print("-----Checking Vicon Tool messages----- ")
         use_vicon_tool_data = True
@@ -549,9 +595,6 @@ class ControllerROSNode:
 
             # open-loop command
             robot_states = (self.robot_interface.q, self.robot_interface.v)
-            self.sot_lock.acquire()
-            planners = self.sot.getPlanners(num_planners=sot_num_plans)
-            self.sot_lock.release()
             # check collision
             q = robot_states[0]
             if self.ctrl_config["self_collision_emergency_stop"]:
@@ -565,20 +608,28 @@ class ControllerROSNode:
                     self.robot_interface.brake()
                     continue
 
-            for planner in planners:
-                planner.updateRobotStates(robot_states)
+            # Get references from TaskManager
+            self.sot_lock.acquire()
+            references = self.sot.getReferences(
+                t - t0, robot_states, self.controller.N + 1, self.controller.dt
+            )
+            self.sot_lock.release()
 
             tc1 = time.perf_counter()
             u, acc, u_bar, v_bar = self.controller.control(
-                t - t0, robot_states, planners, map_latest
+                t - t0, robot_states, references, map_latest
             )
             tc2 = time.perf_counter()
             self.controller_log.log(20, "Controller Run Time: {}".format(tc2 - tc1))
 
             # if the robot is very close to the goal, stop the robot
+            # Check if any active planner is close to finish
+            self.sot_lock.acquire()
+            active_planners = self.sot.getPlanners(num_planners=sot_num_plans)
             close_to_goal = False
-            for planner in planners:
+            for planner in active_planners:
                 close_to_goal = close_to_goal or planner.closeToFinish()
+            self.sot_lock.release()
             if close_to_goal:
                 print("Close to goal. Braking")
                 v_bar[:, :3] = 0
@@ -613,7 +664,11 @@ class ControllerROSNode:
 
             # publish data
             self._publish_mpc_data(self.controller)
-            self._publish_trajectory_tracking_pt(t - t0, robot_states, planners)
+            # Get active planners for visualization
+            self.sot_lock.acquire()
+            active_planners = self.sot.getPlanners(num_planners=sot_num_plans)
+            self.sot_lock.release()
+            self._publish_trajectory_tracking_pt(t - t0, robot_states, active_planners)
 
             # Update Task Manager
             # Convert to pose arrays in world frame
@@ -669,22 +724,22 @@ class ControllerROSNode:
             v_bw_wd = None
             Q_we_d = None
             ω_ew_wd = None
-            for planner in planners:
-                if planner.type == PlannerType.EE:
-                    if planner.ref_data_type == RefDataType.SE3:
-                        r, v = planner.getTrackingPoint(t - t0, robot_states)
-                        r_ew_wd = r[:3]
-                        Q_we_d = r2q(rpy2r(r[3:]), order="xyzs")
-                        if v is not None:
-                            v_ew_wd = v[:3]
-                            ω_ew_wd = v[3:]
-                elif planner.type == PlannerType.BASE:
-                    r_bw_wd, v_bw_wd = planner.getTrackingPoint(t - t0, robot_states)
 
-                    if planner.name == "PartialPlanner":
-                        ref_q_dot, ref_u = planner.getRefVelandAcc(t - t0)
-                        self.logger.append("ref_vels", ref_q_dot)
-                        self.logger.append("ref_accs", ref_u)
+            # Extract reference data from references dictionary for logging
+            if references.get("ee_pose") is not None:
+                ee_ref = references["ee_pose"][0]  # Current reference
+                r_ew_wd = ee_ref[:3]
+                Q_we_d = r2q(rpy2r(ee_ref[3:]), order="xyzs")
+                if references.get("ee_velocity") is not None:
+                    ee_vel_ref = references["ee_velocity"][0]
+                    v_ew_wd = ee_vel_ref[:3]
+                    ω_ew_wd = ee_vel_ref[3:]
+
+            if references.get("base_pose") is not None:
+                base_ref = references["base_pose"][0]  # Current reference
+                r_bw_wd = base_ref
+                if references.get("base_velocity") is not None:
+                    v_bw_wd = references["base_velocity"][0]
             if r_ew_wd is not None:
                 self.logger.append("r_ew_w_ds", r_ew_wd)
             if v_ew_wd is not None:

@@ -11,7 +11,6 @@ import mm_control.MPC as MPC
 from mm_plan.TaskManager import TaskManager
 from mm_simulator import simulation
 from mm_utils import parsing
-from mm_utils.enums import PlannerType
 from mm_utils.logging import DataLogger
 
 
@@ -128,10 +127,12 @@ def main():
     while t <= sim.duration:
         # open-loop command
         robot_states = robot.joint_states(add_noise=False)
-        planners = sot.getPlanners(num_planners=2)
+
+        # Get references from TaskManager
+        references = sot.getReferences(t, robot_states, controller.N + 1, controller.dt)
 
         t0 = time.perf_counter()
-        results = controller.control(t, robot_states, planners)
+        results = controller.control(t, robot_states, references)
         t1 = time.perf_counter()
         controller_log.log(20, "Controller Run Time: {}".format(t1 - t0))
 
@@ -165,16 +166,23 @@ def main():
         # log
         v_ew_w, ω_ew_w = robot.link_velocity()
 
-        # Get tracking points from planners (only log first of each type)
+        # Get tracking points from references
         r_ew_wd = None
         r_bw_wd = None
         v_ew_wd = None
         v_bw_wd = None
-        for planner in planners:
-            if planner.type == PlannerType.EE and r_ew_wd is None:
-                r_ew_wd, v_ew_wd = planner.getTrackingPoint(t, robot_states)
-            elif planner.type == PlannerType.BASE and r_bw_wd is None:
-                r_bw_wd, v_bw_wd = planner.getTrackingPoint(t, robot_states)
+
+        if references.get("ee_pose") is not None:
+            r_ew_wd = references["ee_pose"][0][:3]  # Current EE position reference
+            if references.get("ee_velocity") is not None:
+                # Current EE linear velocity reference
+                v_ew_wd = references["ee_velocity"][0][:3]
+
+        if references.get("base_pose") is not None:
+            r_bw_wd = references["base_pose"][0]  # Current base pose reference
+            if references.get("base_velocity") is not None:
+                # Current base velocity reference
+                v_bw_wd = references["base_velocity"][0]
 
         logger.append("ts", t)
         logger.append("xs", np.hstack(robot_states))

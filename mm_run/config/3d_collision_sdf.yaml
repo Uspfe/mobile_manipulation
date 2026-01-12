@@ -1,16 +1,14 @@
 planner:
   sot_type: "SoTStatic"
   tasks:
-  - frame_id: base
-    name: Base_Pos
+  - name: Base_Pos
     planner_type: WaypointPlanner
-    target_pose: [0.0, 0.0, 0.0]   # [x, y, yaw]
+    base_pose: [0.0, 0.0, 0.0]   # [x, y, yaw]
     hold_period: 2.0
     tracking_err_tol: 0.4
-  - frame_id: EE
-    name: EE_Pose_Baseframe
+  - name: EE_Pose_Baseframe
     planner_type: WaypointPlanner
-    target_pose: [1.35, 0.17, 0.7, 1.57, 0, 1.57]  # [x, y, z, roll, pitch, yaw]
+    ee_pose: [1.35, 0.17, 0.7, 1.57, 0, 1.57]  # [x, y, z, roll, pitch, yaw]
     hold_period: 4
     tracking_err_tol: 0.1
 simulation:

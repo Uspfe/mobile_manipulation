@@ -212,8 +212,7 @@ class ControllerROSNode:
         print("Controller received joint states. Proceed ... ")
         self.home = self.robot_interface.q
 
-        task_manager_class = getattr(TaskManager, self.planner_config["sot_type"])
-        self.sot = task_manager_class(self.planner_config.copy())
+        self.sot = TaskManager(self.planner_config.copy())
 
         # rospy.sleep(5.)
         self.sot.activatePlanners()

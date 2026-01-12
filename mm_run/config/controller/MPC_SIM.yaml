@@ -29,32 +29,29 @@ controller:
   # Simplified CBF gamma (scalar instead of per-type dict)
   collision_cbf_gamma: 0.9
 
-  # Simplified cost params (scalars instead of arrays for simulation)
+  # Cost params using unified names (BasePose, BaseVel, EEPose, EEVel)
   cost_params:
-    EEPos3:
-      Qk: 10.0
-      P: 1.0
-    EEPos3BaseFrame:
-      Qk: 3
-      P: 1
-    BasePos2:
-      Qk: 10.0
-      P: 1.0
-    BasePos3:
-      Qk: 10.0
-      P: 1.0
-    BasePoseSE2:
-      Qk: 10.0
-      P: 1.0
-    EEVel3:
-      Qk: 5.0
-      P: 1.0
-    BaseVel2:
-      Qk: 5.0
-      P: 1.0
-    BaseVel3:
-      Qk: 5.0
-      P: 1.0
+    # End-effector pose (SE3: x, y, z, roll, pitch, yaw)
+    EEPose:
+      Qk: [10.0, 10.0, 10.0, 10.0, 10.0, 10.0]  # Position weights, orientation weights
+      P: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+
+    # Base pose (SE2: x, y, yaw)
+    BasePose:
+      Qk: [10.0, 10.0, 10.0]  # [x, y, yaw]
+      P: [1.0, 1.0, 1.0]
+
+    # End-effector velocity (6D: 3D linear + 3D angular)
+    EEVel:
+      Qk: [5.0, 5.0, 5.0, 10.0, 10.0, 10.0]  # [vx, vy, vz, wx, wy, wz]
+      P: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+
+    # Base velocity (3D: vx, vy, vyaw)
+    BaseVel:
+      Qk: [5.0, 5.0, 5.0]  # [vx, vy, vyaw]
+      P: [1.0, 1.0, 1.0]
+
+    # Control effort
     Effort:
       Qqa: 0.0
       Qqb: 0.0
@@ -64,6 +61,8 @@ controller:
       Qub: 0.005
       Qdua: 0.0
       Qdub: 0.1
+
+    # Slack variables
     slack:
       z: 100  # Higher slack penalty for simulation
 
