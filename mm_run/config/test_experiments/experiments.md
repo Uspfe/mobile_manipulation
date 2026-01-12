@@ -50,5 +50,5 @@ To run a test experiment:
 
 ```bash
 python3 mm_control/scripts/generate_acados_code.py --config mm_run/config/test_experiments/test_<name>.yaml
-python3 mm_run/scripts/experiment.py --config mm_run/config/test_experiments/test_<name>.yaml
+python3 mm_run/scripts/experiment.py --config mm_run/config/test_experiments/test_<name>.yaml --GUI
 ```

@@ -23,7 +23,6 @@ planner:
 controller:
   # Enable self-collision avoidance (prevents robot from colliding with itself)
   self_collision_avoidance_enabled: True
-  sdf_collision_avoidance_enabled: False
   static_obstacles_collision_avoidance_enabled: False
 
   # Acados solver configuration
@@ -72,8 +71,6 @@ include:
     path: "config/sim/simulation.yaml"
   - package: "mm_run"
     path: "config/scene/empty.yaml"
-  - package: "mm_run"
-    path: "config/map/SDF3D.yaml"
 
 logging:
   log_dir: "simple_experiment"

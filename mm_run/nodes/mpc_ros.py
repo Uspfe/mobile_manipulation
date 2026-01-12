@@ -13,7 +13,6 @@ from geometry_msgs.msg import Point, PoseStamped, Quaternion, Transform, Twist
 from mobile_manipulation_central import PointToPointTrajectory, bound_array
 from mobile_manipulation_central.ros_interface import (
     JoystickButtonInterface,
-    MapGridInterface,
     MobileManipulatorROSInterface,
     ViconObjectInterface,
 )
@@ -129,11 +128,6 @@ class ControllerROSNode:
             self.joystick_interface = JoystickButtonInterface(1)  # circle
         else:
             self.use_joy = False
-
-        if self.ctrl_config.get("sdf_collision_avoidance_enabled", False):
-            self.map_interface = MapGridInterface(config=self.ctrl_config)
-        else:
-            self.map_interface = None
 
         casadi_kin_dyn = CasadiModelInterface(self.ctrl_config)
         if self.ctrl_config["self_collision_emergency_stop"]:
@@ -445,43 +439,6 @@ class ControllerROSNode:
         marker_rbase.points = [Point(*pt[:2], 0) for pt in controller.rbase_bar]
         self.controller_visualization_pub.publish(marker_rbase)
 
-        # base sdf gradients
-        if self.ctrl_config["sdf_collision_avoidance_enabled"]:
-            marker_array_sdf_grad = MarkerArray()
-            marker_id = 4
-            for i in range(0, controller.sdf_grad_bar["base"].shape[1], 3):
-                grad = controller.sdf_grad_bar["base"][:, i]
-
-                marker_sdf_grad_base = self._make_marker(
-                    Marker.ARROW,
-                    marker_id + i,
-                    rgba=[1.0, 0.0, 0, 1.0],
-                    scale=[0.05] * 3,
-                )
-                marker_sdf_grad_base.points.append(Point(*controller.base_bar[i]))
-                marker_sdf_grad_base.points.append(
-                    Point(*(controller.base_bar[i] + grad))
-                )
-                marker_array_sdf_grad.markers.append(marker_sdf_grad_base)
-                marker_id += 1
-
-            # ee sdf gradients
-            for i in range(0, controller.sdf_grad_bar["EE"].shape[1], 3):
-                grad = controller.sdf_grad_bar["EE"][:, i]
-
-                marker_sdf_grad_ee = self._make_marker(
-                    Marker.ARROW,
-                    marker_id + i,
-                    rgba=[1.0, 0.0, 0, 1.0],
-                    scale=[0.05] * 3,
-                )
-                marker_sdf_grad_ee.points.append(Point(*(controller.ee_bar[i])))
-                marker_sdf_grad_ee.points.append(Point(*(controller.ee_bar[i] + grad)))
-                marker_array_sdf_grad.markers.append(marker_sdf_grad_ee)
-                marker_id += 1
-
-            self.controller_visualization_array_pub.publish(marker_array_sdf_grad)
-
     def run(self):
         rate = rospy.Rate(self.ctrl_rate)
 
@@ -498,19 +455,6 @@ class ControllerROSNode:
         states = (self.robot_interface.q, self.robot_interface.v)
         print("robot coord: {}".format(self.robot_interface.q))
         self.sot = TaskManager(self.planner_config.copy())
-
-        if self.ctrl_config["sdf_collision_avoidance_enabled"]:
-            print("-----Checking Map Interface----- ")
-            while not self.map_interface.ready():
-                self.robot_interface.brake()
-                rate.sleep()
-                if rospy.is_shutdown():
-                    return
-
-            _, map_latest = self.map_interface.get_map()
-            print("Received Map. Proceed ...")
-        else:
-            map_latest = None
 
         print("-----Checking Planners----- ")
         for planner in self.sot.planners:
@@ -581,17 +525,6 @@ class ControllerROSNode:
             sot_num_plans = 1 if self.ctrl_config["type"][:2] == "ST" else 2
         while not self.ctrl_c:
             t = rospy.Time.now().to_sec()
-            if self.ctrl_config["sdf_collision_avoidance_enabled"]:
-                tm0 = time.perf_counter()
-                status, map = self.map_interface.get_map()
-                tm1 = time.perf_counter()
-
-                t_get_map = tm1 - tm0
-
-                if status:
-                    map_latest = map
-                else:
-                    map_latest = None
 
             # open-loop command
             robot_states = (self.robot_interface.q, self.robot_interface.v)
@@ -617,7 +550,7 @@ class ControllerROSNode:
 
             tc1 = time.perf_counter()
             u, acc, u_bar, v_bar = self.controller.control(
-                t - t0, robot_states, references, map_latest
+                t - t0, robot_states, references
             )
             tc2 = time.perf_counter()
             self.controller_log.log(20, "Controller Run Time: {}".format(tc2 - tc1))
@@ -765,8 +698,6 @@ class ControllerROSNode:
 
             self.logger.append("cmd_vels", u)
             self.logger.append("cmd_accs", acc)
-            if self.ctrl_config["sdf_collision_avoidance_enabled"]:
-                self.logger.append("time_get_map", t_get_map)
 
             if self.use_joy and self.start_end_button_interface.button == 1:
                 break

@@ -230,14 +230,6 @@ class DataPlotter(TrajectoryPlotterMixin, MPCPlotterMixin):
         # keyed by obstacle names or "self"
         names = ["self", "static_obstacles"]
         params = {"self": [], "static_obstacles": []}
-        if self.config["controller"]["sdf_collision_avoidance_enabled"]:
-            names += ["sdf"]
-            sdf_param_names = [
-                "_".join(["mpc", "sdf", "param", str(i)]) + "s"
-                for i in range(self.model_interface.sdf_map.dim + 1)
-            ]
-            sdf_param = [self.data[name] for name in sdf_param_names]
-            params["sdf"] = sdf_param
         sds_dict = self.model_interface.evaluateSignedDistance(
             names, qs, copy.deepcopy(params)
         )
@@ -252,15 +244,6 @@ class DataPlotter(TrajectoryPlotterMixin, MPCPlotterMixin):
         if self.config["controller"]["self_collision_avoidance_enabled"]:
             names += ["self"]
             params = {"self": []}
-
-        if self.config["controller"]["sdf_collision_avoidance_enabled"]:
-            param_names = [
-                "_".join(["mpc", "sdf", "param", str(i)]) + "s"
-                for i in range(self.model_interface.sdf_map.dim + 1)
-            ]
-            sdf_params = [self.data[name] for name in param_names]
-            params["sdf"] = sdf_params
-            names += ["sdf"]
 
         if self.config["controller"]["static_obstacles_collision_avoidance_enabled"]:
             params["static_obstacles"] = []

@@ -11,23 +11,14 @@ controller:
 
   # Disable collision avoidance for simpler simulation
   self_collision_avoidance_enabled: False
-  sdf_collision_avoidance_enabled: False
   static_obstacles_collision_avoidance_enabled: False
 
   # Simplified collision constraint type (scalar instead of per-type dict)
   collision_constraint_type: "SignedDistanceConstraint"
 
-  # Enable soft constraints for SDF and static obstacles in simulation
+  # Enable soft constraints for static obstacles in simulation
   collision_constraints_softened:
-    sdf: True
     static_obstacles: True
-
-  # Smaller safety margin for SDF in simulation
-  collision_safety_margin:
-    sdf: 0.15
-
-  # Simplified CBF gamma (scalar instead of per-type dict)
-  collision_cbf_gamma: 0.9
 
   # Cost params using unified names (BasePose, BaseVel, EEPose, EEVel)
   cost_params:

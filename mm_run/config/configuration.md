@@ -20,7 +20,6 @@ simulation # Simulation parameters
 logging    # Data logging configuration
 robot      # Robot model (typically included from config/robot/)
 scene      # Environment/scene (typically included from config/scene/)
-map        # SDF map (typically included from config/map/)
 ```
 
 ## Planner
@@ -113,33 +112,23 @@ controller:
 controller:
   # Enable collision avoidance
   self_collision_avoidance_enabled: bool
-  sdf_collision_avoidance_enabled: bool
   static_obstacles_collision_avoidance_enabled: bool
   self_collision_emergency_stop: bool
 
   # Constraint types
   collision_constraint_type:
-    self: "SignedDistanceConstraint" | "SignedDistanceConstraintCBF"
-    sdf: "SignedDistanceConstraint" | "SignedDistanceConstraintCBF"
-    static_obstacles: "SignedDistanceConstraint" | "SignedDistanceConstraintCBF"
+    self: "SignedDistanceConstraint"
+    static_obstacles: "SignedDistanceConstraint"
 
   # Safety margins [m]
   collision_safety_margin:
     self: 0.25
-    sdf: 0.25
     static_obstacles: 0.15
 
   # Soft constraints
   collision_constraints_softened:
     self: bool
-    sdf: bool
     static_obstacles: bool
-
-  # CBF gamma parameters
-  collision_cbf_gamma:
-    self: 0.9
-    sdf: 0.3
-    static_obstacles: 0.9
 ```
 
 ### Soft Constraints
@@ -152,7 +141,6 @@ controller:
     zeta: 0.005                   # Penalty scaling
   collision_soft:
     self: {mu: 0.0001, zeta: 0.005}
-    sdf: {mu: 0.0001, zeta: 0.005}
     static_obstacles: {mu: 0.0001, zeta: 0.005}
   ee_upward_soft:
     mu: 0.001
@@ -307,23 +295,6 @@ controller:
       args: {key: value}
 ```
 
-### SDF Map Parameters
-
-```yaml
-controller:
-  map:
-    default_val: 1.8              # Default SDF value [m]
-    map_coverage: [x, y, z]       # Coverage area [m]
-    voxel_size: 0.2               # Voxel size [m]
-    filter_enabled: bool
-    filter_type: "tv" | "gaussian"
-    guassian_filter_sigma: 10.0
-    tv_filter_weight: 1.0
-    offline_map:
-      enabled: bool
-      path: str | None
-  sdf_type: "SDF2D" | "SDF3D"
-```
 
 ## Simulation
 
@@ -439,25 +410,6 @@ controller:
         obstacle_params_file: str
 ```
 
-## Map
-
-SDF map configuration (typically included from `config/map/`):
-
-```yaml
-controller:
-  map:
-    default_val: float
-    map_coverage: [x, y, z]
-    voxel_size: float
-    filter_enabled: bool
-    filter_type: "tv" | "gaussian"
-    guassian_filter_sigma: float
-    tv_filter_weight: float
-    offline_map:
-      enabled: bool
-      path: str | None
-  sdf_type: "SDF2D" | "SDF3D"
-```
 
 ## Logging
 

@@ -15,16 +15,13 @@ simulation:
 
 controller:
   home: "default"
-  sdf_collision_avoidance_enabled: False
   self_collision_avoidance_enabled: False
   static_obstacles_collision_avoidance_enabled: True
 
   collision_constraints_softened:
     self: False
-    sdf: False
     static_obstacles: False
-  collision_cbf_gamma: 2
-  collision_constraint_type: "SignedDistanceConstraintCBF" # SignedDistanceConstraint or SignedDistanceConstraintCBF
+  collision_constraint_type: "SignedDistanceConstraint"
   type: "MPC"
   acados:
     ocp_solver_options:
@@ -46,8 +43,6 @@ include:
     path: "config/sim/simulation.yaml"
   - package: "mm_run"
     path: "config/scene/simple_obstacles.yaml"
-  - package: "mm_run"
-    path: "config/map/SDF3D.yaml"
 
 logging:
   log_dir: "3d_collision"

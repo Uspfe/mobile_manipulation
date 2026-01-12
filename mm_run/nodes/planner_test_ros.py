@@ -4,14 +4,12 @@ import logging
 import os
 import sys
 import threading
-import time
 
 import numpy as np
 import rospy
 from geometry_msgs.msg import Point
 from mobile_manipulation_central.ros_interface import (
     JoystickButtonInterface,
-    MapGridInterface,
     MobileManipulatorROSInterface,
     ViconObjectInterface,
 )
@@ -100,8 +98,6 @@ class ControllerROSNode:
             self.joystick_interface = JoystickButtonInterface(1)  # circle
         else:
             self.use_joy = False
-
-        self.map_interface = MapGridInterface(config=self.ctrl_config)
 
         self.controller_visualization_pub = rospy.Publisher(
             "controller_visualization", Marker, queue_size=10
@@ -224,17 +220,6 @@ class ControllerROSNode:
             sot_num_plans = 1 if self.ctrl_config["type"][:2] == "ST" else 2
         while not self.ctrl_c:
             rospy.Time.now().to_sec()
-            if self.ctrl_config["sdf_collision_avoidance_enabled"]:
-                tm0 = time.perf_counter()
-                status, map = self.map_interface.get_map()
-                tm1 = time.perf_counter()
-
-                tm1 - tm0
-
-                if status:
-                    print("received map")
-                else:
-                    print("no map received")
 
             # open-loop command
             robot_states = (self.robot_interface.q, self.robot_interface.v)
