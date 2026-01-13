@@ -157,42 +157,6 @@ class ControllerROSNode:
             marker_plan.lifetime = rospy.Duration.from_sec(0.1)
             self.plan_visualization_pub.publish(marker_plan)
 
-        curr_planners = self.sot.getPlanners(2)
-        colors = [[1, 0, 0], [0, 1, 0]]
-        for pid, planner in enumerate(curr_planners):
-            if planner.ref_type == "waypoint":
-                if planner.ref_data_type == "Vec3":
-                    marker_plan = self._make_marker(
-                        Marker.SPHERE,
-                        pid,
-                        rgba=colors[pid] + [1],
-                        scale=[0.1, 0.1, 0.1],
-                    )
-                    marker_plan.pose.position = Point(*planner.target_pos)
-                elif planner.ref_data_type == "Vec2":
-                    marker_plan = self._make_marker(
-                        Marker.CYLINDER,
-                        pid,
-                        rgba=colors[pid] + [1],
-                        scale=[0.1, 0.1, 0.5],
-                    )
-                    marker_plan.pose.position = Point(*planner.target_pos, 0.25)
-            elif planner.ref_type == "trajectory":
-                marker_plan = self._make_marker(
-                    Marker.LINE_STRIP,
-                    pid,
-                    rgba=colors[pid] + [1],
-                    scale=[0.1, 0.1, 0.1],
-                )
-
-                if planner.ref_data_type == "Vec3":
-                    marker_plan.points = [Point(*pt) for pt in planner.plan["p"]]
-                elif planner.ref_data_type == "Vec2":
-                    marker_plan.points = [Point(*pt, 0) for pt in planner.plan["p"]]
-
-            marker_plan.lifetime = rospy.Duration.from_sec(0.1)
-            self.current_plan_visualization_pub.publish(marker_plan)
-
         self.sot_lock.release()
 
     def run(self):
@@ -215,22 +179,19 @@ class ControllerROSNode:
         rospy.Time.now().to_sec()
         self.sot.started = True
 
-        sot_num_plans = self.ctrl_config.get("task_num", None)
-        if sot_num_plans is None:
-            sot_num_plans = 1 if self.ctrl_config["type"][:2] == "ST" else 2
         while not self.ctrl_c:
             rospy.Time.now().to_sec()
 
             # open-loop command
             robot_states = (self.robot_interface.q, self.robot_interface.v)
-            planners = self.sot.getPlanners(num_planners=sot_num_plans)
+            planner = self.sot.getPlanner()
 
-            planners[0].updateRobotStates(robot_states)  # need robot pose
+            planner.updateRobotStates(robot_states)  # need robot pose
 
-            if planners[0].plan is not None:
-                print("plan t\n", planners[0].plan["t"].shape, planners[0].plan["t"])
-                print("plan p\n", planners[0].plan["p"].shape, planners[0].plan["p"])
-                print("plan v\n", planners[0].plan["v"].shape, planners[0].plan["v"])
+            if planner.plan is not None:
+                print("plan t\n", planner.plan["t"].shape, planner.plan["t"])
+                print("plan p\n", planner.plan["p"].shape, planner.plan["p"])
+                print("plan v\n", planner.plan["v"].shape, planner.plan["v"])
             else:
                 print("no plan")
 

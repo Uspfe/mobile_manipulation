@@ -1,6 +1,6 @@
 import argparse
 
-import mm_control.MPC as MPC
+from mm_control.MPC import MPC
 from mm_utils import parsing
 
 if __name__ == "__main__":
@@ -24,7 +24,11 @@ if __name__ == "__main__":
     config["controller"]["acados"]["cython"]["recompile"] = True
 
     ctrl_config = config["controller"]
-    control_class = getattr(MPC, ctrl_config["type"], None)
-    if control_class is None:
-        raise ValueError(f"Unknown controller type: {ctrl_config['type']}")
+    ctrl_type = ctrl_config["type"]
+
+    if ctrl_type == "MPC":
+        control_class = MPC
+    else:
+        raise ValueError(f"Unknown controller type: {ctrl_type}")
+
     controller = control_class(ctrl_config)

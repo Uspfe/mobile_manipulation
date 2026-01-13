@@ -506,6 +506,11 @@ def create_regularization_cost(robot_mdl, params):
     return RegularizationCostFunction(ss_mdl["nx"], ss_mdl["nu"])
 
 
+def create_manipulability_cost(robot_mdl, params):
+    """Create manipulability cost"""
+    return ManipulabilityCostFunction(robot_mdl)
+
+
 # Register core cost functions (simplified to 6 parameterized functions)
 CostFunctionRegistry.register("BasePose", create_base_pose_cost)
 CostFunctionRegistry.register("BaseVel", create_base_vel_cost)
@@ -513,3 +518,4 @@ CostFunctionRegistry.register("EEPose", create_ee_pose_cost)
 CostFunctionRegistry.register("EEVel", create_ee_vel_cost)
 CostFunctionRegistry.register("ControlEffort", ControlEffortCostFunction)
 CostFunctionRegistry.register("Regularization", create_regularization_cost)
+CostFunctionRegistry.register("Manipulability", create_manipulability_cost)

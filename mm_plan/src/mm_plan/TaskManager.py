@@ -25,7 +25,7 @@ class TaskManager:
             planner.activate()
 
     def getPlanner(self):
-        """Get the active planners (current task and next if available).
+        """Get the active planner (current task).
 
         Returns:
             Active planner
