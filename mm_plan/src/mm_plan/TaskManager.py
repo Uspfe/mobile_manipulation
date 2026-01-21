@@ -53,6 +53,8 @@ class TaskManager:
                 "base_velocity": array of shape (N+1, 3) or None,
                 "ee_pose": array of shape (N+1, 6) or None,
                 "ee_velocity": array of shape (N+1, 6) or None,
+                "base_mask": array of shape (3,) or None,  # [x, y, yaw] - True means dimension matters
+                "ee_mask": array of shape (6,) or None,  # [x, y, z, roll, pitch, yaw] - True means dimension matters
             }
         """
         planner = self.getPlanner()
@@ -112,11 +114,17 @@ class TaskManager:
                     ee_pose_ref = np.tile(p, (num_horizon_points, 1))
                     ee_vel_ref = np.tile(v, (num_horizon_points, 1))
 
+        # Extract masks from planner
+        base_mask = planner.base_mask if planner.has_base_ref else None
+        ee_mask = planner.ee_mask if planner.has_ee_ref else None
+
         return {
             "base_pose": base_pose_ref,
             "base_velocity": base_vel_ref,
             "ee_pose": ee_pose_ref,
             "ee_velocity": ee_vel_ref,
+            "base_mask": base_mask,
+            "ee_mask": ee_mask,
         }
 
     def update(self, t, states):

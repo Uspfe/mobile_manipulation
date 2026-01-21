@@ -82,6 +82,10 @@ class MPC(MPCBase):
         self.cost = costs
         self.constraints = constraints + [self.controlCst, self.stateCst]
 
+        # Initialize masks to None (will be set from references in control())
+        self.base_mask = None
+        self.ee_mask = None
+
     def _get_config_key_for_cost_name(self, cost_name):
         """Map cost function name to simplified config parameter key.
 
@@ -125,6 +129,8 @@ class MPC(MPCBase):
                     "base_velocity": array of shape (N+1, 3) or None,
                     "ee_pose": array of shape (N+1, 6) or None,
                     "ee_velocity": array of shape (N+1, 6) or None,
+                    "base_mask": array of shape (3,) or None,  # [x, y, yaw] - True means dimension matters
+                    "ee_mask": array of shape (6,) or None,  # [x, y, z, roll, pitch, yaw] - True means dimension matters
                 }
 
         Returns:
@@ -185,6 +191,8 @@ class MPC(MPCBase):
                 - "base_velocity": array of shape (N+1, 3) or None
                 - "ee_pose": array of shape (N+1, 6) or None
                 - "ee_velocity": array of shape (N+1, 6) or None
+                - "base_mask": array of shape (3,) or None, [x, y, yaw] - True means dimension matters
+                - "ee_mask": array of shape (6,) or None, [x, y, z, roll, pitch, yaw] - True means dimension matters
             xo (ndarray): Current state vector [q, v] to compute current EE pose if needed
 
         Returns:
@@ -195,6 +203,10 @@ class MPC(MPCBase):
                 - "EEVel6": list of arrays (N+1, 6)
         """
         r_bar_map = {}
+
+        # Store masks as instance variables for use in _set_tracking_params
+        self.base_mask = references.get("base_mask")
+        self.ee_mask = references.get("ee_mask")
 
         # Convert base pose reference - only if provided
         if references.get("base_pose") is not None:
@@ -306,6 +318,30 @@ class MPC(MPCBase):
                     weights = cost_params.get(
                         weight_key, [1.0] * len(r_bar_map[name][i])
                     )
+
+                    if isinstance(weights, (int, float)):
+                        weights = [weights] * len(r_bar_map[name][i])
+                    weights = np.array(weights)
+
+                    # Apply masks to zero out weights for masked dimensions
+                    if (
+                        name in ["BasePoseSE2", "BaseVel3"]
+                        and self.base_mask is not None
+                    ):
+                        if len(weights) == len(self.base_mask):
+                            weights = weights * self.base_mask.astype(float)
+                        else:
+                            raise ValueError(
+                                f"Weights length {len(weights)} does not match base mask length {len(self.base_mask)}"
+                            )
+                    elif name in ["EEPoseSE3", "EEVel6"] and self.ee_mask is not None:
+                        if len(weights) == len(self.ee_mask):
+                            weights = weights * self.ee_mask.astype(float)
+                        else:
+                            raise ValueError(
+                                f"Weights length {len(weights)} does not match ee mask length {len(self.ee_mask)}"
+                            )
+
                     curr_p_map[p_name_W] = np.diag(weights)
                 else:
                     # No reference provided: set weights to zero (minimize control effort only)

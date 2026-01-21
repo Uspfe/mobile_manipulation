@@ -252,6 +252,11 @@ class WaypointPlanner(Planner):
                 ori_within_tol = True
                 yaw_err = 0.0
 
+            # Print base position and orientation error (masked)
+            self.py_logger.debug(
+                f"{self.name} base pos_err: {pos_err:.5f}, yaw_err: {yaw_err:.5f}"
+            )
+
             if pos_within_tol and ori_within_tol:
                 if not self.base_reached:
                     self.base_reached = True
@@ -280,6 +285,11 @@ class WaypointPlanner(Planner):
             ori_diff = wrap_pi_array(ee_pose[3:] - self.ee_target[3:])
             ori_err = np.linalg.norm(ori_diff[ori_mask])
             ori_within_tol = ori_err < self.tracking_ori_err_tol
+
+            # Print EE position and orientation error (masked)
+            self.py_logger.debug(
+                f"{self.name} ee pos_err: {pos_err:.5f}, ori_err: {ori_err:.5f}"
+            )
 
             if pos_within_tol and ori_within_tol:
                 if not self.ee_reached:
