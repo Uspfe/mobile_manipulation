@@ -7,6 +7,7 @@
 .ruff_cache/
 
 # Acados
+acados/
 c_generated_code/
 acados_*
 
@@ -19,3 +20,12 @@ __pycache__/
 
 # Results/output data
 results/
+# pixi environments
+.pixi/*
+!.pixi/config.toml
+
+build/
+log/
+install/
+
+ros1/

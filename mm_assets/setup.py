@@ -1,12 +1,11 @@
 from setuptools import find_packages, setup
 
-package_name = 'mm_control'
+package_name = 'mm_assets'
 
 setup(
     name=package_name,
     version='0.0.0',
-    packages=find_packages(where='src', exclude=['test']),
-    package_dir={'': 'src'},
+    packages=find_packages(exclude=['test']),
     data_files=[
         ('share/ament_index/resource_index/packages',
             ['resource/' + package_name]),
@@ -20,8 +19,6 @@ setup(
     license='TODO: License declaration',
     entry_points={
         'console_scripts': [
-            'generate_acados_code = mm_control.generate_acados_code:main',
-            'test_robot_model = mm_control.test_robot_model:main',
         ],
     },
 )

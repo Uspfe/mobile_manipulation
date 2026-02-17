@@ -1,0 +1,37 @@
+[project]
+authors = [
+    { name = "Benjamin Bogenberger", email = "benjamin.bogenberger@tum.de" },
+]
+dependencies = ["pyb-utils>=2.4.2,<3"]
+name = "mobile_manipulation"
+requires-python = ">= 3.11"
+version = "0.1.0"
+
+[build-system]
+build-backend = "hatchling.build"
+requires = ["hatchling"]
+
+[tool.pixi.workspace]
+channels = ["robostack-humble", "conda-forge"]
+platforms = ["linux-64"]
+
+[tool.pixi.tasks]
+
+[tool.pixi.dependencies]
+spatialmath-python = ">=1.1.15,<2"
+pybullet = ">=3.25,<4"
+casadi = ">=3.7.0,<4"
+liecasadi = ">=0.0.7,<0.0.8"
+holoviews = ">=1.22.1,<2"
+ros-humble-desktop = ">=0.10.0,<0.11"
+colcon-common-extensions = ">=0.3.0,<0.4"
+setuptools = ">=82.0.0,<83"
+numpy = ">=1.26.4,<2"
+scipy = ">=1.17.0,<2"
+xacro = ">=2.1.1,<3"
+yaml = ">=0.2.5,<0.3"
+pinocchio = ">=3.7.0,<4"
+pip = ">=26.0.1,<27"
+
+[tool.pixi.activation]
+scripts = ["install/setup.sh", "tools/setup_acados.sh"]

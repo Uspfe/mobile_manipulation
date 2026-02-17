@@ -1,11 +1,25 @@
-# ! DO NOT MANUALLY INVOKE THIS setup.py, USE CATKIN INSTEAD
+from setuptools import find_packages, setup
 
-from distutils.core import setup
+package_name = 'mm_utils'
 
-from catkin_pkg.python_setup import generate_distutils_setup
-
-setup_args = generate_distutils_setup(
-    packages=["mm_utils", "mm_utils.plotting"], package_dir={"": "src"}
+setup(
+    name=package_name,
+    version='0.0.0',
+    packages=find_packages(where='src', exclude=['test']),
+    package_dir={'': 'src'},
+    data_files=[
+        ('share/ament_index/resource_index/packages',
+            ['resource/' + package_name]),
+        ('share/' + package_name, ['package.xml']),
+    ],
+    install_requires=['setuptools'],
+    zip_safe=True,
+    maintainer='benni',
+    maintainer_email='benjamin.bogenberger@tum.de',
+    description='TODO: Package description',
+    license='TODO: License declaration',
+    entry_points={
+        'console_scripts': [
+        ],
+    },
 )
-
-setup(**setup_args)
