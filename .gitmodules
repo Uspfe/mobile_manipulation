@@ -1,0 +1,3 @@
+[submodule "mobile_manipulation_central"]
+	path = mobile_manipulation_central
+	url = git@github.com:Uspfe/mobile_manipulation_central.git
