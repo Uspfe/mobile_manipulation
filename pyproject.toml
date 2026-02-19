@@ -2,7 +2,7 @@
 authors = [
     { name = "Benjamin Bogenberger", email = "benjamin.bogenberger@tum.de" },
 ]
-dependencies = ["pyb-utils>=2.4.2,<3"]
+dependencies = ["pyb-utils>=2.4.2,<3", "xacrodoc>=1.3.1,<2"]
 name = "mobile_manipulation"
 requires-python = ">= 3.11"
 version = "0.1.0"
@@ -32,6 +32,11 @@ xacro = ">=2.1.1,<3"
 yaml = ">=0.2.5,<0.3"
 pinocchio = ">=3.7.0,<4"
 pip = ">=26.0.1,<27"
+ros-humble-tf-transformations = ">=1.1.0,<2"
+transforms3d = "*"
+jax = ">=0.7.0,<0.8"
+jaxlib = ">=0.7.0,<0.8"
+jaxlie = ">=1.5.0,<2"
 
 [tool.pixi.activation]
 scripts = ["install/setup.sh", "tools/setup_acados.sh"]

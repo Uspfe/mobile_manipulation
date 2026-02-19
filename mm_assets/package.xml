@@ -3,9 +3,9 @@
 <package format="3">
   <name>mm_assets</name>
   <version>0.0.0</version>
-  <description>TODO: Package description</description>
+  <description>Mobile manipulation assets package</description>
   <maintainer email="benjamin.bogenberger@tum.de">benni</maintainer>
-  <license>TODO: License declaration</license>
+  <license>MIT</license>
 
   <test_depend>ament_copyright</test_depend>
   <test_depend>ament_flake8</test_depend>

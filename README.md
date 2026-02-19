@@ -53,17 +53,17 @@ python3 -m pip install -r requirements.txt
 ## Usage
 ### Compile MPC Controller
 ```bash
-python3 mm_control/scripts/generate_acados_code.py --config $(rospack find mm_run)/config/simple_experiment.yaml
+python3 mm_control/scripts/generate_acados_code.py --config $(ros2 pkg prefix mm_run)/share/mm_run/config/simple_experiment.yaml
 ```
 
 ### Run Controller with PyBullet Simulation (Synchronous)
 ```bash
-python3 mm_run/scripts/experiment.py --config $(rospack find mm_run)/config/simple_experiment.yaml --GUI
+python3 mm_run/scripts/experiment.py --config $(ros2 pkg prefix mm_run)/share/mm_run/config/simple_experiment.yaml --GUI
 ```
 
 ### Run Controller and Simulation Asynchronously (ROS Nodes)
 ```bash
-roslaunch mm_run run_pybullet_sim.launch config:=$(rospack find mm_run)/config/simple_experiment.yaml
+ros2 launch mm_run run_pybullet_sim.launch config:=$(ros2 pkg prefix mm_run)/share/mm_run/config/simple_experiment.yaml
 ```
 
 ### Visualize Results
@@ -77,7 +77,7 @@ python3 plot_logs.py --folder ../../mm_run/results/[EXPERIMENT_NAME]/[TIMESTAMP]
 ### Isaac Sim (Optional)
 If using Isaac Sim, ensure [mm_sim_isaac](https://github.com/TracyDuX/mm_sim_isaac) is installed:
 ```bash
-roslaunch mm_run isaac_sim.launch config:=$(rospack find mm_run)/config/3d_collision.yaml isaac-venv:=$ISAACSIM_PYTHON
+ros2 launch mm_run isaac_sim.launch config:=$(ros2 pkg prefix mm_run)/share/mm_run/config/3d_collision.yaml isaac-venv:=$ISAACSIM_PYTHON
 ```
 
 ## Configuration

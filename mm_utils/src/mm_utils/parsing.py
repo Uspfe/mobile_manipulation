@@ -6,7 +6,7 @@ import subprocess
 from pathlib import Path
 
 import numpy as np
-import rospkg
+from ament_index_python.packages import get_package_share_directory
 import xacro
 import yaml
 
@@ -195,8 +195,7 @@ def parse_ros_path(d, as_string=True):
     Returns:
         str or Path: Resolved full path.
     """
-    rospack = rospkg.RosPack()
-    path = Path(rospack.get_path(d["package"])) / d["path"]
+    path = Path(get_package_share_directory(d["package"])) / Path(d["path"])
     if as_string:
         path = path.as_posix()
     return path

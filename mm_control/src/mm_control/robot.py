@@ -3,6 +3,7 @@ from typing import Dict, List
 import casadi as cs
 import numpy as np
 import pinocchio as pin
+import pinocchio.casadi as cpin
 from numpy import ndarray
 from pinocchio.visualize import MeshcatVisualizer as visualizer
 from scipy.linalg import expm
@@ -10,22 +11,20 @@ from spatialmath.base import r2q, rotz
 
 from mm_utils import parsing
 
-# hppfcl must be imported before casadi_kin_dyn to avoid library conflict
 import hppfcl as fcl  # isort: skip
-import casadi_kin_dyn.py3casadi_kin_dyn as cas_kin_dyn  # isort: skip
 
 
 def signed_distance_sphere_sphere(c1, c2, r1, r2):
     """Signed distance between two spheres.
 
     Args:
-        c1 (ndarray or casadi.MX): Center of sphere 1, size 3.
-        c2 (ndarray or casadi.MX): Center of sphere 2, size 3.
+        c1 (ndarray or casadi.SX): Center of sphere 1, size 3.
+        c2 (ndarray or casadi.SX): Center of sphere 2, size 3.
         r1 (float): Radius of sphere 1.
         r2 (float): Radius of sphere 2.
 
     Returns:
-        casadi.MX or float: Signed distance between the spheres.
+        casadi.SX or float: Signed distance between the spheres.
     """
     return cs.norm_2(c1 - c2) - r1 - r2
 
@@ -37,11 +36,11 @@ def signed_distance_half_space_sphere(d, p, n, c, r):
         d (float): Offset from p along n.
         p (ndarray): Offset of the normal vector.
         n (ndarray): Normal vector of the plane.
-        c (ndarray or casadi.MX): Center of the sphere, size 3.
+        c (ndarray or casadi.SX): Center of the sphere, size 3.
         r (float): Radius of the sphere.
 
     Returns:
-        casadi.MX or float: Signed distance of sphere to half space.
+        casadi.SX or float: Signed distance of sphere to half space.
     """
 
     return (c - p).T @ n - d - r
@@ -57,7 +56,7 @@ def signed_distance_sphere_cylinder(c_sphere, c_cylinder, r_sphere, r_cylinder):
         r_cylinder (float): Radius of the cylinder.
 
     Returns:
-        casadi.MX or float: Signed distance between sphere and cylinder.
+        casadi.SX or float: Signed distance between sphere and cylinder.
     """
 
     return cs.norm_2(c_sphere[:2] - c_cylinder[:2]) - r_sphere - r_cylinder
@@ -74,9 +73,14 @@ class PinocchioInterface:
         """
         # 1. build robot model
         urdf_path = parsing.parse_and_compile_urdf(config["robot"]["urdf"])
+        self.model = pin.buildModelFromUrdf(urdf_path)
+        self.collision_model = pin.buildGeomFromUrdf(self.model, urdf_path, pin.GeometryType.COLLISION, package_dirs="/")
+
         self.model, self.collision_model, self.visual_model = pin.buildModelsFromUrdf(
             urdf_path
         )
+
+
         # 2. add scene model
         if config["scene"]["enabled"]:
             scene_urdf_path = parsing.parse_and_compile_urdf(config["scene"]["urdf"])
@@ -142,7 +146,7 @@ class PinocchioInterface:
             tf2 (tuple): Transformation (position, rotation) for object 2.
 
         Returns:
-            casadi.MX or float: Signed distance between the objects.
+            casadi.SX or float: Signed distance between the objects.
         """
         o1_geo_type = o1.geometry.getNodeType()
         o2_geo_type = o2.geometry.getNodeType()
@@ -590,11 +594,12 @@ class Scene:
         """
         if config["scene"]["enabled"]:
             urdf_path = parsing.parse_and_compile_urdf(config["scene"]["urdf"])
-            urdf = open(urdf_path, "r").read()
-            # we use cas_kin_dyn to build casadi forward kinematics functions
-            self.kindyn = cas_kin_dyn.CasadiKinDyn(urdf)  # construct main class
+            self.model = pin.buildModelsFromUrdf(urdf_path)[0]
+            self.cmodel = cpin.Model(self.model)
+            self.cdata = self.cmodel.createData()
+            self.q = cs.SX.sym("q", self.model.nq)
         else:
-            self.kindyn = None
+            self.model = None
 
         self.collision_link_names = config["scene"].get(
             "collision_link_names", {"static_obstacles": ["ground"]}
@@ -614,8 +619,12 @@ class Scene:
                         [cs.DM.zeros(3), cs.DM.eye(3)],
                     )
                 else:
-                    f = cs.Function.deserialize(self.kindyn.fk(name))
-                    self.collisionLinkKinSymMdls[name] = f
+                    omf_i = self.cdata.oMf[self.cmodel.getFrameId(name)]
+                    link_pos = omf_i.translation
+                    # link_rot = omf_i.rotation
+                    self.collisionLinkKinSymMdls[name] = cs.Function(
+                        name + "_fcn", [self.q], [link_pos], ["q"], ["pos"]
+                    ).expand()
 
 
 class MobileManipulator3D:
@@ -626,11 +635,11 @@ class MobileManipulator3D:
             config (dict): Configuration dictionary with robot parameters.
         """
         urdf_path = parsing.parse_and_compile_urdf(config["robot"]["urdf"])
-        urdf = open(urdf_path, "r").read()
-        # we use cas_kin_dyn to build casadi forward kinematics functions
-        self.kindyn = cas_kin_dyn.CasadiKinDyn(urdf)  # construct main class
+        self.model = pin.buildModelsFromUrdf(urdf_path)[0]
+        self.cmodel = cpin.Model(self.model)
+        self.cdata = self.cmodel.createData()
 
-        self.numjoint = self.kindyn.nq()
+        self.numjoint = self.model.nq
         self.DoF = self.numjoint + 3
         self.dt = config["robot"]["time_discretization_dt"]
         self.ub_x = parsing.parse_array(config["robot"]["limits"]["state"]["upper"])
@@ -643,9 +652,11 @@ class MobileManipulator3D:
         self.base_link_name = config["robot"]["base_link_name"]
         self.collision_link_names = config["robot"]["collision_link_names"]
 
-        self.qb_sym = cs.MX.sym("qb", 3)
-        self.qa_sym = cs.MX.sym("qa", self.numjoint)
+        self.qb_sym = cs.SX.sym("qb", 3)
+        self.qa_sym = cs.SX.sym("qa", self.numjoint)
         self.q_sym = cs.vertcat(self.qb_sym, self.qa_sym)
+
+        cpin.framesForwardKinematics(self.cmodel, self.cdata, self.qa_sym)
 
         # create self.kinSymMdls dict:{robot links name: cs function of its forward kinematics function}
         self._setupRobotKinSymMdl()
@@ -660,14 +671,14 @@ class MobileManipulator3D:
 
     def _setupSSSymMdlDI(self):
         """Create State-space symbolic model for MM"""
-        self.va_sym = cs.MX.sym("va", self.numjoint)
-        self.vb_sym = cs.MX.sym(
+        self.va_sym = cs.SX.sym("va", self.numjoint)
+        self.vb_sym = cs.SX.sym(
             "vb", 3
         )  # Assuming nonholonomic vehicle, velocity in world frame
         self.v_sym = cs.vertcat(self.vb_sym, self.va_sym)
 
         self.x_sym = cs.vertcat(self.q_sym, self.v_sym)
-        self.u_sym = cs.MX.sym("u", self.v_sym.size()[0])
+        self.u_sym = cs.SX.sym("u", self.v_sym.size()[0])
 
         nx = self.x_sym.size()[0]
         nu = self.u_sym.size()[0]
@@ -801,7 +812,7 @@ class MobileManipulator3D:
                 ["pos2", "heading"],
             )
 
-        Hwb = cs.MX.eye(4)  # T related to movement of base
+        Hwb = cs.SX.eye(4)  # T related to movement of base
         if not base_frame:
             Hwb[0, 0] = np.cos(self.qb_sym[2])
             Hwb[1, 0] = np.sin(self.qb_sym[2])
@@ -809,10 +820,10 @@ class MobileManipulator3D:
             Hwb[1, 1] = np.cos(self.qb_sym[2])
             Hwb[:2, 3] = self.qb_sym[:2]
 
-        fk_str = self.kindyn.fk(link_name)
-        fk = cs.Function.deserialize(fk_str)
-        link_pos, link_rot = fk(self.qa_sym)
-        Hbl = cs.MX.eye(4)  # T from base to link
+        omf_i = self.cdata.oMf[self.cmodel.getFrameId(link_name)]
+        link_pos = omf_i.translation
+        link_rot = omf_i.rotation
+        Hbl = cs.SX.eye(4)  # T from base to link
         Hbl[:3, :3] = link_rot
         Hbl[:3, 3] = link_pos
         Hwl = Hwb @ Hbl  # overall transformation

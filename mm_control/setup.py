@@ -16,8 +16,8 @@ setup(
     zip_safe=True,
     maintainer='benni',
     maintainer_email='benjamin.bogenberger@tum.de',
-    description='TODO: Package description',
-    license='TODO: License declaration',
+    description='Mobile manipulation MPC control package',
+    license='MIT',
     entry_points={
         'console_scripts': [
             'generate_acados_code = mm_control.generate_acados_code:main',

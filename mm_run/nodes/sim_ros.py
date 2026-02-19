@@ -5,7 +5,8 @@ import sys
 import time
 
 import numpy as np
-import rospy
+import rclpy
+from rclpy.utilities import remove_ros_args
 from mobile_manipulation_central.simulation_ros_interface import (
     SimulatedMobileManipulatorROSInterface,
     SimulatedViconObjectInterface,
@@ -16,9 +17,18 @@ from mm_utils import parsing
 from mm_utils.logging import DataLogger
 
 
-def main():
+def main(argv=None):
     np.set_printoptions(precision=3, suppress=True)
-    argv = rospy.myargv(argv=sys.argv)
+    
+    # Use sys.argv if argv is not provided
+    if argv is None:
+        argv = sys.argv
+    
+    # Initialize ROS2 (this must be done before removing ROS args)
+    rclpy.init(args=argv)
+    
+    # Remove ROS-specific arguments before parsing script arguments
+    argv_without_ros = remove_ros_args(args=argv)
 
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -41,7 +51,7 @@ def main():
         action="store_true",
         help="Enable PyBullet GUI. This overwrites the yaml settings",
     )
-    args = parser.parse_args(argv[1:])
+    args = parser.parse_args(argv_without_ros[1:])
 
     # load configuration and overwrite with args
     config = parsing.load_config(args.config)
@@ -69,9 +79,9 @@ def main():
     # Create shared timestamp for logging (format: YYYY-MM-DD_HH-MM-SS)
     session_timestamp = timestamp.strftime("%Y-%m-%d_%H-%M-%S")
 
-    # Set ROS parameter so control node can use the same timestamp
-    rospy.init_node("sim_ros")
-    rospy.set_param("/experiment_timestamp", session_timestamp)
+    # Create ROS2 node (rclpy.init() already called at start of main())
+    node = rclpy.create_node("sim_ros")
+    node.declare_parameter("experiment_timestamp", session_timestamp)
 
     # init logger
     logger = DataLogger(config, name="sim")
@@ -84,25 +94,27 @@ def main():
     logger.add("nu", sim_config["robot"]["dims"]["u"])
 
     # ros interface
-    ros_interface = SimulatedMobileManipulatorROSInterface()
+    ros_interface = SimulatedMobileManipulatorROSInterface(node)
     ros_interface.publish_time(t)
 
     vicon_tool_interface = SimulatedViconObjectInterface(
-        sim_config["robot"]["tool_vicon_name"]
+        node, sim_config["robot"]["tool_vicon_name"]
     )
     while not ros_interface.ready():
+        rclpy.spin_once(node, timeout_sec=0.0)
         q, v = robot.joint_states()
         ros_interface.publish_feedback(t, q, v)
         ros_interface.publish_time(t)
         t += sim.timestep
         time.sleep(sim.timestep)
-
-        if rospy.is_shutdown():
+        if not rclpy.ok():
+            node.destroy_node()
+            rclpy.shutdown()
             return
 
     print("Control commands received. Proceed ... ")
     t0 = t
-    while not rospy.is_shutdown() and t - t0 <= sim.duration:
+    while rclpy.ok() and t - t0 <= sim.duration:
         q, v = robot.joint_states()
         ros_interface.publish_feedback(t, q, v)
         ros_interface.publish_time(t)
@@ -129,9 +141,13 @@ def main():
         logger.append("ω_bw_ws", v[2])
 
         t, _ = sim.step(t)
-        time.sleep(sim.timestep)
+        start_time = time.perf_counter()
+        while start_time + sim.timestep > time.perf_counter():
+            rclpy.spin_once(node, timeout_sec=0.0)
 
     logger.save(session_timestamp=session_timestamp)
+    node.destroy_node()
+    rclpy.shutdown()
 
 
 if __name__ == "__main__":

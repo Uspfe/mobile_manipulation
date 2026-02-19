@@ -7,8 +7,9 @@ import threading
 import time
 
 import numpy as np
-import rospy
-import tf.transformations as tf
+import rclpy
+from rclpy.node import Node
+import tf_transformations as tf
 from geometry_msgs.msg import Point, PoseStamped, Quaternion, Transform, Twist
 from mobile_manipulation_central import PointToPointTrajectory, bound_array
 from mobile_manipulation_central.ros_interface import (
@@ -22,6 +23,7 @@ from scipy.spatial.transform import Rotation as Rot
 from spatialmath.base import r2q, rpy2r
 from trajectory_msgs.msg import MultiDOFJointTrajectory, MultiDOFJointTrajectoryPoint
 from visualization_msgs.msg import Marker, MarkerArray
+from rclpy.executors import MultiThreadedExecutor
 
 import mm_control.MPC as MPC
 from mm_control.robot import CasadiModelInterface, MobileManipulator3D
@@ -32,10 +34,10 @@ from mm_utils.logging import DataLogger
 from mm_utils.math import wrap_pi_scalar
 
 
-class ControllerROSNode:
-    def __init__(self):
+class ControllerROSNode(Node):
+    def __init__(self, argv=None):
+        super().__init__("controller_ros")
         np.set_printoptions(precision=3, suppress=True)
-        argv = rospy.myargv(argv=sys.argv)
         parser = argparse.ArgumentParser()
         parser.add_argument(
             "-c", "--config", required=True, help="Path to configuration file."
@@ -55,7 +57,9 @@ class ControllerROSNode:
             type=str,
             help="save data in a sub folder of logging directory",
         )
-        args = parser.parse_args(argv[1:])
+
+        parsed_args = rclpy.utilities.remove_ros_args(args=argv)
+        args = parser.parse_args(parsed_args[1:])
 
         # load configuration and overwrite with args
         config = parsing.load_config(args.config)
@@ -73,7 +77,8 @@ class ControllerROSNode:
 
         self.ctrl_config = config["controller"]
         self.planner_config = config["planner"].copy()
-        print(self.ctrl_config["type"])
+        self.get_logger().info(f"Controller type: {self.ctrl_config['type']}")
+
         # controller
         control_class = getattr(MPC, self.ctrl_config["type"], None)
         if control_class is None:
@@ -109,23 +114,27 @@ class ControllerROSNode:
         self.logger.add("nx", self.ctrl_config["robot"]["dims"]["x"])
         self.logger.add("nu", self.ctrl_config["robot"]["dims"]["u"])
 
-        # Get shared timestamp from ROS parameter (set by sim node)
+        # Get shared timestamp from ROS2 parameter (set by sim node)
         # Wait for sim node to set it
-        while not rospy.has_param("/experiment_timestamp"):
-            rospy.sleep(0.1)
-        self.session_timestamp = rospy.get_param("/experiment_timestamp")
 
-        # ROS Related
-        self.robot_interface = MobileManipulatorROSInterface()
+        # self.timestamp = None
+        # self.session_timestamp_subscriber = self.create_subscription(String, "experiment_timestamp", lambda msg: (self.timestamp = msd.data), 10)
+        self.declare_parameter("experiment_timestamp", "2026-02-18-11-55-00")
+        while not self.has_parameter("experiment_timestamp"):
+            time.sleep(0.1)
+        self.session_timestamp = self.get_parameter("experiment_timestamp").value
+
+        # ROS2 Related
+        self.robot_interface = MobileManipulatorROSInterface(self)
         self.vicon_tool_interface = ViconObjectInterface(
-            self.ctrl_config["robot"]["tool_vicon_name"]
+            self, self.ctrl_config["robot"]["tool_vicon_name"]
         )
 
-        self.start_end_button_interface = JoystickButtonInterface(2)  # square
+        self.start_end_button_interface = JoystickButtonInterface(self, 2)  # square
 
         if self.planner_config.get("use_joy", False):
             self.use_joy = True
-            self.joystick_interface = JoystickButtonInterface(1)  # circle
+            self.joystick_interface = JoystickButtonInterface(self, 1)  # circle
         else:
             self.use_joy = False
 
@@ -138,28 +147,28 @@ class ControllerROSNode:
                 "static_obstacles"
             ]["ground"]
 
-        self.controller_visualization_pub = rospy.Publisher(
-            "controller_visualization", Marker, queue_size=10
+        self.controller_visualization_pub = self.create_publisher(
+            Marker, "controller_visualization", 10
         )
-        self.controller_visualization_array_pub = rospy.Publisher(
-            "controller_visualization_array", MarkerArray, queue_size=10
+        self.controller_visualization_array_pub = self.create_publisher(
+            MarkerArray, "controller_visualization_array", 10
         )
-        self.plan_visualization_pub = rospy.Publisher(
-            "plan_visualization", Marker, queue_size=10
+        self.plan_visualization_pub = self.create_publisher(
+            Marker, "plan_visualization", 10
         )
-        self.pose_plan_visualization_pub = rospy.Publisher(
-            "pose_plan_visualization", PoseStamped, queue_size=10
-        )
-
-        self.current_plan_visualization_pub = rospy.Publisher(
-            "current_plan_visualization", Marker, queue_size=10
-        )
-        self.controller_ref_pub = rospy.Publisher(
-            "controller_reference", Path, queue_size=5
+        self.pose_plan_visualization_pub = self.create_publisher(
+            PoseStamped, "pose_plan_visualization", 10
         )
 
-        self.tracking_point_pub = rospy.Publisher(
-            "controller_tracking_pt", MultiDOFJointTrajectory, queue_size=5
+        self.current_plan_visualization_pub = self.create_publisher(
+            Marker, "current_plan_visualization", 10
+        )
+        self.controller_ref_pub = self.create_publisher(
+            Path, "controller_reference", 5
+        )
+
+        self.tracking_point_pub = self.create_publisher(
+            MultiDOFJointTrajectory, "controller_tracking_pt", 5
         )
 
         # publish mpc predicted input trajectory at a higher rate
@@ -167,47 +176,38 @@ class ControllerROSNode:
         self.mpc_plan = None
         self.mpc_plan_time_stamp = 0
         dt_pub = 1.0 / self.cmd_vel_pub_rate
-        dt_pub_sec = int(dt_pub)
-        dt_pub_nsec = int((dt_pub - dt_pub_sec) * 1e9)
         if self.ctrl_config["cmd_vel_type"] == "integration":
-            self.cmd_vel_timer = rospy.Timer(
-                rospy.Duration(dt_pub_sec, dt_pub_nsec), self._publish_cmd_vel
-            )
+            self.cmd_vel_timer = self.create_timer(dt_pub, self._publish_cmd_vel)
         elif self.ctrl_config["cmd_vel_type"] == "interpolation":
-            self.cmd_vel_timer = rospy.Timer(
-                rospy.Duration(dt_pub_sec, dt_pub_nsec), self._publish_cmd_vel_new
-            )
+            self.cmd_vel_timer = self.create_timer(dt_pub, self._publish_cmd_vel_new)
 
         self.lock = threading.Lock()
         self.sot_lock = threading.Lock()
 
-        rospy.on_shutdown(self.shutdownhook)
         self.ctrl_c = False
-        self.run()
 
     def shutdownhook(self):
         self.ctrl_c = True
         self.robot_interface.brake()
         self.logger.save(session_timestamp=self.session_timestamp)
 
-    def _publish_cmd_vel(self, event):
+    def _publish_cmd_vel(self):
         if self.mpc_plan is not None:
-            t = rospy.Time.now().to_sec()
+            t = self.get_clock().now().nanoseconds / 1e9
 
             self.lock.acquire()
             t_elasped = t - self.mpc_plan_time_stamp
-            self.cmd_vel += (
-                self.mpc_plan_interp(t_elasped)
-                * (event.current_real - event.last_real).to_sec()
-            )
+            # In ROS2, we integrate based on the timer period
+            dt = 1.0 / self.cmd_vel_pub_rate
+            self.cmd_vel += self.mpc_plan_interp(t_elasped) * dt
 
             self.lock.release()
 
         self.robot_interface.publish_cmd_vel(self.cmd_vel)
 
-    def _publish_cmd_vel_new(self, event):
+    def _publish_cmd_vel_new(self):
         if self.mpc_plan is not None:
-            t = rospy.Time.now().to_sec()
+            t = self.get_clock().now().nanoseconds / 1e9
             self.lock.acquire()
             t_elasped = t - self.mpc_plan_time_stamp
             self.cmd_vel = self.mpc_plan_interp(t_elasped)
@@ -217,7 +217,7 @@ class ControllerROSNode:
 
     def _publish_trajectory_tracking_pt(self, t, robot_states, planner):
         msg = MultiDOFJointTrajectory()
-        msg.header.stamp = rospy.Time.now()
+        msg.header.stamp = self.get_clock().now().to_msg()
 
         # Get base reference if available
         if planner.has_base_ref:
@@ -276,11 +276,11 @@ class ControllerROSNode:
     def _publish_controller_reference(self, ref_pose, ref_velocity):
         # send reference poses as a path
         path_msg = Path()
-        path_msg.header.stamp = rospy.Time.now()
+        path_msg.header.stamp = self.get_clock().now().to_msg()
         path_msg.header.frame_id = "world"
         for i in range(len(ref_pose)):
             pose = PoseStamped()
-            pose.header.stamp = rospy.Time.now()
+            pose.header.stamp = self.get_clock().now().to_msg()
             pose.header.frame_id = "world"
             pose.pose.position.x = ref_pose[i][0]
             pose.pose.position.y = ref_pose[i][1]
@@ -296,25 +296,28 @@ class ControllerROSNode:
         # make a visualization marker array for the occupancy grid
         m = Marker()
         m.header.frame_id = "world"
-        m.header.stamp = rospy.Time.now()
+        m.header.stamp = self.get_clock().now().to_msg()
         m.id = id
         m.type = marker_type
         m.action = Marker.ADD
 
-        m.scale.x = scale[0]
-        m.scale.y = scale[1]
-        m.scale.z = scale[2]
-        m.color.r = rgba[0]
-        m.color.g = rgba[1]
-        m.color.b = rgba[2]
-        m.color.a = rgba[3]
-        m.lifetime = rospy.Duration.from_sec(1.0 / self.ctrl_rate)
+        m.scale.x = float(scale[0])
+        m.scale.y = float(scale[1])
+        m.scale.z = float(scale[2])
+        m.color.r = float(rgba[0])
+        m.color.g = float(rgba[1])
+        m.color.b = float(rgba[2])
+        m.color.a = float(rgba[3])
+        # Set lifetime in seconds
+        lifetime_sec = 1.0 / self.ctrl_rate
+        m.lifetime.sec = int(lifetime_sec)
+        m.lifetime.nanosec = int((lifetime_sec - int(lifetime_sec)) * 1e9)
 
-        m.pose.orientation.w = 1
+        m.pose.orientation.w = 1.0
 
         return m
 
-    def _publish_planner_data(self, event):
+    def _publish_planner_data(self):
         self.sot_lock.acquire()
         for pid, planner in enumerate(self.sot.planners):
             color = [0] * 3
@@ -325,18 +328,19 @@ class ControllerROSNode:
                 if planner.ref_type == RefType.WAYPOINT:
                     quat = tf.quaternion_from_euler(0, 0, planner.base_target[2])
                     pose_msg = PoseStamped()
-                    pose_msg.header.stamp = rospy.Time()
-                    pose_msg.pose.position = Point(*planner.base_target[:2], 0.25)
-                    pose_msg.pose.orientation = Quaternion(*list(quat))
+                    pose_msg.header.stamp = self.get_clock().now().to_msg()
+                    pose_msg.pose.position = Point(x=planner.base_target[0], y=planner.base_target[1], z=0.25)
+                    pose_msg.pose.orientation = Quaternion(x=quat[0], y=quat[1], z=quat[2], w=quat[3])
                     self.pose_plan_visualization_pub.publish(pose_msg)
                 elif planner.ref_type == RefType.PATH:
                     marker_plan = self._make_marker(
                         Marker.POINTS, pid, rgba=color + [1], scale=[0.1, 0.1, 0.1]
                     )
                     marker_plan.points = [
-                        Point(*pt[:2], 0) for pt in planner.base_plan["p"]
+                        Point(x=pt[0], y=pt[1], z=0.0) for pt in planner.base_plan["p"]
                     ]
-                    marker_plan.lifetime = rospy.Duration.from_sec(0.1)
+                    marker_plan.lifetime.sec = 0
+                    marker_plan.lifetime.nanosec = int(0.1 * 1e9)
                     self.plan_visualization_pub.publish(marker_plan)
 
             # Visualize EE waypoint/path if available
@@ -344,10 +348,10 @@ class ControllerROSNode:
                 if planner.ref_type == RefType.WAYPOINT:
                     quat = tf.quaternion_from_euler(*planner.ee_target[3:])
                     pose_msg = PoseStamped()
-                    pose_msg.header.stamp = rospy.Time()
+                    pose_msg.header.stamp = self.get_clock().now().to_msg()
                     pose_msg.header.frame_id = "world"
-                    pose_msg.pose.position = Point(*planner.ee_target[:3])
-                    pose_msg.pose.orientation = Quaternion(*list(quat))
+                    pose_msg.pose.position = Point(x=planner.ee_target[0], y=planner.ee_target[1], z=planner.ee_target[2])
+                    pose_msg.pose.orientation = Quaternion(x=quat[0], y=quat[1], z=quat[2], w=quat[3])
                     self.pose_plan_visualization_pub.publish(pose_msg)
                 elif planner.ref_type == RefType.PATH:
                     marker_plan = self._make_marker(
@@ -356,8 +360,9 @@ class ControllerROSNode:
                         rgba=color + [1],
                         scale=[0.1, 0.1, 0.1],
                     )
-                    marker_plan.points = [Point(*pt[:3]) for pt in planner.ee_plan["p"]]
-                    marker_plan.lifetime = rospy.Duration.from_sec(0.1)
+                    marker_plan.points = [Point(x=pt[0], y=pt[1], z=pt[2]) for pt in planner.ee_plan["p"]]
+                    marker_plan.lifetime.sec = 0
+                    marker_plan.lifetime.nanosec = int(0.1 * 1e9)
                     self.plan_visualization_pub.publish(marker_plan)
 
         planner = self.sot.getPlanner()
@@ -366,9 +371,9 @@ class ControllerROSNode:
             if planner.ref_type == RefType.WAYPOINT:
                 quat = tf.quaternion_from_euler(0, 0, planner.base_target[2])
                 pose_msg = PoseStamped()
-                pose_msg.header.stamp = rospy.Time()
-                pose_msg.pose.position = Point(*planner.base_target[:2], 0.25)
-                pose_msg.pose.orientation = Quaternion(*list(quat))
+                pose_msg.header.stamp = self.get_clock().now().to_msg()
+                pose_msg.pose.position = Point(x=planner.base_target[0], y=planner.base_target[1], z=0.25)
+                pose_msg.pose.orientation = Quaternion(x=quat[0], y=quat[1], z=quat[2], w=quat[3])
                 self.pose_plan_visualization_pub.publish(pose_msg)
             elif planner.ref_type == RefType.PATH:
                 marker_plan = self._make_marker(
@@ -378,9 +383,10 @@ class ControllerROSNode:
                     scale=[0.1, 0.1, 0.1],
                 )
                 marker_plan.points = [
-                    Point(*pt[:2], 0) for pt in planner.base_plan["p"]
+                    Point(x=pt[0], y=pt[1], z=0.0) for pt in planner.base_plan["p"]
                 ]
-                marker_plan.lifetime = rospy.Duration.from_sec(0.1)
+                marker_plan.lifetime.sec = 0
+                marker_plan.lifetime.nanosec = int(0.1 * 1e9)
                 self.current_plan_visualization_pub.publish(marker_plan)
 
         # Visualize current EE waypoint/path if available
@@ -389,9 +395,9 @@ class ControllerROSNode:
                 quat = tf.quaternion_from_euler(*planner.ee_target[3:])
                 pose_msg = PoseStamped()
                 pose_msg.header.frame_id = "world"
-                pose_msg.header.stamp = rospy.Time()
-                pose_msg.pose.position = Point(*planner.ee_target[:3])
-                pose_msg.pose.orientation = Quaternion(*list(quat))
+                pose_msg.header.stamp = self.get_clock().now().to_msg()
+                pose_msg.pose.position = Point(x=planner.ee_target[0], y=planner.ee_target[1], z=planner.ee_target[2])
+                pose_msg.pose.orientation = Quaternion(x=quat[0], y=quat[1], z=quat[2], w=quat[3])
                 self.pose_plan_visualization_pub.publish(pose_msg)
             elif planner.ref_type == RefType.PATH:
                 marker_plan = self._make_marker(
@@ -400,8 +406,9 @@ class ControllerROSNode:
                     rgba=[0, 1, 0, 1],
                     scale=[0.1, 0.1, 0.1],
                 )
-                marker_plan.points = [Point(*pt[:3]) for pt in planner.ee_plan["p"]]
-                marker_plan.lifetime = rospy.Duration.from_sec(0.1)
+                marker_plan.points = [Point(x=pt[0], y=pt[1], z=pt[2]) for pt in planner.ee_plan["p"]]
+                marker_plan.lifetime.sec = 0
+                marker_plan.lifetime.nanosec = int(0.1 * 1e9)
                 self.current_plan_visualization_pub.publish(marker_plan)
 
         self.sot_lock.release()
@@ -411,55 +418,55 @@ class ControllerROSNode:
         marker_ee = self._make_marker(
             Marker.POINTS, 0, rgba=[1.0, 1.0, 1.0, 1], scale=[0.1, 0.1, 0.1]
         )
-        marker_ee.points = [Point(*pt) for pt in controller.ee_bar]
+        marker_ee.points = [Point(x=float(pt[0]), y=float(pt[1]), z=float(pt[2])) for pt in controller.ee_bar]
         self.controller_visualization_pub.publish(marker_ee)
 
         # base prediction
         marker_base = self._make_marker(
             Marker.POINTS, 1, rgba=[1.0, 1.0, 1.0, 1], scale=[0.1, 0.1, 0.1]
         )
-        marker_base.points = [Point(*pt[:2], 0) for pt in controller.base_bar]
+        marker_base.points = [Point(x=float(pt[0]), y=float(pt[1]), z=0.0) for pt in controller.base_bar]
         self.controller_visualization_pub.publish(marker_base)
 
         # ee tracking points
-        if len(controller.ree_bar) > 0 and controller.ree_bar[0].shape[0] == 3:
+        if len(controller.ree_bar) > 0 and len(controller.ree_bar[0]) == 3:
             marker_ree = self._make_marker(
                 Marker.POINTS, 2, rgba=[0.0, 1.0, 1.0, 1], scale=[0.1, 0.1, 0.1]
             )
-            marker_ree.points = [Point(*pt[:3]) for pt in controller.ree_bar]
+            marker_ree.points = [Point(x=float(pt[0]), y=float(pt[1]), z=float(pt[2])) for pt in controller.ree_bar]
             self.controller_visualization_pub.publish(marker_ree)
 
         # base tracking points
         marker_rbase = self._make_marker(
             Marker.POINTS, 3, rgba=[0.0, 0.0, 1, 1], scale=[0.1] * 3
         )
-        marker_rbase.points = [Point(*pt[:2], 0) for pt in controller.rbase_bar]
+        marker_rbase.points = [Point(x=float(pt[0]), y=float(pt[1]), z=0.0) for pt in controller.rbase_bar]
         self.controller_visualization_pub.publish(marker_rbase)
 
     def run(self):
-        rate = rospy.Rate(self.ctrl_rate)
+        rate = self.create_rate(self.ctrl_rate)
 
-        print("-----Checking Robot Interface-----")
+        self.get_logger().info("-----Checking Robot Interface-----")
         while not self.robot_interface.ready():
             self.robot_interface.brake()
             rate.sleep()
 
-            if rospy.is_shutdown():
+            if not rclpy.ok():
                 return
-        print("Controller received joint states. Proceed ... ")
+        self.get_logger().info("Controller received joint states. Proceed ... ")
         self.home = self.robot_interface.q
 
         states = (self.robot_interface.q, self.robot_interface.v)
-        print(f"robot coord: {self.robot_interface.q}")
+        self.get_logger().info(f"robot coord: {self.robot_interface.q}")
         self.sot = TaskManager(self.planner_config.copy())
 
-        print("-----Checking Planners----- ")
+        self.get_logger().info("-----Checking Planners----- ")
         for planner in self.sot.planners:
             while not planner.ready():
                 self.robot_interface.brake()
                 rate.sleep()
 
-                if rospy.is_shutdown():
+                if not rclpy.ok():
                     return
             # Print planner targets
             targets = []
@@ -475,50 +482,50 @@ class ControllerROSNode:
                     targets.append(f"EE: {planner.ee_target}")
                 else:
                     targets.append(f"EE: path with {len(planner.ee_plan['p'])} points")
-            print(f"planner {planner.name} targets: {', '.join(targets)}")
+            self.get_logger().info(f"planner {planner.name} targets: {', '.join(targets)}")
 
-        print("-----Checking Vicon Tool messages----- ")
+        self.get_logger().info("-----Checking Vicon Tool messages----- ")
         use_vicon_tool_data = True
         if not self.vicon_tool_interface.ready():
             use_vicon_tool_data = False
-            print(
+            self.get_logger().info(
                 "Controller did not receive vicon tool "
                 + self.ctrl_config["robot"]["tool_vicon_name"]
                 + ". Using Robot Model"
             )
             self.robot = MobileManipulator3D(self.ctrl_config)
         else:
-            print(
+            self.get_logger().info(
                 "Controller received vicon tool "
                 + self.ctrl_config["robot"]["tool_vicon_name"]
             )
 
-        print("-----Checking Joy stick messages----- ")
+        self.get_logger().info("-----Checking Joy stick messages----- ")
         if self.use_joy:
             if self.joystick_interface.ready():
-                print("Received joystick msg. Using joystick data.")
+                self.get_logger().info("Received joystick msg. Using joystick data.")
             else:
                 self.use_joy = False
-                print("Did not receive joystick msg.")
+                self.get_logger().info("Did not receive joystick msg.")
 
-        rospy.Timer(rospy.Duration(0, int(1e8)), self._publish_planner_data)
+        # Create a timer to publish planner data at 10 Hz (0.1 second period)
+        self.planner_data_timer = self.create_timer(0.1, self._publish_planner_data)
 
         if self.use_joy:
-            print("----- Press Square(Ps4) to start -----")
+            self.get_logger().info("----- Press Square(Ps4) to start -----")
             while not self.start_end_button_interface.button == 1:
                 rate.sleep()
 
             self.start_end_button_interface.reset_button()
         else:
-            input("----- Press Enter to start -----")
+            self.get_logger().info("----- Press Enter to start ----- (waiting skipped)")
 
         self.sot.activatePlanners()
-        t = rospy.Time.now().to_sec()
+        t = self.get_clock().now().nanoseconds / 1e9
         t0 = t
         self.sot.started = True
-
-        while not self.ctrl_c:
-            t = rospy.Time.now().to_sec()
+        while not self.ctrl_c and rclpy.ok():
+            t = self.get_clock().now().nanoseconds / 1e9
 
             # open-loop command
             robot_states = (self.robot_interface.q, self.robot_interface.v)
@@ -530,7 +537,7 @@ class ControllerROSNode:
 
                 if min(signed_dist_self) < 0.05 or min(signed_dist_ground) < 0.05:
                     self.controller_log.warning("Self Collision Detected. Braking!!!!")
-                    self.cmd_vel_timer.shutdown()
+                    self.cmd_vel_timer.cancel()
 
                     self.robot_interface.brake()
                     continue
@@ -554,7 +561,7 @@ class ControllerROSNode:
             close_to_goal = planner.closeToFinish()
             self.sot_lock.release()
             if close_to_goal:
-                print("Close to goal. Braking")
+                self.get_logger().info("Close to goal. Braking")
                 v_bar[:, :3] = 0
 
             if self.ctrl_config["cmd_vel_type"] == "interpolation":
@@ -691,36 +698,38 @@ class ControllerROSNode:
 
             rate.sleep()
 
-        self.cmd_vel_timer.shutdown()
+        self.cmd_vel_timer.cancel()
+        self.planner_data_timer.cancel()
         self.mpc_plan = None
 
         # self.go_home()
 
     def go_home(self):
-        rate = rospy.Rate(125)
+        rate = self.create_rate(125)
         q = self.robot_interface.q
         q[2] = wrap_pi_scalar(q[2])
-        print(q)
+        self.get_logger().info(q)
 
         trajectory = PointToPointTrajectory.quintic(
             q, self.home, max_vel=0.2, max_acc=1, min_duration=1
         )
 
         # use P control + feedforward velocity to track the trajectory
-        while not rospy.is_shutdown():
+        t_start = self.get_clock().now().nanoseconds / 1e9
+        while rclpy.ok():
             q = self.robot_interface.q
             q[2] = wrap_pi_scalar(q[2])
 
-            t = rospy.Time.now().to_sec()
+            t_elapsed = self.get_clock().now().nanoseconds / 1e9 - t_start
 
             dist = np.linalg.norm(self.home - q)
 
             # we want to both let the trajectory complete and ensure we've
             # converged properly
-            if trajectory.done(t) and dist < 1e-2:
+            if trajectory.done(t_elapsed) and dist < 1e-2:
                 break
 
-            qd, vd, _ = trajectory.sample(t)
+            qd, vd, _ = trajectory.sample(t_elapsed)
             cmd_vel = (qd - q) + vd
 
             # this shouldn't be needed unless the trajectory is poorly tracked, but
@@ -733,15 +742,30 @@ class ControllerROSNode:
 
         self.robot_interface.brake()
 
-        print(f"Converged to within {dist} of home position.")
+        self.get_logger().info(f"Converged to within {dist} of home position.")
 
     def log_mpc_info(self, logger, controller):
         for key, val in controller.log.items():
             logger.append("_".join(["mpc", key]) + "s", val)
 
 
-if __name__ == "__main__":
-    rospy.init_node("controller_ros")
+def main(args=None):
+    rclpy.init(args=args)
+    
+    node = ControllerROSNode(sys.argv)
 
-    node = ControllerROSNode()
+    # Run executor in background thread
+    executor = MultiThreadedExecutor(num_threads=4)
+    executor.add_node(node)
+    executor_thread = threading.Thread(target=executor.spin, daemon=True)
+    executor_thread.start()
+
+    # Run the main control loop in the main thread
     node.run()
+
+    executor.shutdown()
+    node.destroy_node()
+    rclpy.shutdown()
+
+if __name__ == "__main__":
+    main()
