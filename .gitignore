@@ -20,6 +20,7 @@ __pycache__/
 
 # Results/output data
 /results/
+/report/
 
 # Local-only integration notes.
 /REAL_STRETCH_ESDF_OMPL_WBMPC_INTEGRATION_PLAN.md
