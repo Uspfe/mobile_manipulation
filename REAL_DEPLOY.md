@@ -240,7 +240,7 @@ Offline conversion requires an NVIDIA GPU on the PC:
 ```bash
 cd ~/repo/mobile_manipulation
 
-pixi run python mm_run/scripts/export_real_rosbag_esdf.py \
+pixi run -e nvblox python mm_run/scripts/export_real_rosbag_esdf.py \
   /home/miao/data/real_stretch_esdf_bags/REPLACE_WITH_BAG_NAME \
   -o mm_run/results/nvblox_esdf/real_bag/REPLACE_WITH_BAG_NAME \
   --bounds XMIN YMIN ZMIN XMAX YMAX ZMAX \

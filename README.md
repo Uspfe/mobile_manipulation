@@ -5,8 +5,9 @@ predictive control, ESDF collision avoidance, and PyBullet validation. The
 repository currently supports Stretch and a mobile UR10 model.
 
 > [!IMPORTANT]
-> Use the pixi environment, build into the default `install/` tree, and source
-> `install/setup.bash` before resolving package paths or launching ROS nodes.
+> ROS 2 Jazzy (robostack-jazzy, Python 3.12). Work inside the pixi
+> environment; its activation sources `install/setup.sh` and builds acados on
+> first use (`tools/setup_acados.sh`).
 
 > [!WARNING]
 > Real-robot operation is safety critical. Follow the complete
@@ -21,22 +22,16 @@ repository currently supports Stretch and a mobile UR10 model.
 
 ## Quick Start
 
-Clone submodules, enter the environment, and build:
+| Environment | Contents |
+| ----------- | -------- |
+| `default` | Controller, planners, PyBullet; `linux-64` and `linux-aarch64` |
+| `dev` | `default` plus ruff, pytest and rmw_zenoh 0.2.10 (`RMW_IMPLEMENTATION=rmw_zenoh_cpp`) |
+| `nvblox` | `default` plus CUDA torch and `nvblox_torch` for ESDF capture and export; `linux-64` with an NVIDIA GPU only. Install with `UV_SKIP_WHEEL_FILENAME_CHECK=1 pixi install -e nvblox` (the nvblox wheel's file name does not match its version) |
 
 ```bash
-cd ~/repo/mobile_manipulation
-git submodule update --init --recursive
-pixi shell
-colcon build
-source install/setup.bash
-```
-
-In every new terminal:
-
-```bash
-cd ~/repo/mobile_manipulation
-pixi shell
-source install/setup.bash
+pixi run -e dev build     # colcon build into install/
+pixi run -e dev test      # headless unit tests
+pixi shell -e dev         # re-enter after a build so that new entry points are found
 ```
 
 Verify that ROS resolves packages from the default install tree:
@@ -120,11 +115,11 @@ python3 mm_run/scripts/experiment.py \
 
 ### Simulated Stretch ESDF Capture
 
-`nvblox-torch` requires a CUDA GPU for capture/export. Viewing an exported NPZ
+`nvblox-torch` requires a CUDA GPU for capture/export (environment `nvblox`). Viewing an exported NPZ
 does not require CUDA.
 
 ```bash
-pixi run python mm_run/scripts/teleop_export_esdf.py \
+pixi run -e nvblox python mm_run/scripts/teleop_export_esdf.py \
   --config mm_run/config/stretch_esdf_teleop_export.yaml
 ```
 

@@ -12,7 +12,7 @@ from spatialmath.base import r2q, rotz
 
 from mm_utils import parsing
 
-import hppfcl as fcl  # isort: skip
+import coal as fcl  # isort: skip
 
 
 DEFAULT_SELF_COLLISION_GROUP_SPECS = [
@@ -342,7 +342,7 @@ class PinocchioInterface:
         ground_placement = pin.SE3.Identity()
         ground_shape = fcl.Halfspace(np.array([0, 0, 1]), 0)
         ground_geom_obj = pin.GeometryObject(
-            "ground_0", self.model.frames[0].parentJoint, ground_shape, ground_placement
+            "ground_0", self.model.frames[0].parentJoint, ground_placement, ground_shape
         )
         ground_geom_obj.meshColor = np.ones((4))
 
@@ -395,7 +395,7 @@ class PinocchioInterface:
         # agree with their symbolic FK and PyBullet markers.
         joint_placement = frame.placement * placement
         geom_obj = pin.GeometryObject(
-            name + "_0", parent_joint, geometry, joint_placement
+            name + "_0", parent_joint, joint_placement, geometry
         )
         geom_obj.meshColor = np.ones((4))
         return geom_obj

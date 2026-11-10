@@ -13,41 +13,54 @@ build-backend = "hatchling.build"
 requires = ["hatchling"]
 
 [tool.pixi.workspace]
-channels = ["robostack-humble", "conda-forge", "nvidia"]
-platforms = ["linux-64"]
+channels = ["robostack-jazzy", "conda-forge"]
+platforms = [
+    "linux-64",
+    # nvblox-torch: CUDA, and open3d's manylinux_2_31 wheels
+    { name = "linux-64-cuda", platform = "linux-64", cuda = "12.8", glibc = "2.31" },
+    "linux-aarch64",
+]
 
 [tool.pixi.tasks]
-# build = { cmd = "..."}
+build = { cmd = "colcon build", description = "Build all packages into install/" }
+test = { cmd = "python -m pytest -q mm_utils/test mm_control/test mm_plan/test mm_simulator/test", description = "Headless unit tests" }
 
 [tool.pixi.dependencies]
 spatialmath-python = ">=1.1.15,<2"
 pybullet = ">=3.25,<4"
 casadi = ">=3.7.0,<4"
 liecasadi = ">=0.0.7,<0.0.8"
-holoviews = ">=1.22.1,<2"
-ros-humble-desktop = ">=0.10.0,<0.11"
 colcon-common-extensions = ">=0.3.0,<0.4"
 setuptools = ">=82.0.0,<83"
 numpy = ">=1.26.4,<2"
 scipy = ">=1.17.0,<2"
 xacro = ">=2.1.1,<3"
 yaml = ">=0.2.5,<0.3"
-pinocchio = ">=3.7.0,<4"
+pinocchio = ">=3.7.0"
 pip = ">=26.0.1,<27"
-ros-humble-tf-transformations = ">=1.1.0,<2"
 transforms3d = "*"
-jax = ">=0.7.0,<0.8"
-jaxlib = ">=0.7.0,<0.8"
-jaxlie = ">=1.5.0,<2"
 glib = ">=2.86.2,<3"
 libgl = ">=1.7.0,<2"
-cuda-nvcc = ">=12.9.86,<13"
-libnpp = "*"
-
-[tool.pixi.pypi-dependencies]
-torch = { version = "<=2.9.1", index = "https://download.pytorch.org/whl/cu128" }
-# if error do "export UV_SKIP_WHEEL_FILENAME_CHECK=1"
-nvblox-torch = { url = "https://github.com/nvidia-isaac/nvblox/releases/download/v0.0.10/nvblox_torch-0.0.10+cu12ubuntu24-py3-none-linux_x86_64.whl"}
+ros-jazzy-rclpy = "*"
+ros-jazzy-launch = "*"
+ros-jazzy-launch-ros = "*"
+ros-jazzy-ros2launch = "*"
+ros-jazzy-ros2run = "*"
+ros-jazzy-ros2topic = "*"
+ros-jazzy-std-msgs = "*"
+ros-jazzy-std-srvs = "*"
+ros-jazzy-sensor-msgs = "*"
+ros-jazzy-geometry-msgs = "*"
+ros-jazzy-nav-msgs = "*"
+ros-jazzy-trajectory-msgs = "*"
+ros-jazzy-visualization-msgs = "*"
+ros-jazzy-tf2-ros = "*"
+ros-jazzy-tf-transformations = "*"
+ros-jazzy-rosbag2-py = "*"
+ros-jazzy-rosidl-runtime-py = "*"
+ros-jazzy-ament-index-python = "*"
+pyyaml = ">=6.0.3,<7"
+matplotlib = ">=3.7,<4"
 
 [tool.pixi.activation]
 scripts = ["install/setup.sh", "tools/setup_acados.sh"]
@@ -55,5 +68,32 @@ scripts = ["install/setup.sh", "tools/setup_acados.sh"]
 [tool.pixi.activation.env]
 LD_LIBRARY_PATH = "$CONDA_PREFIX/lib:$LD_LIBRARY_PATH"
 
-[tool.pixi.system-requirements]
-cuda = "12.8"
+# Offline ESDF capture and export (mm_run/scripts/*nvblox*, mm_control's OnlineNvbloxESDFMap); needs an NVIDIA GPU.
+[tool.pixi.feature.nvblox]
+platforms = ["linux-64-cuda"]
+channels = ["nvidia"]
+
+[tool.pixi.feature.nvblox.pypi-dependencies]
+torch = { version = "<=2.9.1", index = "https://download.pytorch.org/whl/cu128" }
+# if error do "export UV_SKIP_WHEEL_FILENAME_CHECK=1"
+nvblox-torch = { url = "https://github.com/nvidia-isaac/nvblox/releases/download/v0.0.10/nvblox_torch-0.0.10+cu12ubuntu24-py3-none-linux_x86_64.whl" }
+
+[tool.pixi.feature.nvblox.dependencies]
+cuda-nvcc = "*"
+libnpp = "*"
+matplotlib = ">=3.7,<3.11" # nvblox-torch 0.0.10 requires it
+
+[tool.pixi.feature.zenoh.dependencies]
+ros-jazzy-rmw-zenoh-cpp = "==0.2.10" # pinned: every component must run the same rmw_zenoh (pulls libzenohc 1.9.0)
+
+[tool.pixi.feature.dev.dependencies]
+ruff = "*"
+pytest = "*"
+
+[tool.pixi.feature.zenoh.activation.env]
+RMW_IMPLEMENTATION = "rmw_zenoh_cpp"
+
+[tool.pixi.environments]
+default = { features = [], solve-group = "default" }
+dev = { features = ["dev", "zenoh"], solve-group = "default" }
+nvblox = { features = ["nvblox"] }
